@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
@@ -6,7 +6,9 @@ import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { fetchShopOrders, updateOrderStatus, markItemDelivered } from '../../store/slices/ordersSlice';
 import Icon from '../../components/common/Icon';
-import { colors, statusColors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
+import { statusColors } from '../../theme/colors';
 import { Order, OrderStatus } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
@@ -21,6 +23,8 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 ];
 
 export default function OwnerOrdersScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const shopOrders = useSelector((s: RootState) => s.orders.shopOrders);
   const [filter, setFilter] = useState<FilterTab>('all');
@@ -97,7 +101,7 @@ export default function OwnerOrdersScreen() {
               </Text>
               {count > 0 && (
                 <View style={[styles.filterBadge, active && styles.filterBadgeActive]}>
-                  <Text style={[styles.filterBadgeText, active && { color: '#fff' }]}>{count}</Text>
+                  <Text style={[styles.filterBadgeText, active && styles.filterBadgeTextActive]}>{count}</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -106,8 +110,8 @@ export default function OwnerOrdersScreen() {
       </ScrollView>
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16 }}
+        style={styles.flex1}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {sorted.length === 0 ? (
@@ -118,7 +122,7 @@ export default function OwnerOrdersScreen() {
         ) : (
           sorted.map(order => <OrderCard key={order.id} order={order} onStatus={handleStatus} onItemDelivered={handleItemDelivered} timeSince={timeSince} />)
         )}
-        <View style={{ height: 100 }} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
     </ScreenWrapper>
@@ -133,6 +137,8 @@ function OrderCard({
   onItemDelivered: (oid: string, idx: number) => void;
   timeSince: (d: string) => string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const sc = statusColors[order.status];
   return (
     <View style={styles.card}>
@@ -222,7 +228,7 @@ function OrderCard({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   filterRow: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
@@ -290,4 +296,8 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
     paddingVertical: 10, borderRadius: 12, backgroundColor: colors.primary,
   },
+  filterBadgeTextActive: { color: '#fff' },
+  flex1: { flex: 1 },
+  scrollContent: { padding: 16 },
+  bottomSpacer: { height: 100 },
 });

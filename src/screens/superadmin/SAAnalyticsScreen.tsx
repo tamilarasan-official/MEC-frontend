@@ -1,17 +1,19 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
-import { Order, Shop, FoodItem, Transaction } from '../../types';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
+import { Order } from '../../types';
 import { useAppSelector } from '../../store';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 type FilterType = 'today' | 'week' | 'month' | 'all';
 
 export default function SAAnalyticsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [filter, setFilter] = useState<FilterType>('month');
   const orders = useAppSelector(s => s.orders.orders) as Order[];
 
@@ -102,7 +104,7 @@ export default function SAAnalyticsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 16 },

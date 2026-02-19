@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { Transaction } from '../../types';
 import * as accountantService from '../../services/accountantService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -12,6 +13,8 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 type FilterType = 'today' | 'week' | 'month' | 'all';
 
 export default function AccReportsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [filter, setFilter] = useState<FilterType>('month');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +77,7 @@ export default function AccReportsScreen() {
         ))}
       </View>
 
-      {loading ? <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} /> : (
+      {loading ? <ActivityIndicator size="large" color={colors.primary} style={styles.loaderMargin} /> : (
         <>
           <View style={styles.grid}>
             {summaryCards.map(c => (
@@ -92,7 +95,7 @@ export default function AccReportsScreen() {
           ) : (
             transactions.slice(0, 30).map(txn => (
               <View key={txn.id} style={styles.txnRow}>
-                <View style={[styles.txnIcon, { backgroundColor: txn.type === 'credit' ? '#dcfce7' : '#fef2f2' }]}>
+                <View style={[styles.txnIcon, txn.type === 'credit' ? styles.txnIconCredit : styles.txnIconDebit]}>
                   <Icon name={txn.type === 'credit' ? 'arrow-down' : 'arrow-up'} size={16}
                     color={txn.type === 'credit' ? '#16a34a' : '#ef4444'} />
                 </View>
@@ -100,7 +103,7 @@ export default function AccReportsScreen() {
                   <Text style={styles.txnDesc} numberOfLines={1}>{txn.description || txn.type}</Text>
                   <Text style={styles.txnTime}>{new Date(txn.createdAt).toLocaleString()}</Text>
                 </View>
-                <Text style={[styles.txnAmount, { color: txn.type === 'credit' ? '#16a34a' : '#ef4444' }]}>
+                <Text style={[styles.txnAmount, txn.type === 'credit' ? styles.txnAmountCredit : styles.txnAmountDebit]}>
                   {txn.type === 'credit' ? '+' : '-'}₹{txn.amount}
                 </Text>
               </View>
@@ -113,7 +116,7 @@ export default function AccReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 16 },
@@ -130,8 +133,13 @@ const styles = StyleSheet.create({
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 20 },
   txnRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
   txnIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  txnIconCredit: { backgroundColor: '#dcfce7' },
+  txnIconDebit: { backgroundColor: '#fef2f2' },
   txnInfo: { flex: 1, marginLeft: 12 },
   txnDesc: { fontSize: 14, fontWeight: '600', color: colors.text },
   txnTime: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   txnAmount: { fontSize: 15, fontWeight: '700' },
+  txnAmountCredit: { color: '#16a34a' },
+  txnAmountDebit: { color: '#ef4444' },
+  loaderMargin: { marginTop: 40 },
 });

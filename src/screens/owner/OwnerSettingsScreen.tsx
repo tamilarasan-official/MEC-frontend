@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert,
 } from 'react-native';
@@ -7,10 +7,13 @@ import { RootState, AppDispatch } from '../../store';
 import { logout } from '../../store/slices/authSlice';
 import { toggleShopStatus } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function OwnerSettingsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((s: RootState) => s.auth.user);
   const shopDetails = useSelector((s: RootState) => s.user.shopDetails);
@@ -135,7 +138,7 @@ export default function OwnerSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20 },
   profileCard: {

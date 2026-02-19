@@ -8,11 +8,12 @@ import SAPaymentsScreen from '../../screens/superadmin/SAPaymentsScreen';
 import SAAnalyticsScreen from '../../screens/superadmin/SAAnalyticsScreen';
 import SASettingsScreen from '../../screens/superadmin/SASettingsScreen';
 import { Icon } from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<SuperAdminTabParamList>();
 
 export default function SuperAdminTabs() {
+  const { colors } = useTheme();
   return (
     <Tab.Navigator
       screenOptions={{

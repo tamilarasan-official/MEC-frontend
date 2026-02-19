@@ -1,14 +1,14 @@
 import React from 'react';
-import { StatusBar, StyleSheet, ViewStyle } from 'react-native';
+import { StatusBar, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface ScreenWrapperProps {
   children: React.ReactNode;
   style?: ViewStyle;
-  /** StatusBar style, defaults to 'dark-content' */
+  /** StatusBar style override; auto-detected from theme when omitted */
   barStyle?: 'light-content' | 'dark-content';
-  /** StatusBar background, defaults to colors.background */
+  /** StatusBar background override; defaults to theme background */
   statusBarColor?: string;
   /** SafeArea edges to respect, defaults to ['top', 'left', 'right'] */
   edges?: Array<'top' | 'bottom' | 'left' | 'right'>;
@@ -17,21 +17,18 @@ interface ScreenWrapperProps {
 export default function ScreenWrapper({
   children,
   style,
-  barStyle = 'dark-content',
-  statusBarColor = colors.background,
+  barStyle,
+  statusBarColor,
   edges = ['top', 'left', 'right'],
 }: ScreenWrapperProps) {
+  const { colors, isDark } = useTheme();
+  const resolvedBarStyle = barStyle ?? (isDark ? 'light-content' : 'dark-content');
+  const resolvedBg = statusBarColor ?? colors.background;
+
   return (
-    <SafeAreaView style={[styles.container, style]} edges={edges}>
-      <StatusBar barStyle={barStyle} backgroundColor={statusBarColor} translucent={false} />
+    <SafeAreaView style={[{ flex: 1, backgroundColor: colors.background }, style]} edges={edges}>
+      <StatusBar barStyle={resolvedBarStyle} backgroundColor={resolvedBg} translucent={false} />
       {children}
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-});

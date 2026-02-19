@@ -4,7 +4,8 @@ import {
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Icon from './Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { Order } from '../../types';
 
 interface OrderQRCardProps {
@@ -12,15 +13,16 @@ interface OrderQRCardProps {
   onClose: () => void;
 }
 
-const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = {
-  pending: { label: 'Order Placed', icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
-  preparing: { label: 'Preparing', icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
-  ready: { label: 'Ready for Pickup', icon: 'cube-outline', color: colors.orange[500], bg: colors.orangeBg },
-  completed: { label: 'Completed', icon: 'checkmark-circle', color: colors.primary, bg: colors.successBg },
-  cancelled: { label: 'Cancelled', icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
-};
-
 export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = useMemo(() => ({
+    pending: { label: 'Order Placed', icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
+    preparing: { label: 'Preparing', icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
+    ready: { label: 'Ready for Pickup', icon: 'cube-outline', color: colors.orange[500], bg: colors.orangeBg },
+    completed: { label: 'Completed', icon: 'checkmark-circle', color: colors.primary, bg: colors.successBg },
+    cancelled: { label: 'Cancelled', icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
+  }), [colors]);
   const [showDetails, setShowDetails] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(order.status);
   const slideAnim = useState(new Animated.Value(300))[0];
@@ -154,7 +156,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   backdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
   },

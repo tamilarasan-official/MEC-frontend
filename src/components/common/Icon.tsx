@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet, TextStyle } from 'react-native';
-import IoniconsIcon from 'react-native-vector-icons/Ionicons';
-import MaterialIconsIcon from 'react-native-vector-icons/MaterialIcons';
+import IoniconsIcon from '@react-native-vector-icons/ionicons';
+import MaterialIconsIcon from '@react-native-vector-icons/material-icons';
 
 // Centralized Icon component - uses react-native-vector-icons
 interface IconProps {
@@ -20,9 +20,9 @@ export const Icon: React.FC<IconProps> = ({
   family = 'ionicons',
 }) => {
   if (family === 'material') {
-    return <MaterialIconsIcon name={name} size={size} color={color} style={style} />;
+    return <MaterialIconsIcon name={name as any} size={size} color={color} style={style} />;
   }
-  return <IoniconsIcon name={name} size={size} color={color} style={style} />;
+  return <IoniconsIcon name={name as any} size={size} color={color} style={style} />;
 };
 
 // Convenience wrappers

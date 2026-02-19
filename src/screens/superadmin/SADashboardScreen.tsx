@@ -1,16 +1,19 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView,
   RefreshControl, ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector } from '../../store';
 import { getDashboardStats } from '../../services/superadminService';
 import { SuperAdminDashboardStats } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function SADashboardScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const user = useAppSelector(s => s.auth.user);
   const [stats, setStats] = useState<SuperAdminDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +87,7 @@ export default function SADashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },

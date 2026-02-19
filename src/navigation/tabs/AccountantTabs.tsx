@@ -8,11 +8,12 @@ import AccPayablesScreen from '../../screens/accountant/AccPayablesScreen';
 import AccReportsScreen from '../../screens/accountant/AccReportsScreen';
 import AccSettingsScreen from '../../screens/accountant/AccSettingsScreen';
 import { Icon } from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<AccountantTabParamList>();
 
 export default function AccountantTabs() {
+  const { colors } = useTheme();
   return (
     <Tab.Navigator
       screenOptions={{

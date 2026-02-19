@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import Icon from '../../components/common/Icon';
-import { colors, statusColors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
+import { statusColors } from '../../theme/colors';
 import orderService from '../../services/orderService';
 import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -11,6 +13,8 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 type HistoryFilter = 'completed' | 'cancelled';
 
 export default function CaptainHistoryScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [filter, setFilter] = useState<HistoryFilter>('completed');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,7 +136,7 @@ export default function CaptainHistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },

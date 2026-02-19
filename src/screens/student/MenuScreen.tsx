@@ -8,13 +8,16 @@ import { StudentHomeStackParamList, FoodItem } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Menu'>;
 
 export default function MenuScreen({ route, navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { shopId, shopName } = route.params;
   const dispatch = useAppDispatch();
   const { menuItems: shopMenu, isLoading: menuLoading, categories } = useAppSelector(s => s.menu);
@@ -50,7 +53,8 @@ export default function MenuScreen({ route, navigation }: Props) {
   const totalItems = cartItems.reduce((sum, c) => sum + c.quantity, 0);
   const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
 
-  const allCategories = ['All', ...categories];
+  // Ensure categories are strings (API may return objects)
+  const allCategories = ['All', ...categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean)];
 
   const renderFoodCard = ({ item }: { item: FoodItem }) => {
     const qty = getCartQty(item.id);
@@ -109,7 +113,7 @@ export default function MenuScreen({ route, navigation }: Props) {
           <Icon name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{shopName}</Text>
-        <View style={{ width: 36 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Search */}
@@ -150,7 +154,7 @@ export default function MenuScreen({ route, navigation }: Props) {
             offerItems.length > 0 ? (
               <View style={styles.offersSection}>
                 <Text style={styles.sectionTitle}>Today's Special</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.offerListContent}>
                   {offerItems.map((item: FoodItem) => {
                     const discount = item.offerPrice ? Math.round((1 - item.offerPrice / item.price) * 100) : 0;
                     return (
@@ -163,9 +167,9 @@ export default function MenuScreen({ route, navigation }: Props) {
                             <Icon name="restaurant-outline" size={24} color={colors.textMuted} />
                           </View>
                         )}
-                        <View style={{ padding: 10 }}>
+                        <View style={styles.offerCardBody}>
                           <Text style={styles.offerName} numberOfLines={1}>{item.name}</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          <View style={styles.offerPriceRow}>
                             <Text style={styles.offerPrice}>Rs.{item.offerPrice}</Text>
                             <Text style={styles.offerOriginal}>Rs.{item.price}</Text>
                           </View>
@@ -184,7 +188,7 @@ export default function MenuScreen({ route, navigation }: Props) {
               <Text style={styles.emptySubtitle}>{searchQuery ? `No items match "${searchQuery}"` : 'No items available'}</Text>
             </View>
           }
-          ListFooterComponent={totalItems > 0 ? <View style={{ height: 100 }} /> : null}
+          ListFooterComponent={totalItems > 0 ? <View style={styles.bottomSpacer} /> : null}
         />
       )}
 
@@ -217,7 +221,7 @@ export default function MenuScreen({ route, navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   backBtn: { padding: 6 },
@@ -278,4 +282,9 @@ const styles = StyleSheet.create({
   floatingBarTotal: { fontSize: 18, fontWeight: '800', color: '#fff' },
   floatingBarRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   floatingBarAction: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  headerSpacer: { width: 36 },
+  offerListContent: { gap: 12 },
+  offerCardBody: { padding: 10 },
+  offerPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  bottomSpacer: { height: 100 },
 });

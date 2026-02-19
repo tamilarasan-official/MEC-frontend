@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   Alert, ActivityIndicator, Modal, FlatList,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { User } from '../../types';
 import * as accountantService from '../../services/accountantService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -13,6 +14,8 @@ type OpType = 'credit' | 'debit';
 const SOURCES = ['cash', 'online', 'complementary', 'pg'];
 
 export default function AccPaymentsScreen({ route }: any) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const preSelectedId = route?.params?.studentId;
   const [students, setStudents] = useState<User[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<User | null>(null);
@@ -136,11 +139,11 @@ export default function AccPaymentsScreen({ route }: any) {
 
       {/* Description */}
       <Text style={styles.label}>Description (optional)</Text>
-      <TextInput style={[styles.input, { height: 60, textAlignVertical: 'top' }]}
+      <TextInput style={[styles.input, styles.inputMultiline]}
         value={description} onChangeText={setDescription}
         placeholder="Add a note..." placeholderTextColor={colors.textMuted} multiline />
 
-      <TouchableOpacity style={[styles.submitBtn, { backgroundColor: opType === 'credit' ? '#16a34a' : '#ef4444' }]}
+      <TouchableOpacity style={[styles.submitBtn, opType === 'credit' ? styles.submitBtnCredit : styles.submitBtnDebit]}
         onPress={handleSubmit} disabled={submitting}>
         {submitting ? <ActivityIndicator color="#fff" /> : (
           <>
@@ -177,7 +180,7 @@ export default function AccPaymentsScreen({ route }: any) {
                   <View style={styles.miniAvatar}>
                     <Text style={styles.miniAvatarText}>{item.name.charAt(0)}</Text>
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.flex1}>
                     <Text style={styles.optionName}>{item.name}</Text>
                     <Text style={styles.optionDetail}>{item.rollNumber || item.username} • ₹{item.balance ?? 0}</Text>
                   </View>
@@ -191,7 +194,7 @@ export default function AccPaymentsScreen({ route }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -227,4 +230,8 @@ const styles = StyleSheet.create({
   studentOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   optionName: { fontSize: 15, fontWeight: '600', color: colors.text },
   optionDetail: { fontSize: 12, color: colors.textMuted },
+  inputMultiline: { height: 60, textAlignVertical: 'top' },
+  submitBtnCredit: { backgroundColor: '#16a34a' },
+  submitBtnDebit: { backgroundColor: '#ef4444' },
+  flex1: { flex: 1 },
 });

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Modal, Animated, Easing, Dimensions,
 } from 'react-native';
 import Icon from './Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { CartItem } from '../../types';
 
 const { width } = Dimensions.get('window');
@@ -25,6 +26,8 @@ interface OrderAnimationProps {
 }
 
 export function OrderAnimation({ type, pickupToken, orderDetails: _orderDetails, onComplete }: OrderAnimationProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [stage, setStage] = useState(0);
   const [showQRCard, setShowQRCard] = useState(false);
   const scaleAnim = useState(new Animated.Value(0.3))[0];
@@ -145,7 +148,10 @@ export function OrderAnimation({ type, pickupToken, orderDetails: _orderDetails,
   );
 }
 
-export function LoadingSpinner({ size = 32, color = colors.primary }: { size?: number; color?: string }) {
+export function LoadingSpinner({ size = 32, color }: { size?: number; color?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const resolvedColor = color ?? colors.primary;
   const spinValue = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
@@ -160,13 +166,13 @@ export function LoadingSpinner({ size = 32, color = colors.primary }: { size?: n
   return (
     <View style={styles.spinnerContainer}>
       <Animated.View style={{ transform: [{ rotate }] }}>
-        <View style={[styles.spinnerCircle, { width: size, height: size, borderRadius: size / 2, borderTopColor: color }]} />
+        <View style={[styles.spinnerCircle, { width: size, height: size, borderRadius: size / 2, borderTopColor: resolvedColor }]} />
       </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1, backgroundColor: 'rgba(255,255,255,0.96)', justifyContent: 'center', alignItems: 'center',
   },

@@ -3,13 +3,27 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StudentTabParamList } from '../../types';
 import StudentHomeStack from '../stacks/StudentHomeStack';
 import OrdersScreen from '../../screens/student/OrdersScreen';
-import ProfileScreen from '../../screens/student/ProfileScreen';
+import ScannerScreen from '../../screens/student/ScannerScreen';
 import Icon from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<StudentTabParamList>();
 
+const HomeIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+  <Icon name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+);
+
+const OrdersIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+  <Icon name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
+);
+
+const ScannerIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+  <Icon name={focused ? 'qr-code' : 'qr-code-outline'} size={22} color={color} />
+);
+
 export default function StudentTabs() {
+  const { colors } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -34,9 +48,7 @@ export default function StudentTabs() {
         component={StudentHomeStack}
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ focused, color }) => (
-            <Icon name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-          ),
+          tabBarIcon: HomeIcon,
         }}
       />
       <Tab.Screen
@@ -44,19 +56,15 @@ export default function StudentTabs() {
         component={OrdersScreen}
         options={{
           tabBarLabel: 'Orders',
-          tabBarIcon: ({ focused, color }) => (
-            <Icon name={focused ? 'receipt' : 'receipt-outline'} size={22} color={color} />
-          ),
+          tabBarIcon: OrdersIcon,
         }}
       />
       <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
+        name="Scanner"
+        component={ScannerScreen}
         options={{
-          tabBarLabel: 'Profile',
-          tabBarIcon: ({ focused, color }) => (
-            <Icon name={focused ? 'person' : 'person-outline'} size={22} color={color} />
-          ),
+          tabBarLabel: 'Scanner',
+          tabBarIcon: ScannerIcon,
         }}
       />
     </Tab.Navigator>

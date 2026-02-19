@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '@react-native-vector-icons/ionicons';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { logout } from '../../store/slices/authSlice';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function AccSettingsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const user = useAppSelector(s => s.auth.user);
   const dispatch = useAppDispatch();
   const [notifications, setNotifications] = useState(true);
@@ -113,7 +116,7 @@ export default function AccSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 20 },

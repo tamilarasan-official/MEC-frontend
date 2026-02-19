@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
@@ -6,7 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootState, AppDispatch } from '../store';
 import { refreshUserData } from '../store/slices/authSlice';
 import { RootStackParamList } from '../types';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/colors';
 import AuthStack from './AuthStack';
 import StudentTabs from './tabs/StudentTabs';
 import CaptainTabs from './tabs/CaptainTabs';
@@ -18,6 +19,8 @@ import { connectSocket, disconnectSocket, setupSocketListeners } from '../servic
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const { user, isAuthenticated } = useSelector((s: RootState) => s.auth);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -78,7 +81,7 @@ export default function RootNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   splash: {
     flex: 1,
     justifyContent: 'center',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
@@ -7,7 +7,8 @@ import { StudentHomeStackParamList } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { updateQuantity, removeFromCart, clearCart } from '../../store/slices/cartSlice';
 import { createOrder } from '../../store/slices/ordersSlice';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -15,6 +16,8 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Cart'>;
 
 export default function CartScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const { items: cartItems, shopId } = useAppSelector(s => s.cart);
   const user = useAppSelector(s => s.auth.user);
@@ -165,7 +168,7 @@ export default function CartScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { padding: 6 },

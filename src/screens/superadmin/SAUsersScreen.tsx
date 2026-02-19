@@ -1,21 +1,23 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   RefreshControl, ActivityIndicator, Alert, Modal,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { SuperAdminUser, Shop } from '../../types';
 import * as saService from '../../services/superadminService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 const ROLES = ['superadmin', 'accountant', 'owner', 'captain', 'student'];
-const DEPARTMENTS = ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AIDS', 'AIML', 'Other'];
 const ROLE_COLORS: Record<string, string> = {
   superadmin: '#ef4444', accountant: '#8b5cf6', owner: '#f59e0b', captain: '#3b82f6', student: '#10b981',
 };
 
 export default function SAUsersScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [users, setUsers] = useState<SuperAdminUser[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,14 +114,14 @@ export default function SAUsersScreen() {
           onPress={() => handleToggleActive(u)}
         >
           <Icon name={u.isActive ? 'person-remove-outline' : 'person-add-outline'} size={16} color={u.isActive ? colors.danger : '#10b981'} />
-          <Text style={[styles.actionText, { color: u.isActive ? colors.danger : '#10b981' }]}>
+          <Text style={[styles.actionText, u.isActive ? styles.actionTextDanger : styles.actionTextSuccess]}>
             {u.isActive ? 'Deactivate' : 'Activate'}
           </Text>
         </TouchableOpacity>
         {u.role !== 'student' && (
           <TouchableOpacity style={styles.actionBtn} onPress={() => handleToggleAdhoc(u)}>
             <Icon name="card-outline" size={16} color="#6366f1" />
-            <Text style={[styles.actionText, { color: '#6366f1' }]}>Adhoc</Text>
+            <Text style={[styles.actionText, styles.actionTextAdhoc]}>Adhoc</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -216,6 +218,8 @@ export default function SAUsersScreen() {
 }
 
 function ScrollableFilter({ roleFilter, setRoleFilter }: { roleFilter: string; setRoleFilter: (r: string) => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.filterRow}>
       <TouchableOpacity
@@ -234,6 +238,8 @@ function ScrollableFilter({ roleFilter, setRoleFilter }: { roleFilter: string; s
 }
 
 function ScrollableShops({ shops, selected, onSelect }: { shops: Shop[]; selected: string; onSelect: (id: string) => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <FlatList
       data={shops}
@@ -249,7 +255,7 @@ function ScrollableShops({ shops, selected, onSelect }: { shops: Shop[]; selecte
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 50, paddingBottom: 12 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
@@ -279,6 +285,9 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.background },
   actionBtnDanger: {},
   actionText: { fontSize: 12, fontWeight: '600' },
+  actionTextDanger: { color: colors.danger },
+  actionTextSuccess: { color: '#10b981' },
+  actionTextAdhoc: { color: '#6366f1' },
   pagination: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20, paddingVertical: 16 },
   pageBtn: { color: colors.primary, fontWeight: '600', fontSize: 14 },
   pageBtnDisabled: { color: colors.textMuted },

@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Alert, ActivityIndicator, RefreshControl,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { VendorPayable } from '../../types';
 import * as accountantService from '../../services/accountantService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function AccPayablesScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [payables, setPayables] = useState<VendorPayable[]>([]);
   const [period, setPeriod] = useState(() => {
     const now = new Date();
@@ -84,7 +87,7 @@ export default function AccPayablesScreen() {
         </View>
         <View style={styles.metric}>
           <Text style={styles.metricLabel}>Payable</Text>
-          <Text style={[styles.metricValue, { color: '#f59e0b' }]}>₹{item.payableAmount.toLocaleString()}</Text>
+          <Text style={[styles.metricValue, styles.metricValueWarning]}>₹{item.payableAmount.toLocaleString()}</Text>
         </View>
         <View style={styles.metric}>
           <Text style={styles.metricLabel}>Orders</Text>
@@ -131,12 +134,12 @@ export default function AccPayablesScreen() {
         </View>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryLabel}>Transferred</Text>
-          <Text style={[styles.summaryValue, { color: '#16a34a' }]}>₹{completedPayable.toLocaleString()}</Text>
+          <Text style={[styles.summaryValue, styles.summaryValueSuccess]}>₹{completedPayable.toLocaleString()}</Text>
         </View>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color={colors.primary} style={styles.loaderMargin} />
       ) : (
         <FlatList data={payables} keyExtractor={p => p.shopId}
           renderItem={renderPayable}
@@ -149,7 +152,7 @@ export default function AccPayablesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: 20, paddingTop: 50 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
@@ -181,4 +184,7 @@ const styles = StyleSheet.create({
   markText: { color: '#fff' },
   undoText: { color: '#d97706' },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40 },
+  metricValueWarning: { color: '#f59e0b' },
+  summaryValueSuccess: { color: '#16a34a' },
+  loaderMargin: { marginTop: 40 },
 });

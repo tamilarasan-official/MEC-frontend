@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Switch,
 } from 'react-native';
@@ -7,10 +7,14 @@ import { RootState, AppDispatch } from '../../store';
 import { fetchDashboardStats, fetchShopDetails, toggleShopStatus } from '../../store/slices/userSlice';
 import { fetchActiveShopOrders } from '../../store/slices/ordersSlice';
 import Icon from '../../components/common/Icon';
-import { colors, statusColors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
+import { statusColors } from '../../theme/colors';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function OwnerHomeScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((s: RootState) => s.auth.user);
   const dashboardStats = useSelector((s: RootState) => s.user.dashboardStats);
@@ -157,7 +161,7 @@ export default function OwnerHomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   contentContainer: { padding: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },

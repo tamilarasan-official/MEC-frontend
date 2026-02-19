@@ -6,11 +6,12 @@ import OwnerOrdersScreen from '../../screens/owner/OwnerOrdersScreen';
 import OwnerMenuScreen from '../../screens/owner/OwnerMenuScreen';
 import OwnerSettingsScreen from '../../screens/owner/OwnerSettingsScreen';
 import Icon from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<OwnerTabParamList>();
 
 export default function OwnerTabs() {
+  const { colors } = useTheme();
   return (
     <Tab.Navigator
       screenOptions={{

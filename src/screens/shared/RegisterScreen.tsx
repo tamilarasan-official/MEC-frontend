@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
@@ -8,8 +8,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { register } from '../../store/slices/authSlice';
-import { colors } from '../../theme/colors';
-import Icon from 'react-native-vector-icons/Ionicons';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
+import Icon from '@react-native-vector-icons/ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
@@ -24,6 +25,8 @@ const years = [
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
 export default function RegisterScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [name, setName] = useState('');
   const [regNo, setRegNo] = useState('');
   const [phone, setPhone] = useState('');
@@ -297,7 +300,7 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flexGrow: 1, padding: 24, paddingTop: 48 },
   header: { alignItems: 'center', marginBottom: 24 },

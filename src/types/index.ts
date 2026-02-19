@@ -266,7 +266,7 @@ export type AuthStackParamList = {
 export type StudentTabParamList = {
   Home: undefined;
   Orders: undefined;
-  Profile: undefined;
+  Scanner: undefined;
 };
 
 export type StudentHomeStackParamList = {
@@ -276,6 +276,11 @@ export type StudentHomeStackParamList = {
   Cart: undefined;
   OrderHistory: undefined;
   Leaderboard: undefined;
+  Profile: undefined;
+  Notifications: undefined;
+  NotificationSettings: undefined;
+  PrivacySecurity: undefined;
+  HelpSupport: undefined;
 };
 
 export type CaptainTabParamList = {

@@ -56,7 +56,9 @@ export const fetchShopCategories = createAsyncThunk(
   async (shopId: string, { rejectWithValue }) => {
     try {
       const res = await api.get(`/shops/${shopId}/categories`);
-      return (res.data.data || res.data) as string[];
+      const raw = res.data.data || res.data;
+      // API may return category objects — extract name strings
+      return (Array.isArray(raw) ? raw.map((c: any) => typeof c === 'string' ? c : c.name) : []) as string[];
     } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
   },
 );

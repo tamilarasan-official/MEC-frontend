@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Animated,
 } from 'react-native';
 import Icon from './Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import orderService from '../../services/orderService';
 import { Order, OrderStatus } from '../../types';
 
@@ -13,15 +14,16 @@ interface ScannedOrderModalProps {
   onActionComplete: () => void;
 }
 
-const statusConfig: Record<string, { icon: string; color: string; bg: string }> = {
-  pending: { icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
-  preparing: { icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
-  ready: { icon: 'checkmark-circle', color: colors.green500, bg: colors.greenBg },
-  completed: { icon: 'checkmark-done', color: colors.primary, bg: colors.successBg },
-  cancelled: { icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
-};
-
 export function ScannedOrderModal({ orderId, onClose, onActionComplete }: ScannedOrderModalProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const statusConfig: Record<string, { icon: string; color: string; bg: string }> = useMemo(() => ({
+    pending: { icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
+    preparing: { icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
+    ready: { icon: 'checkmark-circle', color: colors.green500, bg: colors.greenBg },
+    completed: { icon: 'checkmark-done', color: colors.primary, bg: colors.successBg },
+    cancelled: { icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
+  }), [colors]);
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
               <View style={styles.tokenRow}>
                 <View>
                   <Text style={styles.tokenText}>#{order.pickupToken}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                  <View style={styles.tokenDateRow}>
                     <Icon name="time-outline" size={14} color={colors.mutedForeground} />
                     <Text style={styles.dateText}>
                       {new Date(order.createdAt).toLocaleString('en-IN', {
@@ -149,10 +151,10 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                     <View style={styles.itemImg}>
                       <Icon name="restaurant-outline" size={16} color={colors.mutedForeground} />
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={styles.flex1}>
                       <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
                       <Text style={styles.itemQty}>
-                        <Text style={{ color: colors.primary, fontWeight: '600' }}>{item.quantity}x</Text>
+                        <Text style={styles.itemQtyHighlight}>{item.quantity}x</Text>
                         {' '}@ Rs.{item.offerPrice || item.price}
                       </Text>
                     </View>
@@ -176,7 +178,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
         {order && (
           <View style={styles.actions}>
             {order.status === 'pending' && (
-              <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={styles.pendingActionRow}>
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.rejectBtn]}
                   onPress={() => handleAction('cancelled')}
@@ -192,7 +194,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: colors.blue[500], flex: 1 }]}
+                  style={[styles.actionBtn, styles.prepareBtn]}
                   onPress={() => handleAction('preparing')}
                   disabled={actionLoading}
                 >
@@ -201,7 +203,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                   ) : (
                     <>
                       <Icon name="restaurant-outline" size={16} color="#fff" />
-                      <Text style={[styles.actionBtnText, { color: '#fff' }]}>Start Preparing</Text>
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextWhite]}>Start Preparing</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -218,7 +220,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                 ) : (
                   <>
                     <Icon name="checkmark-circle" size={16} color="#fff" />
-                    <Text style={[styles.actionBtnText, { color: '#fff' }]}>Mark Ready</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextWhite]}>Mark Ready</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -234,7 +236,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                 ) : (
                   <>
                     <Icon name="checkmark-done" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, { color: '#fff', fontSize: 16, fontWeight: '700' }]}>Quick Complete</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextComplete]}>Quick Complete</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -251,7 +253,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
   modal: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -326,4 +328,11 @@ const styles = StyleSheet.create({
     flex: 1, borderWidth: 1, borderColor: colors.destructive, backgroundColor: 'transparent',
   },
   actionBtnText: { fontSize: 14, fontWeight: '600' },
+  tokenDateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  flex1: { flex: 1 },
+  itemQtyHighlight: { color: colors.primary, fontWeight: '600' },
+  pendingActionRow: { flexDirection: 'row', gap: 12 },
+  prepareBtn: { backgroundColor: colors.blue[500], flex: 1 },
+  actionBtnTextWhite: { color: '#fff' },
+  actionBtnTextComplete: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

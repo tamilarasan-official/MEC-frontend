@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, Alert, Modal, TextInput, ScrollView,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { PaymentRequest } from '../../types';
 import * as saService from '../../services/superadminService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -13,12 +14,14 @@ const STATUS_COLORS: Record<string, string> = { active: '#10b981', closed: '#636
 const DEPARTMENTS = ['CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AIDS', 'AIML'];
 
 export default function SAPaymentsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('active');
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [_totalPages, setTotalPages] = useState(1);
 
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
@@ -123,7 +126,7 @@ export default function SAPaymentsScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.reqBtn} onPress={() => handleClose(req, 'closed')}>
               <Icon name="checkmark-circle-outline" size={14} color="#10b981" />
-              <Text style={[styles.reqBtnText, { color: '#10b981' }]}>Close</Text>
+              <Text style={[styles.reqBtnText, styles.reqBtnTextSuccess]}>Close</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.reqBtn} onPress={() => handleClose(req, 'cancelled')}>
               <Icon name="close-circle-outline" size={14} color={colors.danger} />
@@ -218,7 +221,7 @@ export default function SAPaymentsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 50, paddingBottom: 8 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
@@ -248,6 +251,7 @@ const styles = StyleSheet.create({
   reqActions: { flexDirection: 'row', marginTop: 10, gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 },
   reqBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.background },
   reqBtnText: { fontSize: 12, fontWeight: '600' },
+  reqBtnTextSuccess: { color: '#10b981' },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalScroll: { maxHeight: '85%', backgroundColor: colors.card, borderRadius: 20 },

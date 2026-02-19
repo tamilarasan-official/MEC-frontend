@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, RefreshControl, Switch, Modal, Alert, KeyboardAvoidingView, Platform,
@@ -10,7 +10,8 @@ import {
   toggleItemAvailability, setItemOffer, removeItemOffer,
 } from '../../store/slices/menuSlice';
 import Icon from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { FoodItem } from '../../types';
 import { CATEGORIES } from '../../constants';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -18,6 +19,8 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 type ViewMode = 'grid' | 'list';
 
 export default function OwnerMenuScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const ownerMenuItems = useSelector((s: RootState) => s.menu.ownerMenuItems);
   const isLoading = useSelector((s: RootState) => s.menu.isLoading);
@@ -141,12 +144,12 @@ export default function OwnerMenuScreen() {
 
       {/* Items List */}
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16 }}
+        style={styles.flex1}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {isLoading && filtered.length === 0 ? (
-          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 60 }} />
+          <ActivityIndicator size="large" color={colors.primary} style={styles.loaderMargin} />
         ) : filtered.length === 0 ? (
           <View style={styles.empty}>
             <Icon name="restaurant-outline" size={48} color={colors.mutedForeground} />
@@ -169,7 +172,7 @@ export default function OwnerMenuScreen() {
             />
           ))
         )}
-        <View style={{ height: 100 }} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* Add/Edit Modal */}
@@ -231,22 +234,24 @@ function MenuItemCard({
   onOffer: (i: FoodItem) => void;
   onRemoveOffer: (i: FoodItem) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={[styles.card, !item.isAvailable && styles.cardUnavailable]}>
       <View style={styles.cardTop}>
         {/* Food icon & name */}
         <View style={styles.cardInfo}>
-          <View style={[styles.vegBadge, { backgroundColor: item.isVeg ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)' }]}>
+          <View style={[styles.vegBadge, item.isVeg ? styles.vegBadgeBgVeg : styles.vegBadgeBgNonVeg]}>
             <View style={[styles.vegDot, { backgroundColor: item.isVeg ? colors.primary : colors.destructive }]} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={styles.flex1}>
             <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
             <Text style={styles.itemCategory}>{item.category}</Text>
           </View>
         </View>
 
         {/* Price */}
-        <View style={{ alignItems: 'flex-end' }}>
+        <View style={styles.priceContainer}>
           {item.isOffer && item.offerPrice ? (
             <>
               <Text style={styles.originalPrice}>Rs.{item.price}</Text>
@@ -306,6 +311,8 @@ function AddEditModal({
   onClose: () => void;
   onSave: (data: Partial<FoodItem>) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -362,28 +369,28 @@ function AddEditModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 14, paddingBottom: 20 }}>
+          <ScrollView style={styles.flex1} contentContainerStyle={styles.formScrollContent}>
             <View>
               <Text style={styles.fieldLabel}>Name *</Text>
               <TextInput style={styles.fieldInput} value={name} onChangeText={setName} placeholder="Item name" placeholderTextColor={colors.mutedForeground} />
             </View>
             <View>
               <Text style={styles.fieldLabel}>Description</Text>
-              <TextInput style={[styles.fieldInput, { height: 70, textAlignVertical: 'top' }]} value={description} onChangeText={setDescription} placeholder="Description" placeholderTextColor={colors.mutedForeground} multiline />
+              <TextInput style={[styles.fieldInput, styles.fieldInputMultiline]} value={description} onChangeText={setDescription} placeholder="Description" placeholderTextColor={colors.mutedForeground} multiline />
             </View>
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <View style={{ flex: 1 }}>
+            <View style={styles.priceRow}>
+              <View style={styles.flex1}>
                 <Text style={styles.fieldLabel}>Price *</Text>
                 <TextInput style={styles.fieldInput} value={price} onChangeText={setPrice} placeholder="0" placeholderTextColor={colors.mutedForeground} keyboardType="numeric" />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.flex1}>
                 <Text style={styles.fieldLabel}>Cost Price</Text>
                 <TextInput style={styles.fieldInput} value={costPrice} onChangeText={setCostPrice} placeholder="0" placeholderTextColor={colors.mutedForeground} keyboardType="numeric" />
               </View>
             </View>
             <View>
               <Text style={styles.fieldLabel}>Category *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catScrollContent}>
                 {CATEGORIES.map(cat => (
                   <TouchableOpacity
                     key={cat}
@@ -395,7 +402,7 @@ function AddEditModal({
                 ))}
               </ScrollView>
               <TextInput
-                style={[styles.fieldInput, { marginTop: 8 }]}
+                style={[styles.fieldInput, styles.fieldInputSpaced]}
                 value={category}
                 onChangeText={setCategory}
                 placeholder="Or type custom category"
@@ -425,7 +432,7 @@ function AddEditModal({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   statsRow: {
     flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8,
@@ -541,4 +548,16 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginTop: 10, marginBottom: Platform.OS === 'ios' ? 30 : 16,
   },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  flex1: { flex: 1 },
+  scrollContent: { padding: 16 },
+  loaderMargin: { marginTop: 60 },
+  bottomSpacer: { height: 100 },
+  vegBadgeBgVeg: { backgroundColor: 'rgba(16,185,129,0.15)' },
+  vegBadgeBgNonVeg: { backgroundColor: 'rgba(239,68,68,0.15)' },
+  priceContainer: { alignItems: 'flex-end' },
+  formScrollContent: { gap: 14, paddingBottom: 20 },
+  fieldInputMultiline: { height: 70, textAlignVertical: 'top' },
+  priceRow: { flexDirection: 'row', gap: 12 },
+  catScrollContent: { gap: 6 },
+  fieldInputSpaced: { marginTop: 8 },
 });

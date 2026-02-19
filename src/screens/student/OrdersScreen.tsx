@@ -4,7 +4,8 @@ import {
 } from 'react-native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyOrders } from '../../store/slices/ordersSlice';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { Order } from '../../types';
@@ -22,6 +23,8 @@ const statusConfig: Record<string, { icon: string; label: string; bg: string; co
 };
 
 export default function OrdersScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const { orders: myOrders, isLoading: loading } = useAppSelector(s => s.orders);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,8 +105,7 @@ export default function OrdersScreen() {
 
                 {/* Order Info */}
                 <View style={styles.orderHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.orderId} numberOfLines={1}>#{order.id.slice(-8)}</Text>
+                  <View style={styles.flex1}>
                     <Text style={styles.orderDate}>
                       {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </Text>
@@ -120,12 +122,11 @@ export default function OrdersScreen() {
                     {item.image ? (
                       <Image source={{ uri: item.image }} style={styles.itemImage} />
                     ) : (
-                      <View style={[styles.itemImage, { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' }]}>
+                      <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
                         <Icon name="restaurant-outline" size={16} color={colors.textMuted} />
                       </View>
                     )}
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                    <View style={styles.flex1}>
                       <Text style={styles.itemQty}>x{item.quantity}</Text>
                     </View>
                     <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
@@ -140,7 +141,7 @@ export default function OrdersScreen() {
             );
           })
         )}
-        <View style={{ height: 100 }} />
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* QR Modal */}
@@ -152,7 +153,7 @@ export default function OrdersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { fontSize: 14, color: colors.textMuted },
@@ -188,4 +189,7 @@ const styles = StyleSheet.create({
   orderFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
   orderTotalLabel: { fontSize: 13, color: colors.textMuted },
   orderTotalValue: { fontSize: 16, fontWeight: '700', color: colors.primary },
+  flex1: { flex: 1 },
+  itemImagePlaceholder: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
+  bottomSpacer: { height: 100 },
 });

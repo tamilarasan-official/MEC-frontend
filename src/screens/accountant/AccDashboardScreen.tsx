@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector } from '../../store';
 import * as accountantService from '../../services/accountantService';
 import { AccountantDashboardStats, Transaction } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function AccDashboardScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const user = useAppSelector(s => s.auth.user);
   const [stats, setStats] = useState<AccountantDashboardStats | null>(null);
   const [recentTxns, setRecentTxns] = useState<Transaction[]>([]);
@@ -71,7 +74,7 @@ export default function AccDashboardScreen() {
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Pending Approvals</Text>
-          <Text style={[styles.summaryValue, { color: '#f59e0b' }]}>{stats?.pendingApprovals ?? 0}</Text>
+          <Text style={[styles.summaryValue, styles.summaryValueWarning]}>{stats?.pendingApprovals ?? 0}</Text>
         </View>
       </View>
 
@@ -81,7 +84,7 @@ export default function AccDashboardScreen() {
       ) : (
         recentTxns.map(txn => (
           <View key={txn.id} style={styles.txnRow}>
-            <View style={[styles.txnIcon, { backgroundColor: txn.type === 'credit' ? '#dcfce7' : '#fef2f2' }]}>
+            <View style={[styles.txnIcon, txn.type === 'credit' ? styles.txnIconCredit : styles.txnIconDebit]}>
               <Icon name={txn.type === 'credit' ? 'arrow-down' : 'arrow-up'} size={16}
                 color={txn.type === 'credit' ? '#16a34a' : '#ef4444'} />
             </View>
@@ -89,7 +92,7 @@ export default function AccDashboardScreen() {
               <Text style={styles.txnDesc} numberOfLines={1}>{txn.description || txn.type}</Text>
               <Text style={styles.txnTime}>{new Date(txn.createdAt).toLocaleString()}</Text>
             </View>
-            <Text style={[styles.txnAmount, { color: txn.type === 'credit' ? '#16a34a' : '#ef4444' }]}>
+            <Text style={[styles.txnAmount, txn.type === 'credit' ? styles.txnAmountCredit : styles.txnAmountDebit]}>
               {txn.type === 'credit' ? '+' : '-'}₹{txn.amount}
             </Text>
           </View>
@@ -100,7 +103,7 @@ export default function AccDashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -116,11 +119,16 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
   summaryLabel: { fontSize: 14, color: colors.textMuted },
   summaryValue: { fontSize: 14, fontWeight: '700', color: colors.text },
+  summaryValueWarning: { color: '#f59e0b' },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 20 },
   txnRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
   txnIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  txnIconCredit: { backgroundColor: '#dcfce7' },
+  txnIconDebit: { backgroundColor: '#fef2f2' },
   txnInfo: { flex: 1, marginLeft: 12 },
   txnDesc: { fontSize: 14, fontWeight: '600', color: colors.text },
   txnTime: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   txnAmount: { fontSize: 15, fontWeight: '700' },
+  txnAmountCredit: { color: '#16a34a' },
+  txnAmountDebit: { color: '#ef4444' },
 });

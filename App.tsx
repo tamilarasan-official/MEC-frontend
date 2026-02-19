@@ -4,33 +4,29 @@
  */
 
 import React from 'react';
-import { StatusBar, useColorScheme } from 'react-native';
+import { StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { store } from './src/store';
 import { RootNavigator } from './src/navigation';
-import { colors } from './src/theme/colors';
+import { ThemeProvider } from './src/theme/ThemeContext';
 import ErrorBoundary from './src/components/common/ErrorBoundary';
 
 function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Provider store={store}>
+        <ThemeProvider>
         <SafeAreaProvider>
           <ErrorBoundary>
           <NavigationContainer>
-            <StatusBar
-              barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-              backgroundColor={colors.white}
-            />
             <RootNavigator />
           </NavigationContainer>
           </ErrorBoundary>
         </SafeAreaProvider>
+        </ThemeProvider>
       </Provider>
     </GestureHandlerRootView>
   );

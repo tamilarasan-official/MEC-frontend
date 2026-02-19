@@ -4,11 +4,12 @@ import { CaptainTabParamList } from '../../types';
 import CaptainHomeScreen from '../../screens/captain/CaptainHomeScreen';
 import CaptainHistoryScreen from '../../screens/captain/CaptainHistoryScreen';
 import Icon from '../../components/common/Icon';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<CaptainTabParamList>();
 
 export default function CaptainTabs() {
+  const { colors } = useTheme();
   return (
     <Tab.Navigator
       screenOptions={{

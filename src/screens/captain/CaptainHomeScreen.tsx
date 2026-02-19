@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
@@ -7,10 +7,14 @@ import { RootState, AppDispatch } from '../../store';
 import { fetchActiveShopOrders } from '../../store/slices/ordersSlice';
 import { fetchDashboardStats } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
-import { colors, statusColors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
+import { statusColors } from '../../theme/colors';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 export default function CaptainHomeScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((s: RootState) => s.auth.user);
   const shopOrders = useSelector((s: RootState) => s.orders.shopOrders);
@@ -78,16 +82,16 @@ export default function CaptainHomeScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.statsRow}>
-          <StatItem value={inProgressCount} label="In Progress" color={colors.blue[500]} />
-          <StatItem value={completedToday} label="Completed" color={colors.primary} />
-          <StatItem value={cancelledToday} label="Rejected" color={colors.destructive} />
-          <StatItem value={totalOrders} label="Total" color={colors.foreground} />
+          <StatItem value={inProgressCount} label="In Progress" color={colors.blue[500]} styles={styles} />
+          <StatItem value={completedToday} label="Completed" color={colors.primary} styles={styles} />
+          <StatItem value={cancelledToday} label="Rejected" color={colors.destructive} styles={styles} />
+          <StatItem value={totalOrders} label="Total" color={colors.foreground} styles={styles} />
         </View>
       </View>
 
       {/* Active Orders Preview */}
       {activeOrders.length > 0 && (
-        <View style={{ marginTop: 20 }}>
+        <View style={styles.activeOrdersSection}>
           <Text style={styles.sectionTitle}>ACTIVE ORDERS</Text>
           {activeOrders.slice(0, 5).map(order => (
             <View key={order.id} style={styles.orderCard}>
@@ -121,13 +125,13 @@ export default function CaptainHomeScreen() {
           <Text style={styles.emptySubtitle}>No active orders right now</Text>
         </View>
       )}
-      <View style={{ height: 100 }} />
+      <View style={styles.bottomSpacer} />
     </ScrollView>
     </ScreenWrapper>
   );
 }
 
-function StatItem({ value, label, color }: { value: number; label: string; color: string }) {
+function StatItem({ value, label, color, styles }: { value: number; label: string; color: string; styles: any }) {
   return (
     <View style={styles.statItem}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
@@ -143,7 +147,7 @@ function getTimeOfDay() {
   return 'evening';
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   contentContainer: { padding: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -193,4 +197,6 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.foreground },
   emptySubtitle: { fontSize: 13, color: colors.mutedForeground },
+  activeOrdersSection: { marginTop: 20 },
+  bottomSpacer: { height: 100 },
 });

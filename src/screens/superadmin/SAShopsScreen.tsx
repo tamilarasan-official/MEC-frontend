@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, Alert, Modal, TextInput,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { Shop, ShopCategory } from '../../types';
 import * as saService from '../../services/superadminService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -17,6 +18,8 @@ const CATEGORIES: { key: ShopCategory; icon: string; label: string }[] = [
 ];
 
 export default function SAShopsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -99,8 +102,8 @@ export default function SAShopsScreen() {
         <View style={styles.shopInfo}>
           <Text style={styles.shopName}>{shop.name}</Text>
           <View style={styles.badgeRow}>
-            <View style={[styles.statusBadge, { backgroundColor: shop.isActive ? '#10b98120' : '#ef444420' }]}>
-              <Text style={[styles.statusText, { color: shop.isActive ? '#10b981' : '#ef4444' }]}>
+            <View style={[styles.statusBadge, shop.isActive ? styles.statusBadgeActive : styles.statusBadgeInactive]}>
+              <Text style={[styles.statusText, shop.isActive ? styles.statusTextActive : styles.statusTextInactive]}>
                 {shop.isActive ? 'Active' : 'Inactive'}
               </Text>
             </View>
@@ -118,7 +121,7 @@ export default function SAShopsScreen() {
         </TouchableOpacity>
         <TouchableOpacity style={styles.shopBtn} onPress={() => handleToggle(shop)}>
           <Icon name={shop.isActive ? 'pause-outline' : 'play-outline'} size={16} color="#f59e0b" />
-          <Text style={[styles.shopBtnText, { color: '#f59e0b' }]}>{shop.isActive ? 'Disable' : 'Enable'}</Text>
+          <Text style={[styles.shopBtnText, styles.shopBtnTextWarning]}>{shop.isActive ? 'Disable' : 'Enable'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.shopBtn} onPress={() => handleDelete(shop)}>
           <Icon name="trash-outline" size={16} color={colors.danger} />
@@ -192,7 +195,7 @@ export default function SAShopsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 50, paddingBottom: 12 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
@@ -209,12 +212,17 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', gap: 6, marginTop: 4 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   statusText: { fontSize: 11, fontWeight: '700' },
+  statusBadgeActive: { backgroundColor: '#10b98120' },
+  statusBadgeInactive: { backgroundColor: '#ef444420' },
+  statusTextActive: { color: '#10b981' },
+  statusTextInactive: { color: '#ef4444' },
   catBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.border },
   catText: { fontSize: 11, color: colors.textMuted, textTransform: 'capitalize' },
   shopDesc: { fontSize: 13, color: colors.textMuted, marginTop: 8 },
   shopActions: { flexDirection: 'row', marginTop: 12, gap: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 },
   shopBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.background },
   shopBtnText: { fontSize: 12, fontWeight: '600' },
+  shopBtnTextWarning: { color: '#f59e0b' },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: colors.card, borderRadius: 20, padding: 24, maxHeight: '85%' },

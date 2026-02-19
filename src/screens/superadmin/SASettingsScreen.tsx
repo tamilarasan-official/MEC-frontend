@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert, ActivityIndicator, FlatList,
+  Alert, ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { logout } from '../../store/slices/authSlice';
 import * as superadminService from '../../services/superadminService';
@@ -14,13 +15,14 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 type Tab = 'profile' | 'security' | 'diagnostics';
 
 export default function SASettingsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const user = useAppSelector(s => s.auth.user);
   const dispatch = useAppDispatch();
   const [tab, setTab] = useState<Tab>('profile');
   const [sessions, setSessions] = useState<LoginSession[]>([]);
   const [diagResult, setDiagResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -52,7 +54,7 @@ export default function SASettingsScreen() {
   useEffect(() => {
     if (tab === 'security') loadSessions();
     if (tab === 'diagnostics') runDiagnostics();
-  }, [tab]);
+  }, [tab, loadSessions]);
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure?', [
@@ -104,7 +106,7 @@ export default function SASettingsScreen() {
   const renderSecurity = () => (
     <View>
       <Text style={styles.sectionTitle}>Login Sessions</Text>
-      {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} /> :
+      {loading ? <ActivityIndicator color={colors.primary} style={styles.loaderMargin} /> :
         sessions.length === 0 ? <Text style={styles.emptyText}>No sessions found</Text> :
           sessions.map(s => (
             <View key={s._id} style={styles.sessionCard}>
@@ -129,7 +131,7 @@ export default function SASettingsScreen() {
         <Text style={styles.actionBtnText}>Run Diagnostics</Text>
       </TouchableOpacity>
 
-      {loading && !diagResult ? <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} /> : null}
+      {loading && !diagResult ? <ActivityIndicator color={colors.primary} style={styles.loaderMargin} /> : null}
 
       {diagResult && (
         <View style={styles.diagCard}>
@@ -140,15 +142,15 @@ export default function SASettingsScreen() {
           </View>
           <View style={styles.diagRow}>
             <Text style={styles.diagLabel}>Linked</Text>
-            <Text style={[styles.diagValue, { color: '#10b981' }]}>{diagResult.linkedOwners ?? '-'}</Text>
+            <Text style={[styles.diagValue, styles.diagValueLinked]}>{diagResult.linkedOwners ?? '-'}</Text>
           </View>
           <View style={styles.diagRow}>
             <Text style={styles.diagLabel}>Unlinked</Text>
-            <Text style={[styles.diagValue, { color: '#ef4444' }]}>{diagResult.unlinkedOwners ?? '-'}</Text>
+            <Text style={[styles.diagValue, styles.diagValueUnlinked]}>{diagResult.unlinkedOwners ?? '-'}</Text>
           </View>
 
           {diagResult.unlinkedOwners > 0 && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#ef4444', marginTop: 12 }]} onPress={fixLinks}>
+            <TouchableOpacity style={[styles.actionBtn, styles.dangerBtn]} onPress={fixLinks}>
               <Icon name="hammer-outline" size={18} color="#fff" />
               <Text style={styles.actionBtnText}>Fix Links</Text>
             </TouchableOpacity>
@@ -180,7 +182,7 @@ export default function SASettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 50, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 16 },
@@ -216,4 +218,8 @@ const styles = StyleSheet.create({
   diagRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
   diagLabel: { fontSize: 14, color: colors.textMuted },
   diagValue: { fontSize: 14, fontWeight: '700', color: colors.text },
+  diagValueLinked: { color: '#10b981' },
+  diagValueUnlinked: { color: '#ef4444' },
+  dangerBtn: { backgroundColor: '#ef4444', marginTop: 12 },
+  loaderMargin: { marginTop: 20 },
 });

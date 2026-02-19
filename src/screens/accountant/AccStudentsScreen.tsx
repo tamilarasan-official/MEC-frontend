@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { colors } from '../../theme/colors';
+import Icon from '../../components/common/Icon';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { User } from '../../types';
 import * as accountantService from '../../services/accountantService';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -12,6 +13,8 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 const DEPARTMENTS = ['All', 'CSE', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT', 'AIDS', 'AIML'];
 
 export default function AccStudentsScreen({ navigation }: any) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [students, setStudents] = useState<User[]>([]);
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('All');
@@ -50,7 +53,7 @@ export default function AccStudentsScreen({ navigation }: any) {
         {item.phone && <Text style={styles.studentDetail}>📱 {item.phone}</Text>}
       </View>
       <View style={styles.balanceBox}>
-        <Text style={[styles.balance, { color: (item.balance || 0) >= 0 ? '#16a34a' : '#ef4444' }]}>
+        <Text style={[styles.balance, (item.balance || 0) >= 0 ? styles.balancePositive : styles.balanceNegative]}>
           ₹{(item.balance || 0).toLocaleString()}
         </Text>
         <Text style={styles.balanceLabel}>Balance</Text>
@@ -101,7 +104,7 @@ export default function AccStudentsScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { paddingHorizontal: 20, paddingTop: 50 },
@@ -126,4 +129,6 @@ const styles = StyleSheet.create({
   balance: { fontSize: 16, fontWeight: '800' },
   balanceLabel: { fontSize: 10, color: colors.textMuted },
   emptyText: { color: colors.textMuted, textAlign: 'center', marginTop: 40, fontSize: 14 },
+  balancePositive: { color: '#16a34a' },
+  balanceNegative: { color: '#ef4444' },
 });
