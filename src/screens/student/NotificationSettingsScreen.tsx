@@ -31,7 +31,7 @@ const PREFS_INITIAL: NotifPref[] = [
   {
     key: 'promotions', title: 'Promotions & Offers',
     subtitle: 'Receive special deals and discount alerts',
-    icon: 'pricetag', iconColor: '#a855f7', iconBg: 'rgba(168,85,247,0.12)',
+    icon: 'notifications', iconColor: '#a855f7', iconBg: 'rgba(168,85,247,0.12)',
     enabled: false,
   },
   {
@@ -43,7 +43,7 @@ const PREFS_INITIAL: NotifPref[] = [
   {
     key: 'newFeatures', title: 'New Features',
     subtitle: 'Be the first to know about app updates',
-    icon: 'sparkles', iconColor: '#f59e0b', iconBg: 'rgba(245,158,11,0.12)',
+    icon: 'notifications', iconColor: '#f59e0b', iconBg: 'rgba(245,158,11,0.12)',
     enabled: true,
   },
 ];
@@ -98,7 +98,7 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
           <View style={[styles.prefCard, { opacity: 0.6 }]}>
             <View style={styles.prefLeft}>
               <View style={[styles.prefIcon, { backgroundColor: 'rgba(107,114,128,0.12)' }]}>
-                <Icon name="moon-outline" size={18} color="#6b7280" />
+                <Icon name="notifications-off-outline" size={18} color="#6b7280" />
               </View>
               <View style={styles.prefInfo}>
                 <Text style={styles.prefTitle}>Quiet Hours</Text>

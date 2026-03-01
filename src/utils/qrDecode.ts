@@ -9,6 +9,41 @@
  * - URL with ?code=<base64>
  */
 
+export interface QRPaymentData {
+  type: 'shop_qr_payment';
+  paymentId: string;
+  title: string;
+  amount: number;
+  shopId: string;
+  shopName: string;
+}
+
+/**
+ * Detect if a scanned QR code is a shop QR payment.
+ * Returns the payment data if valid, null otherwise.
+ */
+export function decodeQrPaymentData(scanned: string): QRPaymentData | null {
+  try {
+    const parsed = JSON.parse(scanned.trim());
+    if (
+      parsed &&
+      parsed.type === 'shop_qr_payment' &&
+      typeof parsed.paymentId === 'string' &&
+      typeof parsed.amount === 'number'
+    ) {
+      return {
+        type: 'shop_qr_payment',
+        paymentId: parsed.paymentId,
+        title: parsed.title || '',
+        amount: parsed.amount,
+        shopId: parsed.shopId || '',
+        shopName: parsed.shopName || '',
+      };
+    }
+  } catch { /* not a payment QR */ }
+  return null;
+}
+
 function extractOrderId(data: Record<string, unknown>): string | null {
   const id = data.order_id || data.orderId || data.o;
   return typeof id === 'string' ? id : null;

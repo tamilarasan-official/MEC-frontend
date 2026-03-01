@@ -1,16 +1,24 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { Transaction, DashboardStats, AnalyticsData, AppNotification } from '../../types';
+import { Transaction, DashboardStats, AnalyticsData, AppNotification, QRPayment } from '../../types';
 import api from '../../services/api';
+
+interface OrderStatusPopupData {
+  status: 'preparing' | 'ready' | 'completed' | 'cancelled';
+  orderNumber: string;
+}
 
 interface UserState {
   balance: number;
   transactions: Transaction[];
   dashboardStats: DashboardStats | null;
   analytics: AnalyticsData | null;
-  shopDetails: { isActive: boolean; name: string } | null;
+  shopDetails: { isActive: boolean; name: string; category?: string; canGenerateQR?: boolean } | null;
   notifications: AppNotification[];
+  orderStatusPopup: OrderStatusPopupData | null;
   dietFilter: 'all' | 'veg' | 'nonveg';
   userMode: 'eat' | 'work';
+  qrPayments: QRPayment[];
+  qrPaymentsLoading: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -22,8 +30,11 @@ const initialState: UserState = {
   analytics: null,
   shopDetails: null,
   notifications: [],
+  orderStatusPopup: null,
   dietFilter: 'all',
   userMode: 'work',
+  qrPayments: [],
+  qrPaymentsLoading: false,
   isLoading: false,
   error: null,
 };
@@ -59,7 +70,7 @@ export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (_, 
 export const fetchShopDetails = createAsyncThunk('user/fetchShopDetails', async (_, { rejectWithValue }) => {
   try {
     const res = await api.get('/owner/shop');
-    return res.data.data as { isActive: boolean; name: string };
+    return res.data.data as { isActive: boolean; name: string; category: string; canGenerateQR: boolean };
   } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
@@ -70,6 +81,24 @@ export const toggleShopStatus = createAsyncThunk('user/toggleShopStatus', async 
   } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
+export const fetchQRPayments = createAsyncThunk('user/fetchQRPayments', async (_, { rejectWithValue }) => {
+  try {
+    const res = await api.get('/owner/qr-payments');
+    const data = res.data.data;
+    return (data?.payments || data || []) as QRPayment[];
+  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+});
+
+export const createQRPayment = createAsyncThunk(
+  'user/createQRPayment',
+  async (payload: { title: string; description: string; amount: number }, { rejectWithValue }) => {
+    try {
+      const res = await api.post('/owner/qr-payments', payload);
+      return res.data.data as QRPayment;
+    } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed to create QR payment'); }
+  }
+);
+
 const userSlice = createSlice({
   name: 'user',
   initialState,
@@ -78,7 +107,9 @@ const userSlice = createSlice({
     setBalance: (s, a: PayloadAction<number>) => { s.balance = a.payload; },
     setDietFilter: (s, a: PayloadAction<'all' | 'veg' | 'nonveg'>) => { s.dietFilter = a.payload; },
     setUserMode: (s, a: PayloadAction<'eat' | 'work'>) => { s.userMode = a.payload; },
-    setOrderStatusPopup: (_s, _a: PayloadAction<{ status: string; orderNumber: string } | null>) => { /* handled via component state */ },
+    setOrderStatusPopup: (s, a: PayloadAction<{ status: string; orderNumber: string } | null>) => {
+      s.orderStatusPopup = a.payload as OrderStatusPopupData | null;
+    },
     addNotification: (s, a: PayloadAction<AppNotification>) => { s.notifications.unshift(a.payload); },
     markNotificationRead: (s, a: PayloadAction<string>) => {
       const n = s.notifications.find(x => x.id === a.payload);
@@ -96,6 +127,10 @@ const userSlice = createSlice({
     builder.addCase(toggleShopStatus.fulfilled, (s, a) => {
       if (s.shopDetails) s.shopDetails.isActive = a.payload.isActive;
     });
+    builder.addCase(fetchQRPayments.pending, (s) => { s.qrPaymentsLoading = true; });
+    builder.addCase(fetchQRPayments.fulfilled, (s, a) => { s.qrPayments = a.payload; s.qrPaymentsLoading = false; });
+    builder.addCase(fetchQRPayments.rejected, (s) => { s.qrPaymentsLoading = false; });
+    builder.addCase(createQRPayment.fulfilled, (s, a) => { s.qrPayments.unshift(a.payload); });
   },
 });
 

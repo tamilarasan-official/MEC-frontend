@@ -7,10 +7,10 @@ const authService = {
     return res.data.data;
   },
   sendOtp: async (phone: string): Promise<void> => {
-    await api.post('/auth/send-otp', { phone });
+    await api.post('/auth/send-otp', { phoneNumber: phone });
   },
   verifyOtp: async (phone: string, otp: string): Promise<LoginResponse> => {
-    const res = await api.post('/auth/verify-otp', { phone, otp, deviceId: `mobile-${Date.now()}` });
+    const res = await api.post('/auth/verify-otp', { phoneNumber: phone, otp, deviceId: `mobile-${Date.now()}` });
     return res.data.data;
   },
   register: async (data: RegisterData): Promise<{ user: User; message: string }> => {
@@ -30,7 +30,7 @@ const authService = {
     return res.data.data;
   },
   changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
-    await api.post('/auth/change-password', { currentPassword, newPassword });
+    await api.put('/auth/change-password', { oldPassword: currentPassword, newPassword });
   },
 };
 

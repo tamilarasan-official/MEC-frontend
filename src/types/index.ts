@@ -8,7 +8,7 @@ export type DietFilter = 'all' | 'veg' | 'nonveg';
 export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
 export type ServiceType = 'food' | 'laundry' | 'stationery';
 export type TransactionType = 'credit' | 'debit' | 'refund';
-export type ShopCategory = 'canteen' | 'laundry' | 'stationery' | 'other';
+export type ShopCategory = 'canteen' | 'classic' | 'bites' | 'laundry' | 'stationery' | 'other';
 
 // ---- User ----
 export interface User {
@@ -91,6 +91,7 @@ export interface Order {
   shopName?: string;
   status: OrderStatus;
   pickupToken: string;
+  isReadyServe?: boolean;
   createdAt: string;
   completedAt?: string;
   handledBy?: string;
@@ -170,31 +171,20 @@ export interface DashboardStats {
 
 // ---- Analytics ----
 export interface AnalyticsData {
-  revenue: {
-    thisMonth: number;
-    lastMonth: number;
-    growth: number;
-  };
-  profit: {
-    thisMonth: number;
-    margin: number;
-  };
-  orders: {
-    thisMonth: number;
-    lastMonth: number;
-  };
-  customers: {
-    unique: number;
-  };
+  thisMonthRevenue: number;
+  thisMonthProfit: number;
+  thisMonthOrders: number;
+  lastMonthRevenue: number;
+  revenueGrowth: number;
+  uniqueCustomers: number;
+  avgOrderValue: number;
+  totalCompletedOrders: number;
+  profitMargin: number;
   topItems: Array<{
+    id?: string;
     name: string;
-    count: number;
+    quantity: number;
     revenue: number;
-  }>;
-  revenueChart: Array<{
-    date: string;
-    thisMonth: number;
-    lastMonth: number;
   }>;
 }
 
@@ -254,8 +244,6 @@ export type RootStackParamList = {
   StudentMain: undefined;
   CaptainMain: undefined;
   OwnerMain: undefined;
-  SuperAdminMain: undefined;
-  AccountantMain: undefined;
 };
 
 export type AuthStackParamList = {
@@ -273,10 +261,13 @@ export type StudentHomeStackParamList = {
   Dashboard: undefined;
   Stores: undefined;
   Menu: { shopId: string; shopName: string };
+  Stationery: { shopId: string; shopName: string };
+  Offers: undefined;
   Cart: undefined;
   OrderHistory: undefined;
   Leaderboard: undefined;
   Profile: undefined;
+  Wallet: undefined;
   Notifications: undefined;
   NotificationSettings: undefined;
   PrivacySecurity: undefined;
@@ -285,33 +276,23 @@ export type StudentHomeStackParamList = {
 
 export type CaptainTabParamList = {
   Home: undefined;
+  PrepList: undefined;
   History: undefined;
+  EatFood: undefined;
+  EatOrders: undefined;
 };
 
 export type OwnerTabParamList = {
   Home: undefined;
-  Orders: undefined;
+  PrepList: undefined;
   Menu: undefined;
-  Settings: undefined;
-};
-
-export type SuperAdminTabParamList = {
-  Dashboard: undefined;
-  Users: undefined;
-  Shops: undefined;
-  Payments: undefined;
+  History: undefined;
   Analytics: undefined;
-  Settings: undefined;
+  StationeryDashboard: undefined;
+  EatFood: undefined;
+  EatOrders: undefined;
 };
 
-export type AccountantTabParamList = {
-  Dashboard: undefined;
-  Students: undefined;
-  Payments: undefined;
-  Payables: undefined;
-  Reports: undefined;
-  Settings: undefined;
-};
 
 // ---- SuperAdmin Types ----
 export interface SuperAdminDashboardStats {
@@ -344,6 +325,26 @@ export interface PaymentRequest {
   totalCollected: number;
   isVisibleOnDashboard: boolean;
   createdAt: string;
+}
+
+// ---- QR Payment (Owner) ----
+export interface QRPaymentPayer {
+  studentName: string;
+  studentRollNumber?: string;
+  amount: number;
+  paidAt: string;
+}
+
+export interface QRPayment {
+  id: string;
+  title: string;
+  description: string;
+  amount: number;
+  status: string;
+  paidCount: number;
+  totalCollected: number;
+  createdAt: string;
+  payers: QRPaymentPayer[];
 }
 
 export interface LoginSession {

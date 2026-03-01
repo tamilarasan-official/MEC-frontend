@@ -1,16 +1,28 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Image,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, Order } from '../../types';
 import orderService from '../../services/orderService';
+
+const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
+function resolveImageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${IMAGE_BASE}${url}`;
+}
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'OrderHistory'>;
+
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  completed: { label: 'Delivered', color: '#10b981', bg: 'rgba(16,185,129,0.12)', icon: 'checkmark-circle' },
+  cancelled: { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: 'close-circle' },
+};
 
 export default function OrderHistoryScreen({ navigation }: Props) {
   const { colors } = useTheme();
@@ -19,7 +31,6 @@ export default function OrderHistoryScreen({ navigation }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'completed' | 'cancelled'>('completed');
 
   const fetchOrders = async () => {
     try {
@@ -40,12 +51,30 @@ export default function OrderHistoryScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  const completedOrders = useMemo(() => orders.filter(o => o.status === 'completed'), [orders]);
-  const cancelledOrders = useMemo(() => orders.filter(o => o.status === 'cancelled'), [orders]);
-  const displayOrders = activeTab === 'completed' ? completedOrders : cancelledOrders;
+  const historyOrders = useMemo(
+    () => orders
+      .filter(o => o.status === 'completed' || o.status === 'cancelled')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [orders],
+  );
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const day = d.getDate();
+    const month = d.toLocaleDateString('en-IN', { month: 'short' });
+    const year = d.getFullYear();
+    const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase();
+    return `${day} ${month} ${year}, ${time}`;
+  };
 
   if (loading) {
-    return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View></ScreenWrapper>;
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      </ScreenWrapper>
+    );
   }
 
   return (
@@ -59,24 +88,10 @@ export default function OrderHistoryScreen({ navigation }: Props) {
           <View style={styles.headerSpacer} />
         </View>
 
-        <View style={styles.tabs}>
-          {(['completed', 'cancelled'] as const).map(tab => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
-              onPress={() => setActiveTab(tab)}
-              activeOpacity={0.7}>
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                {tab === 'completed' ? `Completed (${completedOrders.length})` : `Cancelled (${cancelledOrders.length})`}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         <ScrollView
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
-          {displayOrders.length === 0 ? (
+          {historyOrders.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIcon}>
                 <Icon name="cube-outline" size={36} color={colors.textSecondary} />
@@ -84,26 +99,49 @@ export default function OrderHistoryScreen({ navigation }: Props) {
               <Text style={styles.emptyText}>No past orders yet</Text>
             </View>
           ) : (
-            displayOrders.map(order => (
-              <View key={order.id} style={styles.orderCard}>
-                <View style={styles.orderHeader}>
-                  <Text style={styles.orderId}>#{order.id.slice(-8)}</Text>
-                  <Text style={styles.orderDate}>
-                    {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                </View>
-                {order.items.map((item, idx) => (
-                  <View key={`${order.id}-${idx}`} style={styles.orderItem}>
-                    <Text style={styles.itemName}>{item.name} x{item.quantity}</Text>
-                    <Text style={styles.itemPrice}>Rs.{(item.offerPrice ?? item.price) * item.quantity}</Text>
+            historyOrders.map(order => {
+              const statusConf = STATUS_CONFIG[order.status] || STATUS_CONFIG.completed;
+
+              return (
+                <View key={order.id} style={styles.orderCard}>
+                  {/* Order ID + Status Badge */}
+                  <View style={styles.orderTopRow}>
+                    <Text style={styles.orderId} numberOfLines={1}>#{order.id}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: statusConf.bg }]}>
+                      <Icon name={statusConf.icon} size={14} color={statusConf.color} />
+                      <Text style={[styles.statusText, { color: statusConf.color }]}>{statusConf.label}</Text>
+                    </View>
                   </View>
-                ))}
-                <View style={styles.orderFooter}>
-                  <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={styles.totalValue}>Rs.{order.total}</Text>
+
+                  {/* Date */}
+                  <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+
+                  {/* Items */}
+                  {order.items.map((item, idx) => (
+                    <View key={`${order.id}-${idx}`} style={styles.itemRow}>
+                      <View style={styles.itemIconWrap}>
+                        {item.image ? (
+                          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImage} />
+                        ) : (
+                          <Icon name="restaurant-outline" size={18} color={colors.textSecondary} />
+                        )}
+                      </View>
+                      <View style={styles.itemInfo}>
+                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.itemQty}>x{item.quantity}</Text>
+                      </View>
+                      <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                    </View>
+                  ))}
+
+                  {/* Total */}
+                  <View style={styles.orderFooter}>
+                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalValue}>Rs. {order.total}</Text>
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
           <View style={styles.bottomSpacer} />
         </ScrollView>
@@ -122,15 +160,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '700', color: c.text },
-  tabs: {
-    flexDirection: 'row', marginHorizontal: 16, borderRadius: 12, backgroundColor: c.card,
-    borderWidth: 1, borderColor: c.border, overflow: 'hidden', marginBottom: 12, marginTop: 8,
-  },
-  tab: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  tabActive: { backgroundColor: c.primary },
-  tabText: { fontSize: 13, fontWeight: '600', color: c.textSecondary },
-  tabTextActive: { color: '#fff' },
-  list: { padding: 16, paddingTop: 0 },
+  headerSpacer: { width: 36 },
+  list: { padding: 16 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyIcon: {
     width: 64, height: 64, borderRadius: 32, backgroundColor: c.card,
@@ -138,22 +169,40 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: c.border,
   },
   emptyText: { fontSize: 14, color: c.textSecondary },
+
   orderCard: {
     backgroundColor: c.card, borderRadius: 16, padding: 14,
-    borderWidth: 1, borderColor: c.border, marginBottom: 10,
+    borderWidth: 1, borderColor: c.border, marginBottom: 12,
   },
-  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  orderId: { fontSize: 13, fontWeight: '600', color: c.text },
-  orderDate: { fontSize: 11, color: c.textSecondary },
-  orderItem: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  itemName: { fontSize: 13, color: c.text },
-  itemPrice: { fontSize: 13, fontWeight: '500', color: c.text },
+  orderTopRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  },
+  orderId: { fontSize: 13, fontWeight: '600', color: c.text, flex: 1, marginRight: 8 },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+  },
+  statusText: { fontSize: 12, fontWeight: '600' },
+  orderDate: { fontSize: 12, color: c.textSecondary, marginTop: 4, marginBottom: 12 },
+
+  itemRow: {
+    flexDirection: 'row', alignItems: 'center', marginBottom: 10,
+  },
+  itemIconWrap: {
+    width: 50, height: 50, borderRadius: 25, backgroundColor: c.border,
+    justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
+  },
+  itemImage: { width: 50, height: 50, borderRadius: 25 },
+  itemInfo: { flex: 1, marginLeft: 12 },
+  itemName: { fontSize: 14, fontWeight: '600', color: c.text },
+  itemQty: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  itemPrice: { fontSize: 14, fontWeight: '600', color: c.text },
+
   orderFooter: {
     flexDirection: 'row', justifyContent: 'space-between', marginTop: 8,
-    paddingTop: 8, borderTopWidth: 1, borderTopColor: c.border,
+    paddingTop: 10, borderTopWidth: 1, borderTopColor: c.border,
   },
-  totalLabel: { fontSize: 13, color: c.textSecondary },
-  totalValue: { fontSize: 15, fontWeight: '700', color: c.primary },
-  headerSpacer: { width: 36 },
+  totalLabel: { fontSize: 14, color: '#3b82f6' },
+  totalValue: { fontSize: 16, fontWeight: '700', color: '#3b82f6' },
   bottomSpacer: { height: 40 },
 });

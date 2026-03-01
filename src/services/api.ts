@@ -1,6 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Local development backend URL
+// const BASE_URL = 'http://192.168.1.8:3030/api/v1';
 // Production backend URL
 const BASE_URL = 'https://backend.mec.welocalhost.com/api/v1';
 

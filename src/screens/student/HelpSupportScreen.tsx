@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking,
 } from 'react-native';
@@ -38,8 +38,6 @@ const FAQS: FAQ[] = [
 export default function HelpSupportScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
 
   return (
     <ScreenWrapper>
@@ -92,29 +90,16 @@ export default function HelpSupportScreen({ navigation }: Props) {
 
           {/* FAQs */}
           {FAQS.map((faq, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.faqCard}
-              onPress={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
-              activeOpacity={0.7}>
-              <View style={styles.faqQuestion}>
-                <Text style={styles.faqQuestionText}>{faq.question}</Text>
-                <Icon
-                  name={expandedFaq === idx ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={colors.textSecondary}
-                />
-              </View>
-              {expandedFaq === idx && (
-                <Text style={styles.faqAnswer}>{faq.answer}</Text>
-              )}
-            </TouchableOpacity>
+            <View key={idx} style={styles.faqCard}>
+              <Text style={styles.faqQuestionText}>{faq.question}</Text>
+              <Text style={styles.faqAnswer}>{faq.answer}</Text>
+            </View>
           ))}
 
           {/* Need More Help */}
           <View style={styles.helpCard}>
             <View style={styles.helpIcon}>
-              <Icon name="information-circle" size={22} color={colors.primary} />
+              <Icon name="help-circle" size={22} color={colors.primary} />
             </View>
             <View style={styles.helpInfo}>
               <Text style={styles.helpTitle}>Need more help?</Text>
@@ -168,10 +153,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.card, borderRadius: 14, padding: 16,
     borderWidth: 1, borderColor: c.border, marginBottom: 10,
   },
-  faqQuestion: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  faqQuestionText: { fontSize: 14, fontWeight: '600', color: c.text, flex: 1, marginRight: 12 },
+  faqQuestionText: { fontSize: 14, fontWeight: '600', color: c.text },
   faqAnswer: {
     fontSize: 13, color: c.textSecondary, lineHeight: 20, marginTop: 10,
     paddingTop: 10, borderTopWidth: 1, borderTopColor: c.border,

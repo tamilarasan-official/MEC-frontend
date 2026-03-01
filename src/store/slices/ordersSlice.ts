@@ -21,7 +21,7 @@ const mapOrderItem = (item: any): CartItem => ({
 const mapOrder = (raw: any): Order => ({
   id: raw.id || raw._id,
   userId: typeof raw.user === 'string' ? raw.user : raw.user?.id || raw.user?._id || '',
-  userName: typeof raw.user === 'object' ? raw.user?.name || '' : '',
+  userName: raw.userName || (typeof raw.user === 'object' ? raw.user?.name : '') || '',
   items: Array.isArray(raw.items) ? raw.items.map(mapOrderItem) : [],
   total: raw.total ?? 0,
   shopId: typeof raw.shop === 'string' ? raw.shop : raw.shop?.id || raw.shop?._id || '',
@@ -31,12 +31,13 @@ const mapOrder = (raw: any): Order => ({
   createdAt: raw.createdAt,
   completedAt: raw.completedAt,
   handledBy: typeof raw.handledBy === 'object' ? raw.handledBy?.name : raw.handledBy,
-  notes: raw.notes,
+  notes: raw.special_instructions || raw.notes,
   serviceType: raw.serviceType,
   serviceDetails: raw.serviceDetails,
   orderNumber: raw.orderNumber,
   paymentStatus: raw.paymentStatus,
-  qrData: raw.qrData,
+  qrData: raw.qrCode || raw.qrData,
+  isReadyServe: raw.isReadyServe ?? false,
 });
 
 const mapOrders = (data: any): Order[] => {
@@ -67,8 +68,14 @@ export const createOrder = createAsyncThunk(
   'orders/createOrder',
   async (data: { shopId: string; items: Array<{ foodItemId: string; quantity: number }>; notes?: string }, { rejectWithValue }) => {
     try {
-      const res = await api.post('/orders', data);
-      return mapOrder(res.data.data);
+      const payload = {
+        shopId: data.shopId,
+        items: data.items.map(i => ({ foodItemId: i.foodItemId, quantity: i.quantity })),
+        ...(data.notes ? { special_instructions: data.notes } : {}),
+      };
+      const res = await api.post('/orders', payload);
+      const d = res.data.data;
+      return mapOrder(d?.order || d);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to create order');
     }
@@ -140,9 +147,9 @@ export const updateOrderStatus = createAsyncThunk(
 
 export const markItemDelivered = createAsyncThunk(
   'orders/markItemDelivered',
-  async ({ orderId, itemIndex }: { orderId: string; itemIndex: number }, { rejectWithValue }) => {
+  async ({ orderId, itemIndex, delivered = true }: { orderId: string; itemIndex: number; delivered?: boolean }, { rejectWithValue }) => {
     try {
-      const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`);
+      const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`, { delivered });
       return mapOrder(res.data.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to mark item');
@@ -154,7 +161,7 @@ export const verifyQRCode = createAsyncThunk(
   'orders/verifyQRCode',
   async (qrData: string, { rejectWithValue }) => {
     try {
-      const res = await api.post('/orders/verify-qr', { qrData });
+      const res = await api.post('/orders/verify-qr', { qrCode: qrData });
       const d = res.data.data;
       return { order: mapOrder(d.order || d), valid: d.valid ?? true };
     } catch (e: any) {

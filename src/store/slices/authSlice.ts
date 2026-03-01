@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { User, LoginResponse, RegisterData } from '../../types';
 import api, { setTokens, clearTokens } from '../../services/api';
+import { unregisterToken, cleanupNotifications } from '../../services/notificationService';
 
 interface AuthState {
   user: User | null;
@@ -30,7 +31,17 @@ export const login = createAsyncThunk(
       await setTokens(tokens.accessToken, tokens.refreshToken);
       return user;
     } catch (error: any) {
-      const msg = error.response?.data?.message || error.message || 'Login failed';
+      const status = error.response?.status;
+      const serverMsg = error.response?.data?.message;
+      let msg = serverMsg || 'Login failed. Please try again.';
+      if (!serverMsg) {
+        if (status === 401) msg = 'Invalid username or password';
+        else if (status === 403) msg = 'Your account is not yet approved';
+        else if (status === 404) msg = 'Account not found. Please register first.';
+        else if (status === 429) msg = 'Too many attempts. Please try again later.';
+        else if (status >= 500) msg = 'Server error. Please try again later.';
+        else if (!error.response) msg = 'Network error. Please check your connection.';
+      }
       return rejectWithValue(msg);
     }
   },
@@ -38,11 +49,12 @@ export const login = createAsyncThunk(
 
 export const loginWithOtp = createAsyncThunk(
   'auth/loginWithOtp',
-  async ({ phone, otp }: { phone: string; otp: string }, { rejectWithValue }) => {
+  async ({ phone, otp, sessionId }: { phone: string; otp: string; sessionId?: string }, { rejectWithValue }) => {
     try {
       const response = await api.post<{ success: boolean; data: LoginResponse }>('/auth/verify-otp', {
-        phone,
+        phoneNumber: phone,
         otp,
+        sessionId,
         deviceId: `mobile-${Date.now()}`,
       });
       const { user, tokens } = response.data.data;
@@ -67,9 +79,9 @@ export const register = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk('auth/logout', async () => {
-  try {
-    await api.post('/auth/logout');
-  } catch { /* ignore */ }
+  try { await unregisterToken(); } catch { /* ignore */ }
+  try { await api.post('/auth/logout'); } catch { /* ignore */ }
+  cleanupNotifications();
   await clearTokens();
 });
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "958328313952",
+    "project_id": "madrasone-d2b81",
+    "storage_bucket": "madrasone-d2b81.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:958328313952:android:6c4b841005a3720b250b05",
+        "android_client_info": {
+          "package_name": "com.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_h-rloYbLJynMM6T3rA6aeMqr_Cfhfoc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

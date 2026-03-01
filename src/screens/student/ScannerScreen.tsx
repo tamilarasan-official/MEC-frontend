@@ -7,13 +7,19 @@ import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { ScannedOrderModal } from '../../components/common/ScannedOrderModal';
-import { decodeQrData } from '../../utils/qrDecode';
+import QRPaymentConfirmModal from '../../components/student/QRPaymentConfirmModal';
+import { decodeQrData, decodeQrPaymentData } from '../../utils/qrDecode';
+import type { QRPaymentData } from '../../utils/qrDecode';
+import { useAppDispatch } from '../../store';
+import { fetchWalletBalance } from '../../store/slices/userSlice';
 
 export default function ScannerScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [permission, setPermission] = useState<CameraPermissionStatus | null>(null);
+  const dispatch = useAppDispatch();
   const [scannedOrderId, setScannedOrderId] = useState<string | null>(null);
+  const [scannedPayment, setScannedPayment] = useState<QRPaymentData | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const scanCooldown = useRef(false);
@@ -48,13 +54,23 @@ export default function ScannerScreen() {
     scanCooldown.current = true;
     Vibration.vibrate(100);
 
+    // Check if it's a QR payment code first
+    const paymentData = decodeQrPaymentData(raw);
+    if (paymentData) {
+      dispatch(fetchWalletBalance());
+      setScannedPayment(paymentData);
+      setScanError(null);
+      setIsActive(false);
+      return;
+    }
+
     const orderId = decodeQrData(raw);
     if (orderId) {
       setScannedOrderId(orderId);
       setScanError(null);
       setIsActive(false);
     } else {
-      setScanError('Invalid QR code. Please scan a valid MEC order QR code.');
+      setScanError('Invalid QR code. Please scan a valid MEC QR code.');
       setTimeout(() => {
         setScanError(null);
         scanCooldown.current = false;
@@ -73,6 +89,19 @@ export default function ScannerScreen() {
     scanCooldown.current = false;
   }, []);
 
+  const handlePaymentClose = useCallback(() => {
+    setScannedPayment(null);
+    setIsActive(true);
+    scanCooldown.current = false;
+  }, []);
+
+  const handlePaymentSuccess = useCallback(() => {
+    setScannedPayment(null);
+    setIsActive(true);
+    scanCooldown.current = false;
+    dispatch(fetchWalletBalance());
+  }, [dispatch]);
+
   const handleActionComplete = useCallback(() => {
     // Could refresh orders or show success toast
   }, []);
@@ -81,7 +110,7 @@ export default function ScannerScreen() {
   if (permission === null) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.accent} />
         <Text style={styles.centerText}>Requesting camera access...</Text>
       </View>
     );
@@ -188,6 +217,14 @@ export default function ScannerScreen() {
           onActionComplete={handleActionComplete}
         />
       )}
+
+      {/* QR Payment Confirm Modal */}
+      <QRPaymentConfirmModal
+        visible={!!scannedPayment}
+        paymentData={scannedPayment}
+        onClose={handlePaymentClose}
+        onSuccess={handlePaymentSuccess}
+      />
     </View>
   );
 }

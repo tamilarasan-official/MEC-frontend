@@ -23,7 +23,7 @@ const mapOrderItem = (item: any): CartItem => ({
 const mapOrder = (raw: any): Order => ({
   id: raw.id || raw._id,
   userId: typeof raw.user === 'string' ? raw.user : raw.user?.id || raw.user?._id || '',
-  userName: typeof raw.user === 'object' ? raw.user?.name || '' : '',
+  userName: raw.userName || (typeof raw.user === 'object' ? raw.user?.name : '') || '',
   items: Array.isArray(raw.items) ? raw.items.map(mapOrderItem) : [],
   total: raw.total ?? 0,
   shopId: typeof raw.shop === 'string' ? raw.shop : raw.shop?.id || raw.shop?._id || '',
@@ -33,12 +33,13 @@ const mapOrder = (raw: any): Order => ({
   createdAt: raw.createdAt,
   completedAt: raw.completedAt,
   handledBy: typeof raw.handledBy === 'object' ? raw.handledBy?.name : raw.handledBy,
-  notes: raw.notes,
+  notes: raw.special_instructions || raw.notes,
   serviceType: raw.serviceType,
   serviceDetails: raw.serviceDetails,
   orderNumber: raw.orderNumber,
   paymentStatus: raw.paymentStatus,
-  qrData: raw.qrData,
+  qrData: raw.qrCode || raw.qrData,
+  isReadyServe: raw.isReadyServe ?? false,
 });
 
 const mapOrders = (data: any): Order[] => {
@@ -48,8 +49,14 @@ const mapOrders = (data: any): Order[] => {
 
 const orderService = {
   createOrder: async (data: { shopId: string; items: Array<{ foodItemId: string; quantity: number }>; notes?: string }): Promise<Order> => {
-    const res = await api.post('/orders', data);
-    return mapOrder(res.data.data);
+    const payload = {
+      shopId: data.shopId,
+      items: data.items.map(i => ({ itemId: i.foodItemId, quantity: i.quantity })),
+      ...(data.notes ? { special_instructions: data.notes } : {}),
+    };
+    const res = await api.post('/orders', payload);
+    const d = res.data.data;
+    return mapOrder(d?.order || d);
   },
   getMyOrders: async (status?: string): Promise<Order[]> => {
     const params: any = {};
@@ -86,7 +93,7 @@ const orderService = {
     return mapOrder(res.data.data);
   },
   verifyQRCode: async (qrData: string): Promise<{ order: Order; valid: boolean }> => {
-    const res = await api.post('/orders/verify-qr', { qrData });
+    const res = await api.post('/orders/verify-qr', { qrCode: qrData });
     const d = res.data.data;
     return { order: mapOrder(d.order || d), valid: d.valid ?? true };
   },
@@ -109,9 +116,10 @@ const orderService = {
     const res = await api.post('/orders/laundry', data);
     return mapOrder(res.data.data);
   },
-  createStationeryOrder: async (data: { shopId: string; serviceDetails: { type: 'stationery'; stationery: StationeryDetails }; notes?: string; fileUrl?: string }): Promise<Order> => {
+  createStationeryOrder: async (data: { shopId: string; pageCount: number; copies: number; colorType: 'bw' | 'color'; paperSize: string; doubleSided: boolean; specialInstructions?: string }): Promise<Order> => {
     const res = await api.post('/orders/stationery', data);
-    return mapOrder(res.data.data);
+    const d = res.data.data;
+    return mapOrder(d?.order || d);
   },
 };
 

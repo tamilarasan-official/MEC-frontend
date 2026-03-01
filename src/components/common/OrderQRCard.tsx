@@ -91,7 +91,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
             {/* Token */}
             <View style={styles.tokenInfo}>
               <Text style={styles.tokenLabel}>PICKUP TOKEN</Text>
-              <Text style={[styles.tokenValue, isReady && { color: colors.primary }]}>
+              <Text style={styles.tokenValue}>
                 {order.pickupToken}
               </Text>
               <Text style={styles.tokenHint}>
@@ -182,12 +182,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   qrWrapper: {},
   qrGradientBorder: {
     padding: 3, borderRadius: 16,
-    backgroundColor: colors.primary, // simplified gradient border
+    backgroundColor: '#3b82f6', // blue gradient border
   },
   qrInner: { backgroundColor: '#fff', borderRadius: 13, padding: 10 },
   tokenInfo: { flex: 1 },
   tokenLabel: { fontSize: 10, fontWeight: '600', color: colors.mutedForeground, letterSpacing: 2, textTransform: 'uppercase' },
-  tokenValue: { fontSize: 42, fontWeight: '900', color: colors.foreground, letterSpacing: 4, marginTop: 4 },
+  tokenValue: { fontSize: 42, fontWeight: '900', color: '#3b82f6', letterSpacing: 4, marginTop: 4 },
   tokenHint: { fontSize: 12, color: colors.mutedForeground, marginTop: 6, lineHeight: 16 },
   totalRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 10 },
   totalLabel: { fontSize: 12, color: colors.mutedForeground },
@@ -216,7 +216,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingBottom: 24,
   },
   doneBtn: {
-    backgroundColor: colors.primary, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
+    backgroundColor: '#3b82f6', borderRadius: 16, paddingVertical: 14, alignItems: 'center',
   },
   doneBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 });

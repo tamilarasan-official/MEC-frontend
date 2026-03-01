@@ -1,11 +1,13 @@
 buildscript {
     ext {
-        buildToolsVersion = "36.0.0"
+        buildToolsVersion = "35.0.0"
         minSdkVersion = 24
-        compileSdkVersion = 36
-        targetSdkVersion = 36
+        compileSdkVersion = 35
+        targetSdkVersion = 35
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
+        // Bypass node resolution in third-party libs (e.g. gesture-handler) on Windows
+        REACT_NATIVE_NODE_MODULES_DIR = file("../node_modules/react-native")
     }
     repositories {
         google()
@@ -15,6 +17,16 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("com.google.gms:google-services:4.4.4")
+    }
+}
+
+// Fix: force compileSdk for third-party modules that omit it (e.g. react-native-gesture-handler)
+subprojects {
+    plugins.withId("com.android.library") {
+        android {
+            compileSdk rootProject.ext.compileSdkVersion
+        }
     }
 }
 

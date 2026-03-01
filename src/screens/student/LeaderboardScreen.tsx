@@ -41,7 +41,7 @@ export default function LeaderboardScreen({ navigation }: Props) {
   const podiumColors = ['#eab308', '#94a3b8', '#d97706']; // Gold, Silver, Bronze
 
   if (loading) {
-    return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View></ScreenWrapper>;
+    return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View></ScreenWrapper>;
   }
 
   return (

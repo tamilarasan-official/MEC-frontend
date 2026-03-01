@@ -6,6 +6,13 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { updateQuantity, removeFromCart, clearCart } from '../../store/slices/cartSlice';
+
+const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
+function resolveImageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${IMAGE_BASE}${url}`;
+}
 import { createOrder } from '../../store/slices/ordersSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -23,6 +30,7 @@ export default function CartScreen({ navigation }: Props) {
   const user = useAppSelector(s => s.auth.user);
   const [orderStatus, setOrderStatus] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle');
   const [pickupToken, setPickupToken] = useState('');
+  const [orderError, setOrderError] = useState('');
 
   const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
   const totalCount = cartItems.reduce((sum, c) => sum + c.quantity, 0);
@@ -30,7 +38,11 @@ export default function CartScreen({ navigation }: Props) {
   const hasBalance = balance >= cartTotal;
 
   const handlePlaceOrder = async () => {
-    if (!hasBalance) { setOrderStatus('failure'); return; }
+    if (!hasBalance) {
+      setOrderError(`Insufficient balance. Add Rs.${cartTotal - balance} to proceed.`);
+      setOrderStatus('failure');
+      return;
+    }
     if (!shopId || cartItems.length === 0) return;
 
     setOrderStatus('loading');
@@ -42,7 +54,9 @@ export default function CartScreen({ navigation }: Props) {
       setPickupToken(result.pickupToken);
       dispatch(clearCart());
       setOrderStatus('success');
-    } catch {
+    } catch (err: any) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Something went wrong. Please try again.';
+      setOrderError(msg);
       setOrderStatus('failure');
     }
   };
@@ -52,11 +66,13 @@ export default function CartScreen({ navigation }: Props) {
       <OrderAnimation
         type={orderStatus === 'success' ? 'success' : 'failure'}
         pickupToken={pickupToken}
+        errorMessage={orderError}
         onComplete={() => {
           if (orderStatus === 'success') {
             navigation.getParent()?.navigate('Orders');
           }
           setOrderStatus('idle');
+          setOrderError('');
         }}
       />
     );
@@ -95,7 +111,7 @@ export default function CartScreen({ navigation }: Props) {
             return (
               <View key={c.item.id} style={styles.cartCard}>
                 {c.item.image ? (
-                  <Image source={{ uri: c.item.image }} style={styles.cartImage} />
+                  <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.cartImage} />
                 ) : (
                   <View style={[styles.cartImage, styles.cartImagePlaceholder]}>
                     <Icon name="restaurant-outline" size={24} color={colors.textMuted} />

@@ -41,8 +41,10 @@ const menuService = {
     const res = await api.patch(`/owner/menu/${id}/availability`, { isAvailable });
     return res.data.data;
   },
-  setOffer: async (id: string, offerPrice: number): Promise<FoodItem> => {
-    const res = await api.post(`/owner/menu/${id}/offer`, { offerPrice });
+  setOffer: async (id: string, discountPercent: number, validUntil?: string): Promise<FoodItem> => {
+    const payload: Record<string, any> = { discountPercent };
+    payload.validUntil = validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const res = await api.post(`/owner/menu/${id}/offer`, payload);
     return res.data.data;
   },
   removeOffer: async (id: string): Promise<FoodItem> => {
@@ -51,6 +53,10 @@ const menuService = {
   },
   deleteItem: async (id: string): Promise<void> => {
     await api.delete(`/owner/menu/${id}`);
+  },
+  getOffers: async (): Promise<FoodItem[]> => {
+    const res = await api.get('/menu/offers');
+    return res.data.data || res.data || [];
   },
   getShopById: async (shopId: string): Promise<Shop> => {
     const res = await api.get(`/shops/${shopId}`);

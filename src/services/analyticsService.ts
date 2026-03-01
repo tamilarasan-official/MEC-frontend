@@ -19,7 +19,7 @@ const analyticsService = {
     const res = await api.get('/owner/captains');
     return res.data.data || res.data;
   },
-  addCaptain: async (data: { name: string; email: string; password: string; phone: string }): Promise<any> => {
+  addCaptain: async (data: { username: string; name: string; email: string; password: string; phone: string }): Promise<any> => {
     const res = await api.post('/owner/captains', data);
     return res.data.data;
   },

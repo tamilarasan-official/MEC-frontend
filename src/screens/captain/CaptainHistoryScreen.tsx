@@ -5,20 +5,21 @@ import {
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
-import { statusColors } from '../../theme/colors';
 import orderService from '../../services/orderService';
 import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
-
-type HistoryFilter = 'completed' | 'cancelled';
+import CaptainHeader from '../../components/captain/CaptainHeader';
+import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
 
 export default function CaptainHistoryScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [filter, setFilter] = useState<HistoryFilter>('completed');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showProfile, setShowProfile] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -42,96 +43,149 @@ export default function CaptainHistoryScreen() {
     setRefreshing(false);
   };
 
-  const filtered = orders.filter(o => o.status === filter);
+  // Filter by search query
+  const filtered = orders.filter(o => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      o.pickupToken?.toLowerCase().includes(q) ||
+      o.orderNumber?.toString().includes(q) ||
+      o.userName?.toLowerCase().includes(q)
+    );
+  });
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', {
+      month: 'short', day: 'numeric',
+    }) + ', ' + d.toLocaleTimeString('en-IN', {
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  };
+
+  const formatTime = (dateStr?: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('en-IN', {
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  };
+
+  const getItemsSummary = (order: Order) => {
+    if (!order.items?.length) return 'No items';
+    return order.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
+  };
+
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case 'completed':
+      case 'delivered':
+        return { label: 'Delivered', color: '#10b981', bg: 'rgba(16,185,129,0.12)', icon: 'checkmark-circle' as const };
+      case 'cancelled':
+      case 'rejected':
+        return { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: 'close-circle' as const };
+      default:
+        return { label: status, color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', icon: 'ellipse' as const };
+    }
+  };
 
   const renderOrder = ({ item: order }: { item: Order }) => {
-    const sc = statusColors[order.status];
+    const status = getStatusInfo(order.status);
+    const token = order.orderNumber || order.pickupToken || order.id?.slice(-4) || '—';
+
     return (
       <View style={styles.orderCard}>
+        {/* Top row: icon + order# + date | status badge */}
         <View style={styles.cardTop}>
-          <View>
-            <Text style={styles.tokenText}>#{order.pickupToken}</Text>
-            <Text style={styles.dateText}>
-              {new Date(order.createdAt).toLocaleDateString('en-IN', {
-                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-              })}
-            </Text>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: sc?.bg || colors.successBg }]}>
-            <Text style={[styles.statusText, { color: sc?.text || colors.primary }]}>
-              {sc?.label || order.status}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.customerRow}>
-          <Icon name="person-outline" size={14} color={colors.mutedForeground} />
-          <Text style={styles.customerName}>{order.userName}</Text>
-        </View>
-
-        <View style={styles.itemsList}>
-          {order.items.map((item, idx) => (
-            <View key={idx} style={styles.itemRow}>
-              <Text style={styles.itemQty}>{item.quantity}x</Text>
-              <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.itemPrice}>Rs.{(item.offerPrice || item.price) * item.quantity}</Text>
+          <View style={styles.cardTopLeft}>
+            <View style={[styles.statusIcon, { backgroundColor: status.bg }]}>
+              <Icon name={status.icon} size={20} color={status.color} />
             </View>
-          ))}
+            <View>
+              <Text style={styles.tokenText}>#{token}</Text>
+              <Text style={styles.dateText}>{order.createdAt ? formatDate(order.createdAt) : ''}</Text>
+            </View>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+            <Icon name={status.icon} size={12} color={status.color} />
+            <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+          </View>
         </View>
 
+        {/* Customer */}
+        <Text style={styles.customerText}>Customer: {order.userName || 'Unknown'}</Text>
+
+        {/* Items summary */}
+        <Text style={styles.itemsSummary} numberOfLines={2}>{getItemsSummary(order)}</Text>
+
+        {/* Total */}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>Rs.{order.total}</Text>
+          <Text style={styles.totalValue}>Rs. {order.total}</Text>
         </View>
+
+        {/* Completed time */}
+        {(order.completedAt || order.createdAt) && (
+          <Text style={styles.completedText}>
+            Completed: {formatTime(order.completedAt || order.createdAt)}
+          </Text>
+        )}
       </View>
     );
   };
 
   if (loading) {
-    return <ScreenWrapper><View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View></ScreenWrapper>;
+    return (
+      <ScreenWrapper>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      </ScreenWrapper>
+    );
   }
 
   return (
     <ScreenWrapper>
-    <View style={styles.container}>
-      {/* Title */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Order History</Text>
-      </View>
+      <View style={styles.container}>
+        {/* Header */}
+        <CaptainHeader
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          showSearch={showSearch}
+          onToggleSearch={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(''); }}
+          onProfilePress={() => setShowProfile(true)}
+        />
 
-      {/* Filter toggle */}
-      <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'completed' && styles.filterActive]}
-          onPress={() => setFilter('completed')}
-        >
-          <Icon name="checkmark-circle" size={14} color={filter === 'completed' ? colors.primary : colors.mutedForeground} />
-          <Text style={[styles.filterLabel, filter === 'completed' && { color: colors.primary }]}>Completed</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === 'cancelled' && styles.filterActive]}
-          onPress={() => setFilter('cancelled')}
-        >
-          <Icon name="close-circle" size={14} color={filter === 'cancelled' ? colors.destructive : colors.mutedForeground} />
-          <Text style={[styles.filterLabel, filter === 'cancelled' && { color: colors.destructive }]}>Cancelled</Text>
-        </TouchableOpacity>
-      </View>
+        {/* Order count + refresh */}
+        <View style={styles.countRow}>
+          <Text style={styles.countText}>{filtered.length} orders</Text>
+          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn}>
+            <Icon name="refresh" size={18} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={item => item.id}
-        renderItem={renderOrder}
-        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Icon name="document-text-outline" size={48} color={colors.mutedForeground} />
-            <Text style={styles.emptyTitle}>No {filter} orders</Text>
-            <Text style={styles.emptySubtitle}>Past orders will appear here</Text>
-          </View>
-        }
-      />
-    </View>
+        {/* Order list */}
+        <FlatList
+          data={filtered}
+          keyExtractor={(item, index) => item.id || String(index)}
+          renderItem={renderOrder}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Icon name="document-text-outline" size={48} color={colors.mutedForeground} />
+              <Text style={styles.emptyTitle}>No orders found</Text>
+              <Text style={styles.emptySubtitle}>Past orders will appear here</Text>
+            </View>
+          }
+        />
+
+        {/* Profile Dropdown */}
+        <CaptainProfileDropdown
+          visible={showProfile}
+          onClose={() => setShowProfile(false)}
+        />
+      </View>
     </ScreenWrapper>
   );
 }
@@ -139,48 +193,71 @@ export default function CaptainHistoryScreen() {
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-  title: { fontSize: 22, fontWeight: '800', color: colors.foreground },
-  filterRow: {
-    flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 4,
+
+  // Count row
+  countRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10,
   },
-  filterTab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
-    backgroundColor: colors.card,
+  countText: { fontSize: 15, fontWeight: '600', color: colors.foreground },
+  refreshBtn: {
+    width: 36, height: 36, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+    justifyContent: 'center', alignItems: 'center',
   },
-  filterActive: {
-    borderColor: colors.primary, backgroundColor: colors.successBg,
-  },
-  filterLabel: { fontSize: 13, fontWeight: '600', color: colors.mutedForeground },
+
+  // List
+  listContent: { paddingHorizontal: 16, paddingBottom: 100 },
+
+  // Order card
   orderCard: {
     backgroundColor: colors.card, borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: colors.border, marginBottom: 10,
+    borderWidth: 1, borderColor: colors.border, marginBottom: 12,
   },
   cardTop: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 12,
   },
-  tokenText: { fontSize: 16, fontWeight: '800', color: colors.foreground, fontFamily: 'monospace' },
-  dateText: { fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-  customerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10,
+  cardTopLeft: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
   },
-  customerName: { fontSize: 13, color: colors.mutedForeground },
-  itemsList: { marginBottom: 8 },
-  itemRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 3,
+  statusIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    justifyContent: 'center', alignItems: 'center',
   },
-  itemQty: { fontSize: 12, fontWeight: '600', color: colors.primary, width: 28 },
-  itemName: { fontSize: 13, color: colors.foreground, flex: 1 },
-  itemPrice: { fontSize: 12, color: colors.mutedForeground },
+  tokenText: { fontSize: 17, fontWeight: '800', color: colors.foreground },
+  dateText: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
+  },
+  statusText: { fontSize: 11, fontWeight: '700' },
+
+  // Customer
+  customerText: {
+    fontSize: 14, color: colors.mutedForeground, marginBottom: 10,
+  },
+
+  // Items summary
+  itemsSummary: {
+    fontSize: 14, fontWeight: '600', color: colors.foreground,
+    marginBottom: 14, lineHeight: 20,
+  },
+
+  // Total
   totalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border,
+    marginBottom: 8,
   },
-  totalLabel: { fontSize: 13, fontWeight: '600', color: colors.mutedForeground },
-  totalValue: { fontSize: 15, fontWeight: '700', color: colors.primary },
+  totalLabel: { fontSize: 14, color: colors.mutedForeground },
+  totalValue: { fontSize: 16, fontWeight: '700', color: '#10b981' },
+
+  // Completed time
+  completedText: {
+    fontSize: 12, color: colors.mutedForeground,
+  },
+
+  // Empty state
   emptyState: { alignItems: 'center', paddingTop: 80, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.foreground },
   emptySubtitle: { fontSize: 13, color: colors.mutedForeground },

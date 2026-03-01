@@ -8,6 +8,13 @@ import { StudentHomeStackParamList, FoodItem } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
+
+const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
+function resolveImageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${IMAGE_BASE}${url}`;
+}
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
@@ -67,7 +74,7 @@ export default function MenuScreen({ route, navigation }: Props) {
           onPress={() => qty === 0 ? dispatch(addToCart({ item, shopId, shopName })) : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))}
           activeOpacity={0.8}>
           {item.image ? (
-            <Image source={{ uri: item.image }} style={styles.foodImage} />
+            <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.foodImage} />
           ) : (
             <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
               <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
@@ -142,7 +149,7 @@ export default function MenuScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {menuLoading && !refreshing ? (
-        <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>
       ) : (
         <FlatList
           data={filteredItems}
@@ -161,7 +168,7 @@ export default function MenuScreen({ route, navigation }: Props) {
                       <TouchableOpacity key={item.id} style={styles.offerCard} onPress={() => dispatch(addToCart({ item, shopId, shopName }))} activeOpacity={0.8}>
                         <View style={styles.offerDiscountBadge}><Text style={styles.offerDiscountText}>{discount}% OFF</Text></View>
                         {item.image ? (
-                          <Image source={{ uri: item.image }} style={styles.offerImage} />
+                          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.offerImage} />
                         ) : (
                           <View style={[styles.offerImage, styles.foodImagePlaceholder]}>
                             <Icon name="restaurant-outline" size={24} color={colors.textMuted} />

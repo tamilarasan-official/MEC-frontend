@@ -1,8 +1,18 @@
 import { io, Socket } from 'socket.io-client';
+import { DeviceEventEmitter } from 'react-native';
 import { getAccessToken } from './api';
 import { AppDispatch } from '../store';
-import { addNotification, setOrderStatusPopup } from '../store/slices/userSlice';
+import { addNotification } from '../store/slices/userSlice';
+import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
+import {
+  isDuplicate,
+  displayLocalNotification,
+  CHANNEL_ORDER_UPDATES,
+  CHANNEL_WALLET,
+  CHANNEL_GENERAL,
+} from './notificationService';
 
+// const SOCKET_URL = 'http://192.168.1.8:3030';
 const SOCKET_URL = 'https://backend.mec.welocalhost.com';
 
 let socket: Socket | null = null;
@@ -14,6 +24,7 @@ export interface OrderUpdatePayload {
   previousStatus?: string;
   updatedAt: string;
   notification?: { title: string; body: string };
+  items?: { name: string; quantity: number }[];
 }
 
 export const connectSocket = async (userId: string, role: string, shopId?: string) => {
@@ -71,52 +82,85 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // Order status changed
   socket.on('order:status_changed', (payload: OrderUpdatePayload) => {
     const status = payload.status as 'preparing' | 'ready' | 'completed' | 'cancelled';
+
+    // Check AND mark dedup key — skip if FCM already handled this event
+    const dedupKey = `${payload.orderId}:${status}`;
+    const alreadySeen = isDuplicate(dedupKey);
+
+    // Always show popup (important visual feedback even if FCM was first)
     const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
     if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
-      dispatch(setOrderStatusPopup({ status, orderNumber: payload.orderNumber || payload.orderId.slice(-6) }));
+      console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
+      DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
+        status,
+        orderNumber: payload.orderNumber || payload.orderId.slice(-6),
+      });
     }
 
-    const statusLabels: Record<string, string> = {
-      preparing: 'Your order is being prepared',
-      ready: 'Your order is ready for pickup!',
-      completed: 'Your order has been completed',
-      cancelled: 'Your order has been cancelled',
-    };
-    dispatch(addNotification({
-      id: `notif-${Date.now()}`,
-      type: 'order',
-      title: payload.notification?.title || `Order #${payload.orderNumber || payload.orderId.slice(-6)}`,
-      message: payload.notification?.body || statusLabels[status] || `Status updated to ${status}`,
-      data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
-      createdAt: payload.updatedAt,
-      read: false,
-    }));
+    // Only add to Redux if not already handled by FCM
+    if (!alreadySeen) {
+      const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
+      const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
+      const statusLabels: Record<string, string> = {
+        preparing: `Your order is being prepared${itemsSuffix}`,
+        ready: `Your order is ready for pickup!${itemsSuffix}`,
+        completed: `Your order has been completed${itemsSuffix}`,
+        cancelled: `Your order has been cancelled${itemsSuffix}`,
+      };
+      const orderNum = payload.orderNumber || payload.orderId.slice(-6);
+      const title = payload.notification?.title || `Order #${orderNum}`;
+      const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
+
+      dispatch(addNotification({
+        id: `notif-${Date.now()}`,
+        type: 'order',
+        title,
+        message,
+        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
+        createdAt: payload.updatedAt,
+        read: false,
+      }));
+    }
   });
 
   // New order (for staff)
   socket.on('order:new', (payload: { orderId: string; orderNumber: string; total: number; pickupToken?: string }) => {
+    // Check AND mark dedup key — skip if FCM already handled this event
+    const alreadySeen = isDuplicate(`${payload.orderId}:new`);
+    if (alreadySeen) return;
+
+    const msg = `Order #${payload.orderNumber || payload.pickupToken || ''} - Rs. ${payload.total}`;
     dispatch(addNotification({
       id: `notif-${Date.now()}`,
       type: 'order',
       title: 'New Order!',
-      message: `Order #${payload.orderNumber || payload.pickupToken || ''} - Rs. ${payload.total}`,
+      message: msg,
       data: { orderId: payload.orderId, orderNumber: payload.orderNumber },
       createdAt: new Date().toISOString(),
       read: false,
     }));
+
+    displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES);
   });
 
   // Wallet updates
   socket.on('wallet:updated', (payload: { type: string; amount: number; balance: number; message: string }) => {
     const titleMap: Record<string, string> = { credit: 'Money Added', debit: 'Money Deducted', refund: 'Refund Received' };
+    const title = titleMap[payload.type] || 'Wallet Updated';
+    const msg = payload.message || `Rs. ${payload.amount} updated`;
     dispatch(addNotification({
       id: `notif-${Date.now()}`,
       type: 'wallet',
-      title: titleMap[payload.type] || 'Wallet Updated',
-      message: payload.message || `Rs. ${payload.amount} updated`,
+      title,
+      message: msg,
       createdAt: new Date().toISOString(),
       read: false,
     }));
+
+    // Only show system notification for credits/refunds (user is in-app for debits)
+    if (payload.type !== 'debit') {
+      displayLocalNotification(title, msg, { type: payload.type }, CHANNEL_WALLET);
+    }
   });
 
   // Announcements
@@ -129,6 +173,8 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       createdAt: new Date().toISOString(),
       read: false,
     }));
+
+    displayLocalNotification(payload.title, payload.message, {}, CHANNEL_GENERAL);
   });
 
   // General notifications

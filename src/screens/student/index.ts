@@ -1,5 +1,7 @@
 export { default as DashboardScreen } from './DashboardScreen';
 export { default as MenuScreen } from './MenuScreen';
+export { default as StationeryScreen } from './StationeryScreen';
+export { default as OffersScreen } from './OffersScreen';
 export { default as CartScreen } from './CartScreen';
 export { default as OrdersScreen } from './OrdersScreen';
 export { default as ProfileScreen } from './ProfileScreen';

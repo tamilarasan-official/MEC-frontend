@@ -1,149 +1,179 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Image,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { login } from '../../store/slices/authSlice';
-import { useTheme } from '../../theme/ThemeContext';
-import type { ThemeColors } from '../../theme/colors';
-import Icon from '@react-native-vector-icons/ionicons';
-import LinearGradient from 'react-native-linear-gradient';
-import ScreenWrapper from '../../components/common/ScreenWrapper';
+import Icon from '../../components/common/Icon';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const dispatch = useAppDispatch();
   const { isLoading: loading, error } = useAppSelector(s => s.auth);
+  const isFormValid = username.trim().length > 0 && password.trim().length > 0;
 
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter both username and password');
-      return;
-    }
     dispatch(login({ username: username.trim(), password }));
   };
 
   return (
-    <ScreenWrapper edges={['top', 'left', 'right', 'bottom']}>
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <LinearGradient
-            colors={['#0ea5e9', '#10b981']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.logoBox}
-          >
-            <Icon name="layers" size={40} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.title}>MadrasOne</Text>
-          <Text style={styles.subtitle}>Your campus, one tap away</Text>
-        </View>
+    <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
 
-        {/* Form */}
-        <View style={styles.form}>
-          {error && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Username</Text>
-            <TextInput
-              style={styles.input}
-              value={username}
-              onChangeText={setUsername}
-              placeholder="Enter your username"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
+          {/* Brand */}
+          <View style={styles.brand}>
+            <Image
+              source={require('../../assets/icons/appicon.png')}
+              style={styles.logo}
+              resizeMode="contain"
             />
+            <Text style={styles.brandName}>CampusOne</Text>
+            <Text style={styles.brandTagline}>Your campus, one tap away</Text>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.textMuted}
-              secureTextEntry
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-            activeOpacity={0.8}>
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.loginBtnText}>Sign In</Text>
+          {/* Form */}
+          <View style={styles.form}>
+            {error && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
             )}
-          </TouchableOpacity>
 
-          <TouchableOpacity style={styles.registerLink} onPress={() => navigation.navigate('Register')}>
-            <Text style={styles.registerLinkText}>
-              Don't have an account? <Text style={styles.registerLinkBold}>Sign Up</Text>
-            </Text>
-          </TouchableOpacity>
+            {/* Username */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Username / Roll No</Text>
+              <TextInput
+                style={styles.input}
+                value={username}
+                onChangeText={setUsername}
+                placeholder="Enter username or roll number"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            {/* Password */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter your password"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                secureTextEntry
+              />
+            </View>
+
+            {/* Sign In Button */}
+            <TouchableOpacity
+              style={[styles.signInBtn, (!isFormValid || loading) && styles.btnDisabled]}
+              onPress={handleLogin}
+              disabled={!isFormValid || loading}
+              activeOpacity={0.85}>
+              <LinearGradient
+                colors={['#9333ea', '#7c3aed']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.signInGradient}>
+                {loading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.signInText}>Signing in...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Icon name="lock-closed" size={16} color="#fff" />
+                    <Text style={styles.signInText}>Sign In</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+
+          {/* Create Account */}
+          <View style={styles.createSection}>
+            <TouchableOpacity
+              style={styles.createBtn}
+              onPress={() => navigation.navigate('Register')}
+              activeOpacity={0.8}>
+              <Text style={styles.createBtnText}>Create an Account</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>CampusOne - Madras Engineering College</Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
-    </ScreenWrapper>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 24 },
-  logoContainer: { alignItems: 'center', marginBottom: 48 },
-  logoBox: {
-    width: 80, height: 80, borderRadius: 24,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 16,
-  },
-  title: { fontSize: 28, fontWeight: '800', color: colors.text },
-  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
-  form: { gap: 16 },
+const styles = StyleSheet.create({
+  gradient: { flex: 1 },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 28, paddingTop: 60, paddingBottom: 24 },
+
+  // Brand
+  brand: { alignItems: 'center', marginBottom: 48 },
+  logo: { width: 88, height: 88, marginBottom: 14 },
+  brandName: { fontSize: 32, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  brandTagline: { fontSize: 14, color: 'rgba(255,255,255,0.55)', marginTop: 6 },
+
+  // Form
+  form: { gap: 20 },
   errorBox: {
-    backgroundColor: 'rgba(239,68,68,0.1)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
+    backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)',
     borderRadius: 12, padding: 12,
   },
-  errorText: { color: colors.danger, fontSize: 13, textAlign: 'center' },
-  inputGroup: { gap: 6 },
-  label: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  errorText: { color: '#fca5a5', fontSize: 13, textAlign: 'center' },
+
+  inputGroup: { gap: 10 },
+  label: { fontSize: 14, fontWeight: '700', color: '#fff' },
   input: {
-    borderWidth: 1, borderColor: colors.border, borderRadius: 14,
-    paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 15, color: colors.text, backgroundColor: colors.card,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    fontSize: 15,
+    color: '#fff',
   },
-  loginBtn: {
-    backgroundColor: colors.primary, borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center', marginTop: 8,
+
+  // Sign In
+  signInBtn: { marginTop: 8 },
+  btnDisabled: { opacity: 0.5 },
+  signInGradient: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    borderRadius: 14, paddingVertical: 18,
   },
-  loginBtnDisabled: { opacity: 0.6 },
-  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  registerLink: { alignItems: 'center', marginTop: 16 },
-  registerLinkText: { color: colors.textSecondary, fontSize: 14 },
-  registerLinkBold: { color: colors.primary, fontWeight: '600' },
+  signInText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+
+  // Create Account
+  createSection: { marginTop: 40 },
+  createBtn: {
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 14,
+    paddingVertical: 18, alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  createBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+
+  // Footer
+  footer: { alignItems: 'center', paddingBottom: 20, paddingTop: 12 },
+  footerText: { fontSize: 12, color: 'rgba(255,255,255,0.35)' },
 });

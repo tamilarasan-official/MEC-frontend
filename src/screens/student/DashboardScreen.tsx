@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, RefreshControl,
   Image, FlatList, ActivityIndicator, Modal, Alert,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList, FoodItem } from '../../types';
+import { StudentHomeStackParamList, FoodItem, Order } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyActiveOrders } from '../../store/slices/ordersSlice';
 import { fetchShops, fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
@@ -17,10 +18,22 @@ import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
 import SearchModal from '../../components/student/SearchModal';
+import WalletModal from '../../components/student/WalletModal';
+import NotificationsModal from '../../components/student/NotificationsModal';
 import TopUpModal from '../../components/student/TopUpModal';
 import ProfileDropdown from '../../components/student/ProfileDropdown';
+import { CartBottomSheet } from '../../components/student/CartBottomSheet';
+import { OrderAnimation } from '../../components/common/OrderAnimation';
+import { OrderQRCard } from '../../components/common/OrderQRCard';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Dashboard'>;
+
+const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
+function resolveImageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${IMAGE_BASE}${url}`;
+}
 
 interface PendingPayment {
   id: string;
@@ -34,6 +47,41 @@ interface PendingPayment {
 
 type PaymentMethod = 'wallet' | 'razorpay';
 
+const CATEGORY_ICONS: Record<string, string> = {
+  All: 'apps-outline',
+  Classic: 'restaurant',
+  Bites: 'pizza-outline',
+  Snacks: 'fast-food-outline',
+  Drinks: 'cafe-outline',
+  Desserts: 'ice-cream-outline',
+  Meals: 'restaurant-outline',
+  Breakfast: 'sunny-outline',
+};
+
+function getCategoryIcon(cat: string): string {
+  return CATEGORY_ICONS[cat] || 'grid-outline';
+}
+
+function FoodCardImage({ uri, style, placeholderStyle }: { uri: string | null; style: any; placeholderStyle: any }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!uri || failed) {
+    return (
+      <View style={[style, placeholderStyle]}>
+        <Icon name="restaurant" size={24} color="#3b82f6" />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={style}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function StudentDashboard({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -45,34 +93,43 @@ export default function StudentDashboard({ navigation }: Props) {
   const { dietFilter } = useAppSelector(s => s.user);
   const notifications = useAppSelector(s => s.user.notifications);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  const [showWallet, setShowWallet] = useState(false);
   const [showTopUp, setShowTopUp] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showCart, setShowCart] = useState(false);
+  const [successOrder, setSuccessOrder] = useState<Order | null>(null);
+  const [showSuccessAnim, setShowSuccessAnim] = useState(false);
+  const [showFailAnim, setShowFailAnim] = useState(false);
+  const [failError, setFailError] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<PendingPayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
   const [paymentSuccess, setPaymentSuccess] = useState(false);
 
   const unreadCount = notifications.filter(n => !n.read).length;
-
   const canteenShop = shops.find(s => s.category === 'canteen');
+  const isStudent = user?.role === 'student';
 
   const loadData = useCallback(async () => {
-    await Promise.all([
-      dispatch(fetchShops()),
-      dispatch(fetchMyActiveOrders()),
-    ]);
-    // Load pending payments
-    try {
-      const payments = await walletService.getPendingPayments();
-      setPendingPayments(payments || []);
-    } catch { /* ignore */ }
-  }, [dispatch]);
+    const promises: Promise<any>[] = [dispatch(fetchShops())];
+    // Only students can access /orders/my — skip for captain/owner in eat mode
+    if (isStudent) {
+      promises.push(dispatch(fetchMyActiveOrders()));
+    }
+    await Promise.all(promises);
+    if (isStudent) {
+      try {
+        const payments = await walletService.getPendingPayments();
+        setPendingPayments(payments || []);
+      } catch { /* ignore */ }
+    }
+  }, [dispatch, isStudent]);
 
-  // Load canteen menu when shop is available
   useEffect(() => {
     if (canteenShop?.id) {
       dispatch(fetchShopMenu({ shopId: canteenShop.id }));
@@ -94,7 +151,6 @@ export default function StudentDashboard({ navigation }: Props) {
   const handlePayNow = (payment: PendingPayment) => {
     setSelectedPayment(payment);
     const balance = user?.balance || 0;
-    // Default to wallet if sufficient balance, otherwise razorpay
     setPaymentMethod(balance >= payment.amount ? 'wallet' : 'razorpay');
     setShowConfirmModal(true);
   };
@@ -115,7 +171,6 @@ export default function StudentDashboard({ navigation }: Props) {
         }
         await walletService.payAdhocPayment(selectedPayment.id);
       } else {
-        // Razorpay flow
         const orderData = await walletService.createRazorpayOrder(selectedPayment.amount);
         const options = {
           key: orderData.keyId,
@@ -137,11 +192,9 @@ export default function StudentDashboard({ navigation }: Props) {
           razorpay_payment_id: paymentResponse.razorpay_payment_id,
           razorpay_signature: paymentResponse.razorpay_signature,
         });
-        // After Razorpay payment, pay the adhoc payment from the credited wallet
         await walletService.payAdhocPayment(selectedPayment.id);
       }
 
-      // Success
       setPaymentSuccess(true);
       setPendingPayments(prev => prev.filter(p => p.id !== selectedPayment.id));
       dispatch(fetchWalletBalance());
@@ -150,24 +203,39 @@ export default function StudentDashboard({ navigation }: Props) {
         setSelectedPayment(null);
       }, 2500);
     } catch (e: any) {
-      if (e?.code === 'PAYMENT_CANCELLED') {
-        // User dismissed Razorpay
-      } else {
+      if (e?.code !== 'PAYMENT_CANCELLED') {
         Alert.alert('Payment Failed', e?.response?.data?.message || e?.description || 'Please try again.');
       }
     }
     setPayingId(null);
   };
 
-  // Ensure categories are strings (API may return objects)
-  const allCategories = useMemo(
-    () => ['All', ...categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean)],
-    [categories],
-  );
+  const CATEGORY_ORDER = ['Classic', 'Bites', 'Snacks', 'Drinks', 'Desserts', 'Meals', 'Breakfast'];
+
+  const allCategories = useMemo(() => {
+    const cats = categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) as string[];
+    return [...cats].sort((a, b) => {
+      const ai = CATEGORY_ORDER.indexOf(a);
+      const bi = CATEGORY_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories]);
+
+  // Auto-select the first category once categories load (runs only when list changes)
+  useEffect(() => {
+    if (allCategories.length > 0 && !selectedCategory) {
+      setSelectedCategory(allCategories[0]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCategories]);
 
   const filteredItems = useMemo(() => {
     return shopMenu.filter((item: FoodItem) => {
-      const matchesCat = selectedCategory === 'All' || item.category === selectedCategory;
+      const matchesCat = !selectedCategory || item.category === selectedCategory;
       const matchesDiet = dietFilter === 'all' || (dietFilter === 'veg' && item.isVeg) || (dietFilter === 'nonveg' && !item.isVeg);
       return matchesCat && item.isAvailable && matchesDiet;
     });
@@ -198,9 +266,11 @@ export default function StudentDashboard({ navigation }: Props) {
   const renderFoodCard = ({ item }: { item: FoodItem }) => {
     const qty = getCartQty(item.id);
     const displayPrice = item.isOffer && item.offerPrice ? item.offerPrice : item.price;
+    const imageUri = resolveImageUrl(item.image);
 
     return (
       <View style={styles.foodCard}>
+        {/* Food image / placeholder */}
         <TouchableOpacity
           style={styles.foodImageWrap}
           onPress={() => qty === 0
@@ -208,21 +278,26 @@ export default function StudentDashboard({ navigation }: Props) {
             : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))
           }
           activeOpacity={0.8}>
-          {item.image ? (
-            <Image source={{ uri: item.image }} style={styles.foodImage} />
-          ) : (
-            <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
-              <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
-            </View>
-          )}
+          <FoodCardImage
+            uri={imageUri}
+            style={styles.foodImage}
+            placeholderStyle={styles.foodImagePlaceholder}
+          />
           {item.isOffer && (
             <View style={styles.offerBadge}>
               <Text style={styles.offerBadgeText}>OFFER</Text>
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Food info */}
         <View style={styles.foodInfo}>
-          <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
+          <View style={styles.foodNameRow}>
+            <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
+            {item.isInstant && (
+              <Icon name="flash-sharp" size={13} color="#f97316" />
+            )}
+          </View>
           <View style={styles.foodBottom}>
             <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
             {qty === 0 ? (
@@ -230,16 +305,16 @@ export default function StudentDashboard({ navigation }: Props) {
                 style={styles.addBtn}
                 onPress={() => dispatch(addToCart({ item, shopId: canteenShop!.id, shopName: canteenShop!.name }))}
                 activeOpacity={0.7}>
-                <Icon name="add" size={16} color="#fff" />
+                <Icon name="add" size={18} color="#fff" />
               </TouchableOpacity>
             ) : (
               <View style={styles.qtyControl}>
                 <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))} style={styles.qtyBtn}>
-                  <Icon name="remove" size={14} color={colors.primary} />
+                  <Icon name="remove" size={14} color="#3b82f6" />
                 </TouchableOpacity>
                 <Text style={styles.qtyText}>{qty}</Text>
                 <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))} style={styles.qtyBtn}>
-                  <Icon name="add" size={14} color={colors.primary} />
+                  <Icon name="add" size={14} color="#3b82f6" />
                 </TouchableOpacity>
               </View>
             )}
@@ -251,56 +326,39 @@ export default function StudentDashboard({ navigation }: Props) {
 
   return (
     <ScreenWrapper>
-      {/* Header Bar */}
+      {/* ── Header Bar ── */}
       <View style={styles.headerBar}>
-        {/* Wallet */}
-        <TouchableOpacity style={styles.walletPill} activeOpacity={0.8}>
-          <Icon name="wallet-outline" size={14} color={colors.primary} />
-          <Text style={styles.walletPillText}>Rs. {user?.balance || 0}</Text>
-        </TouchableOpacity>
-
-        {/* Right icons */}
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7}
-            onPress={() => setShowSearch(true)}>
-            <Icon name="search" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7}
-            onPress={() => {
-              const stationeryShop = shops.find(s => s.category === 'stationery');
-              if (stationeryShop?.isActive) navigation.navigate('Menu', { shopId: stationeryShop.id, shopName: stationeryShop.name });
-            }}>
-            <Icon name="document-text-outline" size={20} color="#f97316" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7}
-            onPress={() => setShowTopUp(true)}>
-            <Icon name="add-circle-outline" size={20} color={colors.success} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7}
-            onPress={() => navigation.navigate('Notifications')}>
-            <Icon name="notifications-outline" size={20} color={colors.textMuted} />
-            {unreadCount > 0 && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+        {/* Left: Logo + Wallet */}
+        <View style={styles.headerLeft}>
+          <Image
+            source={require('../../assets/icons/appicon.png')}
+            style={styles.logoBox}
+            resizeMode="contain"
+          />
           <TouchableOpacity
-            style={styles.cartIconBtn}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Cart')}>
-            <Icon name="cart-outline" size={20} color={colors.text} />
-            {totalItems > 0 && (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{totalItems > 9 ? '9+' : totalItems}</Text>
-              </View>
-            )}
+            style={styles.walletPill}
+            onPress={() => setShowWallet(true)}
+            activeOpacity={0.8}>
+            <Icon name="wallet-outline" size={13} color="#3b82f6" />
+            <Text style={styles.walletPillText}>Rs. {user?.balance || 0}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Right: Search + Profile */}
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowSearch(true)}>
+            <Icon name="search" size={20} color={colors.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.profileIcon}
             activeOpacity={0.7}
             onPress={() => setShowProfile(true)}>
-            <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
+            {unreadCount > 0 && <View style={styles.profileBadge} />}
+            {resolveImageUrl(user?.avatarUrl) ? (
+              <Image source={{ uri: resolveImageUrl(user?.avatarUrl)! }} style={styles.profileAvatarImg} />
+            ) : (
+              <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -355,9 +413,7 @@ export default function StudentDashboard({ navigation }: Props) {
                         </TouchableOpacity>
                       </View>
                       {insufficientBalance && (
-                        <Text style={styles.lowBalanceText}>
-                          Low balance — Razorpay available
-                        </Text>
+                        <Text style={styles.lowBalanceText}>Low balance — Razorpay available</Text>
                       )}
                     </View>
                   );
@@ -397,29 +453,29 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Category Tabs */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.cats}
-              contentContainerStyle={styles.catsContent}>
-              {allCategories.map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
-                  onPress={() => setSelectedCategory(cat)}
-                  activeOpacity={0.7}>
-                  <Text style={[styles.catText, selectedCategory === cat && styles.catTextActive]}>{cat}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* All Items title */}
-            <Text style={styles.allItemsTitle}>All Items</Text>
+            {/* Category Pills */}
+            <View style={styles.cats}>
+              <View style={styles.catsContent}>
+                {allCategories.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
+                    onPress={() => setSelectedCategory(cat)}
+                    activeOpacity={0.7}>
+                    <Icon
+                      name={getCategoryIcon(cat)}
+                      size={14}
+                      color={selectedCategory === cat ? '#fff' : colors.textMuted}
+                    />
+                    <Text style={[styles.catText, selectedCategory === cat && styles.catTextActive]}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
             {menuLoading && !refreshing && (
               <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={colors.primary} />
+                <ActivityIndicator size="large" color={colors.accent} />
               </View>
             )}
           </>
@@ -439,37 +495,43 @@ export default function StudentDashboard({ navigation }: Props) {
       {/* Floating Cart Bar */}
       {totalItems > 0 && (
         <TouchableOpacity
-          style={styles.floatingBar}
-          onPress={() => navigation.navigate('Cart')}
+          style={styles.floatingBarWrap}
+          onPress={() => setShowCart(true)}
           activeOpacity={0.9}>
-          <View style={styles.floatingBarLeft}>
-            <View style={styles.floatingBarIcon}>
-              <Icon name="bag-handle" size={22} color="#fff" />
-              <View style={styles.floatingBarBadge}>
-                <Text style={styles.floatingBarBadgeText}>{totalItems}</Text>
+          <LinearGradient
+            colors={['#3b82f6', '#06d6a0']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.floatingBar}>
+            <View style={styles.floatingBarLeft}>
+              <View style={styles.floatingBarIcon}>
+                <Icon name="bag-handle" size={22} color="#fff" />
+                <View style={styles.floatingBarBadge}>
+                  <Text style={styles.floatingBarBadgeText}>{totalItems}</Text>
+                </View>
+              </View>
+              <View>
+                <Text style={styles.floatingBarSub}>{totalItems} item{totalItems > 1 ? 's' : ''}</Text>
+                <Text style={styles.floatingBarTotal}>Rs. {cartTotal}</Text>
               </View>
             </View>
-            <View>
-              <Text style={styles.floatingBarSub}>{totalItems} item{totalItems > 1 ? 's' : ''}</Text>
-              <Text style={styles.floatingBarTotal}>Rs. {cartTotal}</Text>
+            <View style={styles.floatingBarRight}>
+              <Text style={styles.floatingBarAction}>View Cart</Text>
+              <Icon name="arrow-forward" size={18} color="#fff" />
             </View>
-          </View>
-          <View style={styles.floatingBarRight}>
-            <Text style={styles.floatingBarAction}>View Cart</Text>
-            <Icon name="arrow-forward" size={18} color="#fff" />
-          </View>
+          </LinearGradient>
         </TouchableOpacity>
       )}
 
       {/* Modals */}
-      <SearchModal
-        visible={showSearch}
-        onClose={() => setShowSearch(false)}
+      <SearchModal visible={showSearch} onClose={() => setShowSearch(false)} />
+      <WalletModal
+        visible={showWallet}
+        onClose={() => setShowWallet(false)}
+        onTopUp={() => setShowTopUp(true)}
       />
-      <TopUpModal
-        visible={showTopUp}
-        onClose={() => setShowTopUp(false)}
-      />
+      <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
+      <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
       <ProfileDropdown
         visible={showProfile}
         onClose={() => setShowProfile(false)}
@@ -477,7 +539,58 @@ export default function StudentDashboard({ navigation }: Props) {
           setShowProfile(false);
           navigation.navigate('Profile');
         }}
+        onNavigateCart={() => { setShowProfile(false); setShowCart(true); }}
+        onNavigateNotifications={() => { setShowProfile(false); setShowNotifications(true); }}
+        onAddBalance={() => setShowTopUp(true)}
       />
+
+      {/* Cart Bottom Sheet */}
+      <CartBottomSheet
+        visible={showCart}
+        onClose={() => setShowCart(false)}
+        onOrderSuccess={(order) => {
+          setShowCart(false);
+          setSuccessOrder(order);
+          setShowSuccessAnim(true);
+          dispatch(fetchMyActiveOrders());
+        }}
+        onOrderFailure={(errorMessage) => {
+          setShowCart(false);
+          setFailError(errorMessage || '');
+          setShowFailAnim(true);
+        }}
+      />
+
+      {/* Order Success Animation */}
+      {showSuccessAnim && successOrder && (
+        <OrderAnimation
+          type="success"
+          orderId={successOrder.id}
+          total={successOrder.total}
+          onComplete={() => setShowSuccessAnim(false)}
+        />
+      )}
+
+      {/* Order Failure Animation */}
+      {showFailAnim && (
+        <OrderAnimation
+          type="failure"
+          errorMessage={failError}
+          onComplete={() => { setShowFailAnim(false); setFailError(''); }}
+        />
+      )}
+
+      {/* Order QR Card — shown after success anim closes */}
+      {successOrder && !showSuccessAnim && (
+        <OrderQRCard
+          order={successOrder}
+          onClose={() => {
+            setSuccessOrder(null);
+            dispatch(fetchMyActiveOrders());
+            dispatch(fetchWalletBalance());
+          }}
+        />
+      )}
 
       {/* Payment Confirmation Modal */}
       <Modal visible={showConfirmModal} animationType="fade" transparent statusBarTranslucent>
@@ -492,7 +605,6 @@ export default function StudentDashboard({ navigation }: Props) {
 
             {selectedPayment && (
               <>
-                {/* Payment details */}
                 <View style={styles.confirmDetailBox}>
                   <Text style={styles.confirmDetailLabel}>Payment for</Text>
                   <Text style={styles.confirmDetailValue}>{selectedPayment.title}</Text>
@@ -517,7 +629,6 @@ export default function StudentDashboard({ navigation }: Props) {
                   </View>
                 )}
 
-                {/* Payment Method Selection */}
                 <Text style={styles.methodLabel}>Pay via</Text>
                 <View style={styles.methodRow}>
                   <TouchableOpacity
@@ -525,18 +636,14 @@ export default function StudentDashboard({ navigation }: Props) {
                     onPress={() => setPaymentMethod('wallet')}
                     activeOpacity={0.7}>
                     <Icon name="wallet-outline" size={20} color={paymentMethod === 'wallet' ? '#fff' : colors.primary} />
-                    <Text style={[styles.methodBtnText, paymentMethod === 'wallet' && styles.methodBtnTextActive]}>
-                      Wallet
-                    </Text>
+                    <Text style={[styles.methodBtnText, paymentMethod === 'wallet' && styles.methodBtnTextActive]}>Wallet</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.methodBtn, paymentMethod === 'razorpay' && styles.methodBtnActive]}
                     onPress={() => setPaymentMethod('razorpay')}
                     activeOpacity={0.7}>
                     <Icon name="card-outline" size={20} color={paymentMethod === 'razorpay' ? '#fff' : colors.primary} />
-                    <Text style={[styles.methodBtnText, paymentMethod === 'razorpay' && styles.methodBtnTextActive]}>
-                      Razorpay
-                    </Text>
+                    <Text style={[styles.methodBtnText, paymentMethod === 'razorpay' && styles.methodBtnTextActive]}>Razorpay</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -549,7 +656,6 @@ export default function StudentDashboard({ navigation }: Props) {
                   </View>
                 )}
 
-                {/* Action buttons */}
                 <View style={styles.confirmActions}>
                   <TouchableOpacity
                     style={styles.cancelBtn}
@@ -588,53 +694,48 @@ export default function StudentDashboard({ navigation }: Props) {
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  // Header
+  // ── Header ──
   headerBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
     backgroundColor: colors.background,
   },
-  walletPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
-    backgroundColor: 'rgba(16,185,129,0.1)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)',
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logoBox: {
+    width: 34, height: 34, borderRadius: 10,
   },
-  walletPillText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  walletPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: colors.accentBg, borderWidth: 1, borderColor: colors.accentBorder,
+  },
+  walletPillText: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
   headerIconBtn: {
     width: 38, height: 38, justifyContent: 'center', alignItems: 'center', borderRadius: 12,
   },
-  cartIconBtn: {
-    width: 38, height: 38, justifyContent: 'center', alignItems: 'center', borderRadius: 12,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-  },
-  cartBadge: {
-    position: 'absolute', top: 2, right: 2, minWidth: 16, height: 16,
-    borderRadius: 8, backgroundColor: colors.primary,
-    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
-  },
-  cartBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
-  notifBadge: {
-    position: 'absolute', top: 2, right: 2, minWidth: 16, height: 16,
-    borderRadius: 8, backgroundColor: '#ef4444',
-    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
-  },
-  notifBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
   profileIcon: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.primary,
-    justifyContent: 'center', alignItems: 'center',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary,
+    justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
   },
-  profileInitial: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  profileAvatarImg: { width: 36, height: 36, borderRadius: 18 },
+  profileBadge: {
+    position: 'absolute', top: 0, right: 0, width: 10, height: 10,
+    borderRadius: 5, backgroundColor: '#ef4444', borderWidth: 1.5, borderColor: colors.background,
+    zIndex: 1,
+  },
+  profileInitial: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  // List
-  listContent: { padding: 16 },
+  // ── List content ──
+  listContent: { padding: 16, paddingTop: 12 },
 
-  // Sections
+  // ── Section ──
   section: { marginBottom: 16 },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   sectionTitle: { fontSize: 12, fontWeight: '600', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 1 },
 
-  // Pending Payments
+  // ── Pending Payments ──
   paymentCard: {
     backgroundColor: colors.card, borderRadius: 16, padding: 16, marginBottom: 10,
     borderWidth: 1, borderColor: colors.border,
@@ -655,7 +756,99 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   payNowText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   lowBalanceText: { fontSize: 11, color: '#f97316', marginTop: 8 },
 
-  // Payment Confirm Modal
+  // ── Active Orders ──
+  activeOrderCard: {
+    flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, marginBottom: 8,
+    backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
+  },
+  activeOrderIcon: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(59,130,246,0.15)',
+    justifyContent: 'center', alignItems: 'center', marginRight: 12,
+  },
+  activeOrderInfo: { flex: 1 },
+  activeOrderItems: { fontSize: 14, fontWeight: '600', color: colors.text },
+  activeOrderMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  statusText: { fontSize: 11, fontWeight: '600' },
+  tokenText: { fontSize: 12, color: colors.textMuted },
+
+  // ── Category Pills ──
+  cats: { marginBottom: 14 },
+  catsContent: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  catPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 24,
+    backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.border,
+  },
+  catPillActive: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
+  catText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  catTextActive: { color: '#fff' },
+
+  // ── Food Cards ──
+  foodCard: {
+    flexDirection: 'row', gap: 12, padding: 10, borderRadius: 16,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 10,
+  },
+  foodImageWrap: { position: 'relative' },
+  foodImage: { width: 68, height: 68, borderRadius: 12 },
+  foodImagePlaceholder: {
+    backgroundColor: 'rgba(59,130,246,0.25)', justifyContent: 'center', alignItems: 'center',
+  },
+  offerBadge: {
+    position: 'absolute', top: 3, left: 3, backgroundColor: colors.primary,
+    borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+  },
+  offerBadgeText: { fontSize: 8, fontWeight: '700', color: '#fff' },
+  foodInfo: { flex: 1, justifyContent: 'space-between', paddingVertical: 2 },
+  foodNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  foodName: { fontSize: 14, fontWeight: '600', color: colors.text, flexShrink: 1 },
+  foodBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  foodPrice: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
+  addBtn: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#3b82f6',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  qtyControl: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: 12, overflow: 'hidden',
+  },
+  qtyBtn: { padding: 5 },
+  qtyText: { fontSize: 13, fontWeight: '700', color: colors.text, width: 22, textAlign: 'center' },
+
+  // ── Loading / Empty ──
+  loadingWrap: { paddingVertical: 40, alignItems: 'center' },
+  empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  emptySubtitle: { fontSize: 13, color: colors.textMuted },
+
+  // ── Floating Cart Bar ──
+  floatingBarWrap: {
+    position: 'absolute', bottom: 20, left: 16, right: 16,
+    borderRadius: 20,
+    shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
+  },
+  floatingBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 20, padding: 14,
+  },
+  floatingBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  floatingBarIcon: {
+    width: 44, height: 44, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center',
+  },
+  floatingBarBadge: {
+    position: 'absolute', top: -4, right: -4, backgroundColor: '#fff',
+    borderRadius: 10, width: 18, height: 18, justifyContent: 'center', alignItems: 'center',
+  },
+  floatingBarBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary },
+  floatingBarSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  floatingBarTotal: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  floatingBarRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  floatingBarAction: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  footerWithCart: { height: 100 },
+  footerCompact: { height: 20 },
+
+  // ── Payment Modal ──
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24,
   },
@@ -673,9 +866,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   confirmRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10,
   },
-  confirmRowBorder: {
-    borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10,
-  },
+  confirmRowBorder: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 },
   confirmRowLabel: { fontSize: 14, color: colors.textMuted },
   confirmRowAmount: { fontSize: 20, fontWeight: '800', color: colors.text },
   confirmRowValue: { fontSize: 15, fontWeight: '600', color: colors.text },
@@ -683,8 +874,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   methodRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   methodBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 12, borderRadius: 12,
-    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: 'transparent',
+    paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: 'transparent',
   },
   methodBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   methodBtnText: { fontSize: 14, fontWeight: '600', color: colors.primary },
@@ -708,7 +898,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   confirmBtnDisabled: { opacity: 0.4 },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  // Success Toast
+  // ── Success Toast ──
   successToast: {
     position: 'absolute', bottom: 100, left: 20, right: 20,
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -716,74 +906,4 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
   },
   successToastText: { fontSize: 15, fontWeight: '600', color: '#fff' },
-
-  // Active Orders
-  activeOrderCard: {
-    flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, marginBottom: 8,
-    backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
-  },
-  activeOrderIcon: {
-    width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(59,130,246,0.15)',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  activeOrderInfo: { flex: 1 },
-  activeOrderItems: { fontSize: 14, fontWeight: '600', color: colors.text },
-  activeOrderMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: '600' },
-  tokenText: { fontSize: 12, color: colors.textMuted },
-
-  // Categories
-  cats: { marginBottom: 12 },
-  catsContent: { gap: 8, alignItems: 'center' },
-  catPill: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-  catPillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  catText: { fontSize: 13, fontWeight: '500', color: colors.text },
-  catTextActive: { color: '#fff', fontWeight: '600' },
-
-  // All Items
-  allItemsTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 12 },
-
-  // Food cards
-  foodCard: {
-    flexDirection: 'row', gap: 10, padding: 8, borderRadius: 14,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8,
-  },
-  foodImageWrap: { position: 'relative' },
-  foodImage: { width: 56, height: 56, borderRadius: 10 },
-  foodImagePlaceholder: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
-  offerBadge: { position: 'absolute', top: 2, left: 2, backgroundColor: colors.primary, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
-  offerBadgeText: { fontSize: 8, fontWeight: '700', color: '#fff' },
-  foodInfo: { flex: 1, justifyContent: 'space-between' },
-  foodName: { fontSize: 13, fontWeight: '500', color: colors.text },
-  foodBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  foodPrice: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  addBtn: { backgroundColor: colors.primary, borderRadius: 8, padding: 4 },
-  qtyControl: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: 8, overflow: 'hidden' },
-  qtyBtn: { padding: 4 },
-  qtyText: { fontSize: 12, fontWeight: '700', color: colors.text, width: 20, textAlign: 'center' },
-
-  // Loading / Empty
-  loadingWrap: { paddingVertical: 40, alignItems: 'center' },
-  empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
-  emptySubtitle: { fontSize: 13, color: colors.textMuted },
-
-  // Floating Cart Bar
-  floatingBar: {
-    position: 'absolute', bottom: 20, left: 16, right: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.primary, borderRadius: 20, padding: 14,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 10,
-  },
-  floatingBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  floatingBarIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
-  floatingBarBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#fff', borderRadius: 10, width: 18, height: 18, justifyContent: 'center', alignItems: 'center' },
-  floatingBarBadgeText: { fontSize: 10, fontWeight: '800', color: colors.primary },
-  floatingBarSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
-  floatingBarTotal: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  floatingBarRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  floatingBarAction: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  footerWithCart: { height: 100 },
-  footerCompact: { height: 20 },
 });

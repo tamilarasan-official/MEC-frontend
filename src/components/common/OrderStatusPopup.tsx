@@ -2,7 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Easing, Vibration,
 } from 'react-native';
+import Sound from 'react-native-sound';
 import Icon from './Icon';
+
+// Enable playback in silent mode (iOS)
+Sound.setCategory('Playback');
 
 interface OrderStatusPopupProps {
   status: 'preparing' | 'ready' | 'completed' | 'cancelled';
@@ -47,6 +51,14 @@ export function OrderStatusPopup({ status, orderNumber, onDismiss }: OrderStatus
   useEffect(() => {
     // Haptic feedback
     Vibration.vibrate(100);
+
+    // Play notification sound for all order status changes
+    const sound = new Sound('notification_sound.wav', Sound.MAIN_BUNDLE, (error) => {
+      if (!error) {
+        sound.setVolume(1.0);
+        sound.play(() => sound.release());
+      }
+    });
 
     // Scale in
     Animated.spring(scaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();

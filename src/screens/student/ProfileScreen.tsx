@@ -1,25 +1,29 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
+  Image, ActivityIndicator, Alert,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList, DietFilter } from '../../types';
+import { StudentHomeStackParamList } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { fetchWalletBalance, fetchTransactions, setDietFilter } from '../../store/slices/userSlice';
-import { logout } from '../../store/slices/authSlice';
+import { fetchWalletBalance } from '../../store/slices/userSlice';
+import { setUser } from '../../store/slices/authSlice';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 
-type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Profile'>;
+const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
+function resolveAvatarUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${IMAGE_BASE}${url}`;
+}
 
-const DIET_OPTIONS: { label: string; value: DietFilter; icon: string; color: string }[] = [
-  { label: 'Show All', value: 'all', icon: 'restaurant', color: '#3b82f6' },
-  { label: 'Veg Only', value: 'veg', icon: 'leaf', color: '#22c55e' },
-  { label: 'Non-Veg', value: 'nonveg', icon: 'flame', color: '#f97316' },
-];
+type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Profile'>;
 
 const THEME_OPTIONS = [
   { label: 'Light', icon: 'sunny-outline', value: 'light' as const },
@@ -31,35 +35,46 @@ export default function ProfileScreen({ navigation }: Props) {
   const dispatch = useAppDispatch();
   const { colors, mode, setMode } = useTheme();
   const user = useAppSelector(s => s.auth.user);
-  const { balance: walletBalance, transactions, dietFilter } = useAppSelector(s => s.user);
+  const { balance: walletBalance } = useAppSelector(s => s.user);
   const [refreshing, setRefreshing] = useState(false);
-  const [showTransactions, setShowTransactions] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarTs, setAvatarTs] = useState(Date.now());
+  const [avatarError, setAvatarError] = useState(false);
 
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   useEffect(() => {
     dispatch(fetchWalletBalance());
-    dispatch(fetchTransactions());
   }, [dispatch]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      dispatch(fetchWalletBalance()),
-      dispatch(fetchTransactions()),
-    ]);
+    await dispatch(fetchWalletBalance());
     setRefreshing(false);
   };
 
-  const handleDietChange = async (value: DietFilter) => {
-    dispatch(setDietFilter(value));
+  const handleAvatarUpload = async () => {
+    const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, maxWidth: 600, maxHeight: 600 });
+    if (!result.assets || !result.assets[0]) return;
+    const asset = result.assets[0];
+    if (!asset.uri) return;
+    setAvatarUploading(true);
     try {
-      await walletService.updateProfile({ dietPreference: value });
-    } catch { /* ignore */ }
-  };
-
-  const handleLogout = () => {
-    dispatch(logout());
+      const data = await walletService.uploadAvatar(
+        asset.uri,
+        asset.fileName || 'avatar.jpg',
+        asset.type || 'image/jpeg',
+      );
+      if (user && data?.avatarUrl) {
+        dispatch(setUser({ ...user, avatarUrl: data.avatarUrl }));
+        setAvatarTs(Date.now());
+        setAvatarError(false);
+      }
+    } catch {
+      Alert.alert('Upload Failed', 'Could not upload profile picture. Please try again.');
+    } finally {
+      setAvatarUploading(false);
+    }
   };
 
   return (
@@ -82,10 +97,27 @@ export default function ProfileScreen({ navigation }: Props) {
           }>
 
           {/* Profile Card */}
-          <View style={styles.profileCard}>
-            <View style={styles.avatar}>
-              <Icon name="person" size={32} color="#fff" />
-            </View>
+          <LinearGradient
+            colors={['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.04)']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={styles.profileCard}>
+            <TouchableOpacity style={styles.avatar} onPress={handleAvatarUpload} activeOpacity={0.8} disabled={avatarUploading}>
+              {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
+                <Image
+                  source={{ uri: `${resolveAvatarUrl(user?.avatarUrl)!}?t=${avatarTs}`, cache: 'reload' }}
+                  style={styles.avatarImg}
+                  resizeMode="cover"
+                  onError={() => setAvatarError(true)}
+                />
+              ) : (
+                <Text style={styles.avatarInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
+              )}
+              <View style={styles.avatarOverlay}>
+                {avatarUploading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Icon name="camera" size={16} color="#fff" />}
+              </View>
+            </TouchableOpacity>
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{user?.name || 'Student'}</Text>
               <Text style={styles.profileDept}>{user?.department ? `${user.department} Department` : 'Department'}</Text>
@@ -93,7 +125,7 @@ export default function ProfileScreen({ navigation }: Props) {
                 <Text style={styles.roleBadgeText}>MEC Student</Text>
               </View>
             </View>
-          </View>
+          </LinearGradient>
 
           {/* Info Cards Row */}
           <View style={styles.infoRow}>
@@ -109,11 +141,11 @@ export default function ProfileScreen({ navigation }: Props) {
             </View>
           </View>
 
-          {/* Wallet Balance Card */}
+          {/* Wallet Balance Card → navigates to WalletScreen */}
           <TouchableOpacity
             style={styles.walletCard}
             activeOpacity={0.8}
-            onPress={() => setShowTransactions(!showTransactions)}>
+            onPress={() => navigation.navigate('Wallet')}>
             <View style={styles.walletLeft}>
               <View style={styles.walletIconWrap}>
                 <Icon name="wallet-outline" size={20} color={colors.primary} />
@@ -126,47 +158,12 @@ export default function ProfileScreen({ navigation }: Props) {
             <Icon name="chevron-forward" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Transactions (collapsible) */}
-          {showTransactions && (
-            <View style={styles.transactionsSection}>
-              {transactions.length === 0 ? (
-                <Text style={styles.emptyText}>No transactions yet</Text>
-              ) : (
-                transactions.slice(0, 15).map(tx => (
-                  <View key={tx.id} style={styles.txRow}>
-                    <View style={[styles.txIcon,
-                      tx.type === 'credit' || tx.type === 'refund'
-                        ? styles.txIconCredit : styles.txIconDebit,
-                    ]}>
-                      <Icon
-                        name={tx.type === 'credit' || tx.type === 'refund' ? 'arrow-down' : 'arrow-up'}
-                        size={16}
-                        color={tx.type === 'credit' || tx.type === 'refund' ? '#10b981' : '#ef4444'}
-                      />
-                    </View>
-                    <View style={styles.txContent}>
-                      <Text style={styles.txDesc} numberOfLines={1}>{tx.description}</Text>
-                      <Text style={styles.txDate}>
-                        {new Date(tx.createdAt).toLocaleDateString('en-IN', {
-                          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                        })}
-                      </Text>
-                    </View>
-                    <Text style={[styles.txAmount,
-                      tx.type === 'credit' || tx.type === 'refund' ? styles.txAmountCredit : styles.txAmountDebit,
-                    ]}>
-                      {tx.type === 'credit' || tx.type === 'refund' ? '+' : '-'}Rs.{tx.amount}
-                    </Text>
-                  </View>
-                ))
-              )}
-            </View>
-          )}
-
           {/* Appearance */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeader}>
-              <Icon name="moon" size={18} color={colors.accent} />
+              <View style={styles.sectionIconWrap}>
+                <Icon name="moon" size={18} color={colors.accent} />
+              </View>
               <View>
                 <Text style={styles.sectionTitle}>Appearance</Text>
                 <Text style={styles.sectionSubtitle}>Choose your preferred theme</Text>
@@ -182,34 +179,9 @@ export default function ProfileScreen({ navigation }: Props) {
                   <Icon
                     name={opt.icon}
                     size={16}
-                    color={mode === opt.value ? '#fff' : colors.textSecondary}
+                    color={mode === opt.value ? colors.accent : colors.textSecondary}
                   />
                   <Text style={[styles.themePillText, mode === opt.value && styles.themePillTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Diet Preference */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionEmoji}>🌿</Text>
-              <View>
-                <Text style={styles.sectionTitle}>Diet Preference</Text>
-                <Text style={styles.sectionSubtitle}>Filter menu by diet type</Text>
-              </View>
-            </View>
-            <View style={styles.themeRow}>
-              {DIET_OPTIONS.map(opt => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.dietPill, dietFilter === opt.value && styles.dietPillActive]}
-                  onPress={() => handleDietChange(opt.value)}
-                  activeOpacity={0.7}>
-                  <Icon name={opt.icon} size={16} color={opt.color} />
-                  <Text style={[styles.dietPillText, dietFilter === opt.value && styles.dietPillTextActive]}>
                     {opt.label}
                   </Text>
                 </TouchableOpacity>
@@ -242,12 +214,6 @@ export default function ProfileScreen({ navigation }: Props) {
             </TouchableOpacity>
           ))}
 
-          {/* Sign Out */}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-            <Icon name="log-out-outline" size={20} color={colors.danger} />
-            <Text style={styles.logoutText}>Sign Out</Text>
-          </TouchableOpacity>
-
           {/* Version */}
           <Text style={styles.versionText}>MadrasOne v1.0.0</Text>
 
@@ -267,17 +233,25 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '700', color: c.text },
+  headerSpacer: { width: 36 },
   content: { padding: 16 },
 
+  // Profile card
   profileCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: c.card, borderRadius: 16, padding: 18,
+    borderRadius: 20, padding: 18,
     borderWidth: 1, borderColor: c.primaryBorder,
     marginBottom: 12,
   },
   avatar: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: '#14b8a6',
-    justifyContent: 'center', alignItems: 'center',
+    width: 72, height: 72, borderRadius: 20, backgroundColor: '#14b8a6',
+    justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
+  },
+  avatarImg: { width: 72, height: 72, borderRadius: 20 },
+  avatarInitial: { fontSize: 28, fontWeight: '800', color: '#fff' },
+  avatarOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 26,
+    backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
   },
   profileInfo: { flex: 1 },
   profileName: { fontSize: 18, fontWeight: '700', color: c.text },
@@ -285,10 +259,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   roleBadge: {
     alignSelf: 'flex-start', marginTop: 6,
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
-    backgroundColor: c.primaryBg, borderWidth: 1, borderColor: c.primaryBorder,
+    backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.3)',
   },
-  roleBadgeText: { fontSize: 11, fontWeight: '600', color: c.primary },
+  roleBadgeText: { fontSize: 11, fontWeight: '600', color: '#3b82f6' },
 
+  // Info row
   infoRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   infoCard: {
     flex: 1, backgroundColor: c.card, borderRadius: 14, padding: 14,
@@ -298,10 +273,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   infoLabel: { fontSize: 11, color: c.textSecondary },
   infoValue: { fontSize: 14, fontWeight: '700', color: c.text },
 
+  // Wallet card
   walletCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: c.card, borderRadius: 14, padding: 16,
-    borderWidth: 1, borderColor: c.border, marginBottom: 16,
+    backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: c.primaryBorder, marginBottom: 16,
   },
   walletLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   walletIconWrap: {
@@ -311,56 +287,29 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   walletLabel: { fontSize: 12, color: c.textSecondary },
   walletAmount: { fontSize: 22, fontWeight: '800', color: c.text, marginTop: 2 },
 
-  transactionsSection: { marginBottom: 16 },
-  emptyText: { fontSize: 13, color: c.textSecondary, textAlign: 'center', paddingVertical: 20 },
-  txRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12,
-    backgroundColor: c.card, borderWidth: 1, borderColor: c.border, marginBottom: 6,
-  },
-  txIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  txIconCredit: { backgroundColor: 'rgba(16,185,129,0.12)' },
-  txIconDebit: { backgroundColor: 'rgba(239,68,68,0.12)' },
-  txContent: { flex: 1 },
-  txDesc: { fontSize: 13, fontWeight: '500', color: c.text },
-  txDate: { fontSize: 11, color: c.textSecondary, marginTop: 2 },
-  txAmount: { fontSize: 14, fontWeight: '700' },
-  txAmountCredit: { color: '#10b981' },
-  txAmountDebit: { color: '#ef4444' },
-  headerSpacer: { width: 36 },
-  sectionEmoji: { fontSize: 18 },
-  bottomSpacer: { height: 40 },
-
+  // Appearance section
   sectionCard: {
     backgroundColor: c.card, borderRadius: 14, padding: 16,
     borderWidth: 1, borderColor: c.border, marginBottom: 12,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  sectionIconWrap: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: c.accentBg,
+    justifyContent: 'center', alignItems: 'center',
+  },
   sectionTitle: { fontSize: 15, fontWeight: '600', color: c.text },
   sectionSubtitle: { fontSize: 12, color: c.textSecondary, marginTop: 1 },
-
   themeRow: { flexDirection: 'row', gap: 8 },
   themePill: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: 10, borderRadius: 12,
     backgroundColor: c.background, borderWidth: 1, borderColor: c.border,
   },
-  themePillActive: {
-    backgroundColor: c.accentBg, borderColor: c.accentBorder,
-  },
+  themePillActive: { backgroundColor: c.accentBg, borderColor: c.accentBorder },
   themePillText: { fontSize: 12, fontWeight: '500', color: c.textSecondary },
   themePillTextActive: { color: c.accent, fontWeight: '600' },
 
-  dietPill: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 12,
-    backgroundColor: c.background, borderWidth: 1, borderColor: c.border,
-  },
-  dietPillActive: {
-    backgroundColor: c.accentBg, borderColor: c.accentBorder,
-  },
-  dietPillText: { fontSize: 11, fontWeight: '500', color: c.textSecondary },
-  dietPillTextActive: { color: c.text, fontWeight: '600' },
-
+  // Menu items
   menuItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: c.card, borderRadius: 14, padding: 16,
@@ -374,12 +323,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   menuItemLabel: { fontSize: 15, fontWeight: '600', color: c.text },
   menuItemSub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
 
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 16, borderRadius: 14, marginTop: 8,
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
-    backgroundColor: 'rgba(239,68,68,0.05)',
-  },
-  logoutText: { fontSize: 15, fontWeight: '600', color: c.danger },
   versionText: { fontSize: 12, color: c.textSecondary, textAlign: 'center', marginTop: 20 },
+  bottomSpacer: { height: 40 },
 });
