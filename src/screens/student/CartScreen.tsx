@@ -1,18 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList } from '../../types';
+import { StudentHomeStackParamList, CreateOrderResult, Order } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { updateQuantity, removeFromCart, clearCart } from '../../store/slices/cartSlice';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 import { createOrder } from '../../store/slices/ordersSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -31,33 +25,54 @@ export default function CartScreen({ navigation }: Props) {
   const [orderStatus, setOrderStatus] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle');
   const [pickupToken, setPickupToken] = useState('');
   const [orderError, setOrderError] = useState('');
+  const [orderType, setOrderType] = useState<'instant' | 'regular' | 'split'>('instant');
+  const [orderTotal, setOrderTotal] = useState(0);
+  const [orderId, setOrderId] = useState('');
+  const [splitOrders, setSplitOrders] = useState<Order[] | undefined>(undefined);
 
   const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
   const totalCount = cartItems.reduce((sum, c) => sum + c.quantity, 0);
   const balance = user?.balance || 0;
   const hasBalance = balance >= cartTotal;
+  const submittingRef = useRef(false);
 
   const handlePlaceOrder = async () => {
-    if (!hasBalance) {
-      setOrderError(`Insufficient balance. Add Rs.${cartTotal - balance} to proceed.`);
-      setOrderStatus('failure');
-      return;
-    }
-    if (!shopId || cartItems.length === 0) return;
-
-    setOrderStatus('loading');
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
-      const result = await dispatch(createOrder({
+      if (!hasBalance) {
+        setOrderError(`Insufficient balance. Add Rs.${cartTotal - balance} to proceed.`);
+        setOrderStatus('failure');
+        return;
+      }
+      if (!shopId || cartItems.length === 0) return;
+
+      setOrderStatus('loading');
+      const result: CreateOrderResult = await dispatch(createOrder({
         shopId,
         items: cartItems.map(c => ({ foodItemId: c.item.id, quantity: c.quantity })),
       })).unwrap();
-      setPickupToken(result.pickupToken);
+      const primaryOrder = result.order;
+      setPickupToken(primaryOrder.pickupToken);
+      setOrderId(primaryOrder.id);
+
+      if (result.wasSplit && result.orders && result.orders.length > 1) {
+        // Split order: show both tokens on single screen
+        setOrderType('split');
+        setSplitOrders(result.orders);
+        setOrderTotal(result.orders.reduce((sum, o) => sum + o.total, 0));
+      } else {
+        setOrderType(primaryOrder.isReadyServe ? 'instant' : 'regular');
+        setOrderTotal(primaryOrder.total);
+      }
       dispatch(clearCart());
       setOrderStatus('success');
     } catch (err: any) {
       const msg = typeof err === 'string' ? err : err?.message || 'Something went wrong. Please try again.';
       setOrderError(msg);
       setOrderStatus('failure');
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -65,7 +80,11 @@ export default function CartScreen({ navigation }: Props) {
     return (
       <OrderAnimation
         type={orderStatus === 'success' ? 'success' : 'failure'}
+        orderType={orderType}
         pickupToken={pickupToken}
+        orderId={orderId}
+        total={orderTotal}
+        splitOrders={splitOrders}
         errorMessage={orderError}
         onComplete={() => {
           if (orderStatus === 'success') {
@@ -73,6 +92,7 @@ export default function CartScreen({ navigation }: Props) {
           }
           setOrderStatus('idle');
           setOrderError('');
+          setSplitOrders(undefined);
         }}
       />
     );
@@ -83,7 +103,7 @@ export default function CartScreen({ navigation }: Props) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
           <Icon name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View>
@@ -101,7 +121,7 @@ export default function CartScreen({ navigation }: Props) {
             </View>
             <Text style={styles.emptyTitle}>Your cart is empty</Text>
             <Text style={styles.emptySub}>Add some delicious items!</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.goBack()}>
+            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.goBack()} accessibilityLabel="Browse menu" accessibilityRole="button">
               <Text style={styles.emptyBtnText}>Browse Menu</Text>
             </TouchableOpacity>
           </View>
@@ -111,7 +131,7 @@ export default function CartScreen({ navigation }: Props) {
             return (
               <View key={c.item.id} style={styles.cartCard}>
                 {c.item.image ? (
-                  <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.cartImage} />
+                  <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.cartImage} accessibilityLabel={`${c.item.name} image`} />
                 ) : (
                   <View style={[styles.cartImage, styles.cartImagePlaceholder]}>
                     <Icon name="restaurant-outline" size={24} color={colors.textMuted} />
@@ -120,7 +140,7 @@ export default function CartScreen({ navigation }: Props) {
                 <View style={styles.cartInfo}>
                   <View style={styles.cartTop}>
                     <Text style={styles.cartName} numberOfLines={1}>{c.item.name}</Text>
-                    <TouchableOpacity onPress={() => dispatch(removeFromCart(c.item.id))}>
+                    <TouchableOpacity onPress={() => dispatch(removeFromCart(c.item.id))} accessibilityLabel={`Remove ${c.item.name}`} accessibilityRole="button">
                       <Icon name="trash-outline" size={18} color={colors.danger} />
                     </TouchableOpacity>
                   </View>
@@ -128,11 +148,11 @@ export default function CartScreen({ navigation }: Props) {
                   <View style={styles.cartBottom}>
                     <Text style={styles.cartPrice}>Rs.{price * c.quantity}</Text>
                     <View style={styles.qtyControl}>
-                      <TouchableOpacity style={styles.qtyBtn} onPress={() => dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity - 1 }))}>
+                      <TouchableOpacity style={styles.qtyBtn} onPress={() => dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity - 1 }))} accessibilityLabel={`Decrease ${c.item.name} quantity`} accessibilityRole="button">
                         <Icon name="remove" size={16} color={colors.text} />
                       </TouchableOpacity>
                       <Text style={styles.qtyText}>{c.quantity}</Text>
-                      <TouchableOpacity style={styles.qtyBtn} onPress={() => dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 }))}>
+                      <TouchableOpacity style={styles.qtyBtn} onPress={() => dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 }))} accessibilityLabel={`Increase ${c.item.name} quantity`} accessibilityRole="button">
                         <Icon name="add" size={16} color={colors.text} />
                       </TouchableOpacity>
                     </View>
@@ -170,7 +190,9 @@ export default function CartScreen({ navigation }: Props) {
             style={[styles.payBtn, (!hasBalance || orderStatus === 'loading') && styles.payBtnDisabled]}
             onPress={handlePlaceOrder}
             disabled={!hasBalance || orderStatus === 'loading'}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+            accessibilityLabel={`Pay Rs.${cartTotal}`}
+            accessibilityRole="button">
             {orderStatus === 'loading' ? (
               <ActivityIndicator color="#fff" />
             ) : (

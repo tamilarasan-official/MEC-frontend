@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList } from '../../types';
 import Icon from '../../components/common/Icon';
@@ -54,17 +55,38 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
 
   const [prefs, setPrefs] = useState<NotifPref[]>(PREFS_INITIAL);
 
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        const saved = await AsyncStorage.getItem('@campusone_notification_prefs');
+        if (saved) {
+          const parsed = JSON.parse(saved) as Record<string, boolean>;
+          setPrefs(prev =>
+            prev.map(p => parsed[p.key] !== undefined ? { ...p, enabled: parsed[p.key] } : p),
+          );
+        }
+      } catch {
+        // ignore load errors
+      }
+    };
+    loadPrefs();
+  }, []);
+
   const togglePref = (key: string) => {
-    setPrefs(prev =>
-      prev.map(p => p.key === key ? { ...p, enabled: !p.enabled } : p),
-    );
+    setPrefs(prev => {
+      const updated = prev.map(p => p.key === key ? { ...p, enabled: !p.enabled } : p);
+      const toSave: Record<string, boolean> = {};
+      updated.forEach(p => { toSave[p.key] = p.enabled; });
+      AsyncStorage.setItem('@campusone_notification_prefs', JSON.stringify(toSave)).catch(() => {});
+      return updated;
+    });
   };
 
   return (
     <ScreenWrapper>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Notifications</Text>
@@ -90,6 +112,8 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
                 onValueChange={() => togglePref(pref.key)}
                 trackColor={{ false: isDark ? '#2a2a3a' : '#e0e0e0', true: 'rgba(59,130,246,0.4)' }}
                 thumbColor={pref.enabled ? colors.accent : (isDark ? '#555' : '#ccc')}
+                accessibilityLabel={`Toggle ${pref.title}`}
+                accessibilityRole="switch"
               />
             </View>
           ))}

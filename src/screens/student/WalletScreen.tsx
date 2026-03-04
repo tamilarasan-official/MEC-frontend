@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl,
 } from 'react-native';
@@ -27,15 +27,28 @@ export default function WalletScreen({ navigation }: Props) {
   const dispatch = useAppDispatch();
   const { balance, transactions } = useAppSelector(s => s.user);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    dispatch(fetchWalletBalance());
-    dispatch(fetchTransactions());
+    const load = async () => {
+      try {
+        await Promise.all([dispatch(fetchWalletBalance()), dispatch(fetchTransactions())]);
+        setError(null);
+      } catch {
+        setError('Something went wrong. Pull down to retry.');
+      }
+    };
+    load();
   }, [dispatch]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([dispatch(fetchWalletBalance()), dispatch(fetchTransactions())]);
+    try {
+      await Promise.all([dispatch(fetchWalletBalance()), dispatch(fetchTransactions())]);
+      setError(null);
+    } catch {
+      setError('Something went wrong. Pull down to retry.');
+    }
     setRefreshing(false);
   };
 
@@ -46,7 +59,7 @@ export default function WalletScreen({ navigation }: Props) {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Wallet</Text>
@@ -78,10 +91,17 @@ export default function WalletScreen({ navigation }: Props) {
             </>
           }
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Icon name="receipt-outline" size={40} color={colors.textMuted} />
-              <Text style={styles.emptyText}>No transactions yet</Text>
-            </View>
+            error ? (
+              <View style={styles.empty}>
+                <Icon name="alert-circle-outline" size={40} color={colors.textMuted} />
+                <Text style={styles.emptyText}>{error}</Text>
+              </View>
+            ) : (
+              <View style={styles.empty}>
+                <Icon name="receipt-outline" size={40} color={colors.textMuted} />
+                <Text style={styles.emptyText}>No transactions yet</Text>
+              </View>
+            )
           }
           renderItem={({ item: tx }) => {
             const credit = isCredit(tx.type);

@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Transaction, DashboardStats, AnalyticsData, AppNotification, QRPayment } from '../../types';
 import api from '../../services/api';
+import { createOrder } from './ordersSlice';
 
 interface OrderStatusPopupData {
   status: 'preparing' | 'ready' | 'completed' | 'cancelled';
@@ -121,6 +122,10 @@ const userSlice = createSlice({
   extraReducers: (builder) => {
     builder.addCase(fetchWalletBalance.fulfilled, (s, a) => { s.balance = a.payload.balance; });
     builder.addCase(fetchTransactions.fulfilled, (s, a) => { s.transactions = a.payload; });
+    // Sync balance after order creation
+    builder.addCase(createOrder.fulfilled, (s, a) => {
+      if (a.payload.newBalance !== undefined) s.balance = a.payload.newBalance;
+    });
     builder.addCase(fetchDashboardStats.fulfilled, (s, a) => { s.dashboardStats = a.payload; });
     builder.addCase(fetchAnalytics.fulfilled, (s, a) => { s.analytics = a.payload; });
     builder.addCase(fetchShopDetails.fulfilled, (s, a) => { s.shopDetails = a.payload; });

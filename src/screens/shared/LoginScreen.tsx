@@ -1,27 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Image,
 } from 'react-native';
+import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { login } from '../../store/slices/authSlice';
+import { sendOtp, clearError } from '../../store/slices/authSlice';
 import Icon from '../../components/common/Icon';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
   const dispatch = useAppDispatch();
   const { isLoading: loading, error } = useAppSelector(s => s.auth);
-  const isFormValid = username.trim().length > 0 && password.trim().length > 0;
+  const isFormValid = /^[6-9]\d{9}$/.test(phone);
+  const submittingRef = useRef(false);
 
-  const handleLogin = async () => {
-    dispatch(login({ username: username.trim(), password }));
-  };
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      dispatch(clearError());
+    });
+    return unsubscribe;
+  }, [navigation, dispatch]);
+
+  const handlePhoneChange = useCallback((val: string) => {
+    setPhone(val.replace(/\D/g, '').slice(0, 10));
+  }, []);
+
+  const handleSendOtp = useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      mediumHaptic();
+      const result = await dispatch(sendOtp({ phone }));
+      if (sendOtp.fulfilled.match(result)) {
+        const { sessionId } = result.payload;
+        navigation.navigate('OTP', { phone, sessionId });
+      }
+    } finally {
+      submittingRef.current = false;
+    }
+  }, [dispatch, phone, navigation]);
 
   return (
     <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>
@@ -37,6 +60,7 @@ export default function LoginScreen({ navigation }: Props) {
               source={require('../../assets/icons/appicon.png')}
               style={styles.logo}
               resizeMode="contain"
+              accessibilityLabel="CampusOne logo"
             />
             <Text style={styles.brandName}>CampusOne</Text>
             <Text style={styles.brandTagline}>Your campus, one tap away</Text>
@@ -50,39 +74,35 @@ export default function LoginScreen({ navigation }: Props) {
               </View>
             )}
 
-            {/* Username */}
+            {/* Phone Number */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Username / Roll No</Text>
-              <TextInput
-                style={styles.input}
-                value={username}
-                onChangeText={setUsername}
-                placeholder="Enter username or roll number"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              <Text style={styles.label}>Phone Number</Text>
+              <View style={styles.phoneRow}>
+                <Text style={styles.phonePrefix}>+91</Text>
+                <View style={styles.phoneDivider} />
+                <TextInput
+                  style={styles.phoneInput}
+                  value={phone}
+                  onChangeText={handlePhoneChange}
+                  placeholder="Enter 10-digit number"
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  returnKeyType="done"
+                  onSubmitEditing={() => isFormValid && !loading && handleSendOtp()}
+                  accessibilityLabel="Phone number"
+                />
+              </View>
             </View>
 
-            {/* Password */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter your password"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                secureTextEntry
-              />
-            </View>
-
-            {/* Sign In Button */}
+            {/* Send OTP Button */}
             <TouchableOpacity
               style={[styles.signInBtn, (!isFormValid || loading) && styles.btnDisabled]}
-              onPress={handleLogin}
+              onPress={handleSendOtp}
               disabled={!isFormValid || loading}
-              activeOpacity={0.85}>
+              activeOpacity={0.85}
+              accessibilityLabel="Send OTP"
+              accessibilityRole="button">
               <LinearGradient
                 colors={['#9333ea', '#7c3aed']}
                 start={{ x: 0, y: 0 }}
@@ -91,12 +111,12 @@ export default function LoginScreen({ navigation }: Props) {
                 {loading ? (
                   <>
                     <ActivityIndicator size="small" color="#fff" />
-                    <Text style={styles.signInText}>Signing in...</Text>
+                    <Text style={styles.signInText}>Sending OTP...</Text>
                   </>
                 ) : (
                   <>
-                    <Icon name="lock-closed" size={16} color="#fff" />
-                    <Text style={styles.signInText}>Sign In</Text>
+                    <Icon name="call-outline" size={16} color="#fff" />
+                    <Text style={styles.signInText}>Send OTP</Text>
                   </>
                 )}
               </LinearGradient>
@@ -108,7 +128,9 @@ export default function LoginScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.createBtn}
               onPress={() => navigation.navigate('Register')}
-              activeOpacity={0.8}>
+              activeOpacity={0.8}
+              accessibilityLabel="Create an account"
+              accessibilityRole="button">
               <Text style={styles.createBtnText}>Create an Account</Text>
             </TouchableOpacity>
           </View>
@@ -144,18 +166,23 @@ const styles = StyleSheet.create({
 
   inputGroup: { gap: 10 },
   label: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  input: {
+  phoneRow: {
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    fontSize: 15,
-    color: '#fff',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 14, overflow: 'hidden',
+  },
+  phonePrefix: {
+    paddingLeft: 16, paddingRight: 12,
+    fontSize: 15, color: 'rgba(255,255,255,0.6)', fontWeight: '600',
+  },
+  phoneDivider: { width: 1, height: 22, backgroundColor: 'rgba(255,255,255,0.2)' },
+  phoneInput: {
+    flex: 1, paddingLeft: 12, paddingRight: 16,
+    paddingVertical: 16, fontSize: 15, color: '#fff',
   },
 
-  // Sign In
+  // Send OTP
   signInBtn: { marginTop: 8 },
   btnDisabled: { opacity: 0.5 },
   signInGradient: {

@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator,
 } from 'react-native';
+import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
@@ -12,13 +13,7 @@ import Icon from '../../components/common/Icon';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready', 'partially_delivered']);
 
@@ -60,16 +55,16 @@ export default function OrdersScreen() {
   };
 
   const displayOrders = useMemo(() => {
-    const sorted = [...myOrders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const sorted = [...(myOrders ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const active = sorted.filter(o => ACTIVE_STATUSES.has(o.status));
     if (active.length > 0) return active;
     const last = sorted.find(o => o.status === 'completed');
     return last ? [last] : [];
   }, [myOrders]);
 
-  const handleImageError = (itemId: string) => {
+  const handleImageError = useCallback((itemId: string) => {
     setFailedImages(prev => new Set(prev).add(itemId));
-  };
+  }, []);
 
   if (loading && !refreshing) {
     return (
@@ -90,7 +85,7 @@ export default function OrdersScreen() {
           <Text style={styles.title}>My Orders</Text>
           <Text style={styles.subtitle}>Track your active orders</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh}>
+        <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh} accessibilityLabel="Refresh orders" accessibilityRole="button">
           <Icon name="refresh" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
@@ -116,7 +111,7 @@ export default function OrdersScreen() {
                   (() => {
                     const isReady = order.isReadyServe || order.status === 'ready' || order.status === 'partially_delivered';
                     return (
-                      <TouchableOpacity onPress={() => setSelectedOrder(order)} activeOpacity={0.9} style={styles.tokenWrap}>
+                      <TouchableOpacity onPress={() => { mediumHaptic(); setSelectedOrder(order); }} activeOpacity={0.9} style={styles.tokenWrap} accessibilityLabel="Show pickup QR code" accessibilityRole="button">
                         <LinearGradient
                           colors={isReady ? ['#f97316', '#f59e0b', '#fb923c'] : ['#10b981', '#06d6a0', '#14b8a6']}
                           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -142,7 +137,15 @@ export default function OrdersScreen() {
                 {/* Order ID + Status */}
                 <View style={styles.orderHeader}>
                   <View style={styles.flex1}>
-                    <Text style={styles.orderId} numberOfLines={1}>#{order.id}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.orderId} numberOfLines={1}>#{order.id}</Text>
+                      {order.isReadyServe && (
+                        <View style={{ backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                          <Icon name="flash" size={11} color="#f97316" />
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#f97316' }}>INSTANT</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={styles.orderDate}>{formatOrderDate(order.createdAt)}</Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
@@ -163,6 +166,7 @@ export default function OrdersScreen() {
                           source={{ uri: imageUri }}
                           style={styles.itemImage}
                           onError={() => handleImageError(imgKey)}
+                          accessibilityLabel={`${item.name} image`}
                         />
                       ) : (
                         <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
@@ -192,7 +196,9 @@ export default function OrdersScreen() {
         <TouchableOpacity
           style={styles.historyBtn}
           activeOpacity={0.8}
-          onPress={() => navigation.navigate('Home', { screen: 'OrderHistory' })}>
+          onPress={() => navigation.navigate('Home', { screen: 'OrderHistory' })}
+          accessibilityLabel="View order history"
+          accessibilityRole="button">
           <Icon name="time-outline" size={18} color={colors.textMuted} />
           <Text style={styles.historyBtnText}>View Order History</Text>
         </TouchableOpacity>

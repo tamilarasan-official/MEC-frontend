@@ -1,4 +1,4 @@
-// MadrasOne - Enhanced Color Palette
+// CampusOne - Enhanced Color Palette
 // Light & Dark palettes sharing the same shape
 
 const basePalette = {

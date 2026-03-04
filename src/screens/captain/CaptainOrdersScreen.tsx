@@ -1,25 +1,29 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, AppState,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { fetchActiveShopOrders, updateOrderStatus, markItemDelivered } from '../../store/slices/ordersSlice';
 import Icon from '../../components/common/Icon';
-import { colors, statusColors } from '../../theme/colors';
+import { statusColors } from '../../theme/colors';
+import { useTheme } from '../../theme/ThemeContext';
+import type { ThemeColors } from '../../theme/colors';
 import { Order, OrderStatus } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
 type FilterStatus = 'pending' | 'preparing' | 'ready' | 'partially_delivered';
 
 const FILTERS: { key: FilterStatus; label: string; icon: string; activeColor: string }[] = [
-  { key: 'pending', label: 'Pending', icon: 'time-outline', activeColor: colors.amber[500] },
-  { key: 'preparing', label: 'Cooking', icon: 'restaurant-outline', activeColor: colors.blue[500] },
-  { key: 'ready', label: 'Ready', icon: 'cube-outline', activeColor: colors.orange[500] },
-  { key: 'partially_delivered', label: 'Partial', icon: 'checkmark-done-outline', activeColor: colors.blue[400] },
+  { key: 'pending', label: 'Pending', icon: 'time-outline', activeColor: '#f59e0b' },
+  { key: 'preparing', label: 'Cooking', icon: 'restaurant-outline', activeColor: '#3b82f6' },
+  { key: 'ready', label: 'Ready', icon: 'cube-outline', activeColor: '#f97316' },
+  { key: 'partially_delivered', label: 'Partial', icon: 'checkmark-done-outline', activeColor: '#60a5fa' },
 ];
 
 export default function CaptainOrdersScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const shopOrders = useSelector((s: RootState) => s.orders.shopOrders);
   const [filter, setFilter] = useState<FilterStatus>('pending');
@@ -37,10 +41,16 @@ export default function CaptainOrdersScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 5 seconds, pause when app is backgrounded
   useEffect(() => {
-    const interval = setInterval(() => dispatch(fetchActiveShopOrders()), 5000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => { interval = setInterval(() => dispatch(fetchActiveShopOrders()), 5000); };
+    const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
+    startPolling();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') startPolling(); else stopPolling();
+    });
+    return () => { stopPolling(); sub.remove(); };
   }, [dispatch]);
 
   const onRefresh = async () => {
@@ -102,7 +112,7 @@ export default function CaptainOrdersScreen() {
         {/* Items - with delivery checkboxes for preparing/partially_delivered */}
         <View style={styles.itemsList}>
           {order.items.map((item, idx) => {
-            const isDelivered = (item as any).delivered ?? false;
+            const isDelivered = item.delivered ?? false;
             const showCheckbox = order.status === 'preparing' || order.status === 'partially_delivered';
             return (
               <View key={idx} style={styles.itemRow}>
@@ -111,6 +121,8 @@ export default function CaptainOrdersScreen() {
                     onPress={() => !isDelivered && handleItemDelivered(order.id, idx)}
                     style={{ marginRight: 8 }}
                     disabled={isDelivered}
+                    accessibilityLabel={isDelivered ? `${item.name} delivered` : `Mark ${item.name} delivered`}
+                    accessibilityRole="button"
                   >
                     <Icon
                       name={isDelivered ? 'checkbox' : 'square-outline'}
@@ -148,8 +160,10 @@ export default function CaptainOrdersScreen() {
             <>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => handleStatusUpdate(order.id, 'cancelled')}
+                onPress={() => Alert.alert('Reject Order', 'Are you sure you want to reject this order?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reject', style: 'destructive', onPress: () => handleStatusUpdate(order.id, 'cancelled') }])}
                 disabled={isUpdating}
+                accessibilityLabel="Reject order"
+                accessibilityRole="button"
               >
                 {isUpdating ? <ActivityIndicator size="small" color={colors.destructive} /> : (
                   <>
@@ -162,6 +176,8 @@ export default function CaptainOrdersScreen() {
                 style={[styles.actionBtn, { backgroundColor: colors.blue[500], flex: 2 }]}
                 onPress={() => handleStatusUpdate(order.id, 'preparing')}
                 disabled={isUpdating}
+                accessibilityLabel="Start preparing"
+                accessibilityRole="button"
               >
                 {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                   <>
@@ -177,6 +193,8 @@ export default function CaptainOrdersScreen() {
               style={[styles.actionBtn, { backgroundColor: colors.green500, flex: 1 }]}
               onPress={() => handleStatusUpdate(order.id, 'ready')}
               disabled={isUpdating}
+              accessibilityLabel="Mark ready"
+              accessibilityRole="button"
             >
               {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                 <>
@@ -191,6 +209,8 @@ export default function CaptainOrdersScreen() {
               style={[styles.actionBtn, { backgroundColor: colors.primary, flex: 1 }]}
               onPress={() => handleStatusUpdate(order.id, 'completed')}
               disabled={isUpdating}
+              accessibilityLabel="Complete order"
+              accessibilityRole="button"
             >
               {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                 <>
@@ -205,6 +225,8 @@ export default function CaptainOrdersScreen() {
               style={[styles.actionBtn, { backgroundColor: colors.primary, flex: 1 }]}
               onPress={() => handleStatusUpdate(order.id, 'completed')}
               disabled={isUpdating}
+              accessibilityLabel="Complete all items"
+              accessibilityRole="button"
             >
               {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                 <>
@@ -236,6 +258,8 @@ export default function CaptainOrdersScreen() {
               key={f.key}
               style={[styles.filterTab, isActive && { backgroundColor: f.activeColor + '15', borderColor: f.activeColor }]}
               onPress={() => setFilter(f.key)}
+              accessibilityLabel={`Filter ${f.label}`}
+              accessibilityRole="button"
             >
               <Icon name={f.icon} size={14} color={isActive ? f.activeColor : colors.mutedForeground} />
               <Text style={[styles.filterLabel, isActive && { color: f.activeColor }]}>{f.label}</Text>
@@ -275,7 +299,7 @@ function getTimeSince(date: Date): string {
   return `${Math.floor(diff / 60)}h ago`;
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   filterRow: {

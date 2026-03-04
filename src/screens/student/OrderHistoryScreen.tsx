@@ -5,13 +5,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, Order } from '../../types';
 import orderService from '../../services/orderService';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { useTheme } from '../../theme/ThemeContext';
@@ -31,13 +25,15 @@ export default function OrderHistoryScreen({ navigation }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = async () => {
     try {
       const data = await orderService.getMyOrders();
       setOrders(data);
+      setError(null);
     } catch (err) {
-      console.error('Failed to fetch order history:', err);
+      setError('Something went wrong. Pull down to retry.');
     } finally {
       setLoading(false);
     }
@@ -81,7 +77,7 @@ export default function OrderHistoryScreen({ navigation }: Props) {
     <ScreenWrapper>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Order History</Text>
@@ -91,7 +87,12 @@ export default function OrderHistoryScreen({ navigation }: Props) {
         <ScrollView
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
-          {historyOrders.length === 0 ? (
+          {error ? (
+            <View style={styles.empty}>
+              <Icon name="alert-circle-outline" size={36} color={colors.textSecondary} />
+              <Text style={styles.emptyText}>{error}</Text>
+            </View>
+          ) : historyOrders.length === 0 ? (
             <View style={styles.empty}>
               <View style={styles.emptyIcon}>
                 <Icon name="cube-outline" size={36} color={colors.textSecondary} />
@@ -121,7 +122,7 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                     <View key={`${order.id}-${idx}`} style={styles.itemRow}>
                       <View style={styles.itemIconWrap}>
                         {item.image ? (
-                          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImage} />
+                          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImage} accessibilityLabel="Order item image" />
                         ) : (
                           <Icon name="restaurant-outline" size={18} color={colors.textSecondary} />
                         )}

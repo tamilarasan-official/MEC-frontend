@@ -21,14 +21,9 @@ import { CartBottomSheet } from '../../components/student/CartBottomSheet';
 import NotificationsModal from '../../components/student/NotificationsModal';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
+import { useNavigation } from '@react-navigation/native';
 import { FoodItem, Order } from '../../types';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 const CATEGORY_ICONS: Record<string, string> = {
   All: 'apps-outline',
@@ -61,6 +56,7 @@ function FoodCardImage({ uri, style, placeholderStyle }: { uri: string | null; s
       source={{ uri }}
       style={style}
       onError={() => setFailed(true)}
+      accessibilityLabel="Food item image"
     />
   );
 }
@@ -77,6 +73,7 @@ const statusConfig: Record<string, { bg: string; color: string; label: string }>
 export default function CaptainEatScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const navigation = useNavigation<any>();
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
   const { shops, menuItems: shopMenu, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
@@ -164,10 +161,12 @@ export default function CaptainEatScreen() {
         <TouchableOpacity
           style={styles.foodImageWrap}
           onPress={() => qty === 0
-            ? dispatch(addToCart({ item, shopId: canteenShop!.id, shopName: canteenShop!.name }))
+            ? dispatch(addToCart({ item, shopId: canteenShop?.id ?? '', shopName: canteenShop?.name ?? '' }))
             : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))
           }
-          activeOpacity={0.8}>
+          activeOpacity={0.8}
+          accessibilityLabel={`Add ${item.name}`}
+          accessibilityRole="button">
           <FoodCardImage
             uri={imageUri}
             style={styles.foodImage}
@@ -192,17 +191,19 @@ export default function CaptainEatScreen() {
             {qty === 0 ? (
               <TouchableOpacity
                 style={styles.addBtn}
-                onPress={() => dispatch(addToCart({ item, shopId: canteenShop!.id, shopName: canteenShop!.name }))}
-                activeOpacity={0.7}>
+                onPress={() => dispatch(addToCart({ item, shopId: canteenShop?.id ?? '', shopName: canteenShop?.name ?? '' }))}
+                activeOpacity={0.7}
+                accessibilityLabel={`Add ${item.name} to cart`}
+                accessibilityRole="button">
                 <Icon name="add" size={18} color="#fff" />
               </TouchableOpacity>
             ) : (
               <View style={styles.qtyControl}>
-                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))} style={styles.qtyBtn}>
+                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
                   <Icon name="remove" size={14} color="#3b82f6" />
                 </TouchableOpacity>
                 <Text style={styles.qtyText}>{qty}</Text>
-                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))} style={styles.qtyBtn}>
+                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
                   <Icon name="add" size={14} color="#3b82f6" />
                 </TouchableOpacity>
               </View>
@@ -221,23 +222,27 @@ export default function CaptainEatScreen() {
           <TouchableOpacity
             style={styles.walletPill}
             onPress={() => setShowWallet(true)}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+            accessibilityLabel="Open wallet"
+            accessibilityRole="button">
             <Icon name="wallet-outline" size={13} color="#3b82f6" />
             <Text style={styles.walletPillText}>Rs. {user?.balance || 0}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.topUpBtn}
             onPress={() => setShowTopUp(true)}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Top up wallet"
+            accessibilityRole="button">
             <Icon name="add" size={16} color="#22c55e" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowSearch(true)}>
+          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowSearch(true)} accessibilityLabel="Search menu" accessibilityRole="button">
             <Icon name="search" size={20} color={colors.textMuted} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowCart(true)}>
+          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowCart(true)} accessibilityLabel="Open cart" accessibilityRole="button">
             <Icon name="cart-outline" size={20} color={colors.textMuted} />
             {totalItems > 0 && (
               <View style={styles.cartBadge}>
@@ -248,9 +253,11 @@ export default function CaptainEatScreen() {
           <TouchableOpacity
             style={styles.profileIcon}
             activeOpacity={0.7}
-            onPress={() => setShowProfile(true)}>
+            onPress={() => setShowProfile(true)}
+            accessibilityLabel="Open profile"
+            accessibilityRole="button">
             {resolveImageUrl(user?.avatarUrl) ? (
-              <Image source={{ uri: resolveImageUrl(user?.avatarUrl)! }} style={styles.profileAvatarImg} />
+              <Image source={{ uri: resolveImageUrl(user?.avatarUrl)! }} style={styles.profileAvatarImg} accessibilityLabel="Profile avatar" />
             ) : (
               <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'C'}</Text>
             )}
@@ -301,7 +308,9 @@ export default function CaptainEatScreen() {
                     key={cat}
                     style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
                     onPress={() => setSelectedCategory(cat)}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel={`Category ${cat}`}
+                    accessibilityRole="button">
                     <Icon
                       name={getCategoryIcon(cat)}
                       size={14}
@@ -337,7 +346,9 @@ export default function CaptainEatScreen() {
         <TouchableOpacity
           style={styles.floatingBarWrap}
           onPress={() => setShowCart(true)}
-          activeOpacity={0.9}>
+          activeOpacity={0.9}
+          accessibilityLabel="View cart"
+          accessibilityRole="button">
           <LinearGradient
             colors={['#3b82f6', '#06d6a0']}
             start={{ x: 0, y: 0 }}
@@ -369,6 +380,10 @@ export default function CaptainEatScreen() {
         visible={showWallet}
         onClose={() => setShowWallet(false)}
         onTopUp={() => setShowTopUp(true)}
+        onTransactionPress={() => {
+          setShowWallet(false);
+          navigation.navigate('EatOrders');
+        }}
       />
       <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
       <CaptainProfileDropdown

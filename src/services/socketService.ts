@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { DeviceEventEmitter } from 'react-native';
-import { getAccessToken } from './api';
+import { getAccessToken, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
 import { addNotification } from '../store/slices/userSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
@@ -12,8 +12,7 @@ import {
   CHANNEL_GENERAL,
 } from './notificationService';
 
-// const SOCKET_URL = 'http://192.168.1.8:3030';
-const SOCKET_URL = 'https://backend.mec.welocalhost.com';
+const SOCKET_URL = API_ORIGIN;
 
 let socket: Socket | null = null;
 
@@ -42,8 +41,15 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
     timeout: 15000,
   });
 
+  socket.io.on('reconnect_attempt', async () => {
+    const freshToken = await getAccessToken();
+    if (freshToken && socket) {
+      socket.auth = { token: freshToken };
+    }
+  });
+
   socket.on('connect', () => {
-    console.log('[Socket] Connected:', socket?.id);
+    if (__DEV__) console.log('[Socket] Connected:', socket?.id);
     socket?.emit('join:user', userId);
     if (['captain', 'owner', 'superadmin'].includes(role) && shopId) {
       socket?.emit('join:shop', shopId);
@@ -51,11 +57,11 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
   });
 
   socket.on('disconnect', (reason) => {
-    console.log('[Socket] Disconnected:', reason);
+    if (__DEV__) console.log('[Socket] Disconnected:', reason);
   });
 
   socket.on('connect_error', (error) => {
-    console.warn('[Socket] Connection error:', error.message);
+    if (__DEV__) console.warn('[Socket] Connection error:', error.message);
   });
 
   return socket;
@@ -90,7 +96,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     // Always show popup (important visual feedback even if FCM was first)
     const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
     if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
-      console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
+      if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
       DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
         status,
         orderNumber: payload.orderNumber || payload.orderId.slice(-6),

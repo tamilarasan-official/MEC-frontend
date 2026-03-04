@@ -14,9 +14,10 @@ interface WalletModalProps {
   visible: boolean;
   onClose: () => void;
   onTopUp: () => void;
+  onTransactionPress?: (transaction: Transaction) => void;
 }
 
-export default function WalletModal({ visible, onClose, onTopUp }: WalletModalProps) {
+export default function WalletModal({ visible, onClose, onTopUp, onTransactionPress }: WalletModalProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
@@ -65,7 +66,7 @@ export default function WalletModal({ visible, onClose, onTopUp }: WalletModalPr
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const isCredit = item.type === 'credit' || item.type === 'refund';
     return (
-      <TouchableOpacity style={styles.txCard} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.txCard} activeOpacity={0.7} onPress={() => onTransactionPress?.(item)}>
         <View style={[styles.txIcon, { backgroundColor: isCredit ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }]}>
           <Icon
             name={isCredit ? 'arrow-down-outline' : 'arrow-up-outline'}
@@ -109,40 +110,61 @@ export default function WalletModal({ visible, onClose, onTopUp }: WalletModalPr
             </TouchableOpacity>
           </View>
 
-          {/* Balance Card */}
-          <View style={styles.balanceCard}>
-            <View style={styles.balanceLeft}>
-              <View style={styles.balanceIcon}>
-                <Icon name="wallet" size={20} color="#3b82f6" />
-              </View>
-              <View>
-                <Text style={styles.balanceLabel}>Personal Balance</Text>
-                <Text style={styles.balanceValue}>Rs. {displayBalance}</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUp} activeOpacity={0.7}>
-              <Icon name="add" size={14} color="#fff" />
-              <Text style={styles.topUpText}>Top Up</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Transaction History */}
-          <Text style={styles.sectionTitle}>Transaction History</Text>
-
+          {/* Balance Card + Transactions — all scrollable together */}
           {loading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="small" color={colors.accent} />
             </View>
           ) : transactions.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <Icon name="receipt-outline" size={32} color={colors.mutedForeground} />
-              <Text style={styles.emptyText}>No transactions yet</Text>
-            </View>
+            <>
+              {/* Balance Card */}
+              <View style={styles.balanceCard}>
+                <View style={styles.balanceLeft}>
+                  <View style={styles.balanceIcon}>
+                    <Icon name="wallet" size={20} color="#3b82f6" />
+                  </View>
+                  <View>
+                    <Text style={styles.balanceLabel}>Personal Balance</Text>
+                    <Text style={styles.balanceValue}>Rs. {displayBalance}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUp} activeOpacity={0.7}>
+                  <Icon name="add" size={14} color="#fff" />
+                  <Text style={styles.topUpText}>Top Up</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.sectionTitle}>Transaction History</Text>
+              <View style={styles.emptyWrap}>
+                <Icon name="receipt-outline" size={32} color={colors.mutedForeground} />
+                <Text style={styles.emptyText}>No transactions yet</Text>
+              </View>
+            </>
           ) : (
             <FlatList
               data={transactions}
               keyExtractor={item => item.id}
               renderItem={renderTransaction}
+              ListHeaderComponent={
+                <>
+                  {/* Balance Card */}
+                  <View style={styles.balanceCard}>
+                    <View style={styles.balanceLeft}>
+                      <View style={styles.balanceIcon}>
+                        <Icon name="wallet" size={20} color="#3b82f6" />
+                      </View>
+                      <View>
+                        <Text style={styles.balanceLabel}>Personal Balance</Text>
+                        <Text style={styles.balanceValue}>Rs. {displayBalance}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUp} activeOpacity={0.7}>
+                      <Icon name="add" size={14} color="#fff" />
+                      <Text style={styles.topUpText}>Top Up</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.sectionTitle}>Transaction History</Text>
+                </>
+              }
               style={styles.txList}
               contentContainerStyle={{ paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}
@@ -165,7 +187,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   sheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, maxHeight: '100%',
+    paddingHorizontal: 20, maxHeight: '100%', flex: 1,
   },
   handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
@@ -206,7 +228,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.foreground, marginBottom: 12 },
 
   // Transaction list
-  txList: { maxHeight: 380 },
+  txList: { flex: 1 },
   txCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 14, borderRadius: 14,

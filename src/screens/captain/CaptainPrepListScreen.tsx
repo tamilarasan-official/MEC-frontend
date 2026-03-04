@@ -108,6 +108,8 @@ export default function CaptainPrepListScreen() {
             onPress={onRefresh}
             style={styles.refreshBtn}
             activeOpacity={0.7}
+            accessibilityLabel="Refresh prep list"
+            accessibilityRole="button"
           >
             <Icon name="refresh" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>

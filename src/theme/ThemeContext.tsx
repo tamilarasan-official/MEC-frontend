@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, View, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lightColors, darkColors, type ThemeColors } from './colors';
 
@@ -50,7 +50,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(() => ({ colors, mode, isDark, setMode }), [colors, mode, isDark, setMode]);
 
-  if (!loaded) return null;
+  if (!loaded) {
+    return (
+      <View style={themeLoadingStyles.container}>
+        <ActivityIndicator size="large" color="#10b981" />
+      </View>
+    );
+  }
 
   return (
     <ThemeContext.Provider value={value}>
@@ -58,6 +64,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     </ThemeContext.Provider>
   );
 }
+
+const themeLoadingStyles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
+});
 
 export function useTheme(): ThemeContextValue {
   return useContext(ThemeContext);

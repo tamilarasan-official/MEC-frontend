@@ -15,13 +15,7 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveAvatarUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveAvatarUrl } from '../../utils/imageUrl';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Profile'>;
 
@@ -82,7 +76,7 @@ export default function ProfileScreen({ navigation }: Props) {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile & Settings</Text>
@@ -101,13 +95,14 @@ export default function ProfileScreen({ navigation }: Props) {
             colors={['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.04)']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={styles.profileCard}>
-            <TouchableOpacity style={styles.avatar} onPress={handleAvatarUpload} activeOpacity={0.8} disabled={avatarUploading}>
+            <TouchableOpacity style={styles.avatar} onPress={handleAvatarUpload} activeOpacity={0.8} disabled={avatarUploading} accessibilityLabel="Change profile picture" accessibilityRole="button">
               {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
                 <Image
                   source={{ uri: `${resolveAvatarUrl(user?.avatarUrl)!}?t=${avatarTs}`, cache: 'reload' }}
                   style={styles.avatarImg}
                   resizeMode="cover"
                   onError={() => setAvatarError(true)}
+                  accessibilityLabel="Profile picture"
                 />
               ) : (
                 <Text style={styles.avatarInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
@@ -145,7 +140,9 @@ export default function ProfileScreen({ navigation }: Props) {
           <TouchableOpacity
             style={styles.walletCard}
             activeOpacity={0.8}
-            onPress={() => navigation.navigate('Wallet')}>
+            onPress={() => navigation.navigate('Wallet')}
+            accessibilityLabel="Wallet balance"
+            accessibilityRole="button">
             <View style={styles.walletLeft}>
               <View style={styles.walletIconWrap}>
                 <Icon name="wallet-outline" size={20} color={colors.primary} />
@@ -175,7 +172,9 @@ export default function ProfileScreen({ navigation }: Props) {
                   key={opt.value}
                   style={[styles.themePill, mode === opt.value && styles.themePillActive]}
                   onPress={() => setMode(opt.value)}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                  accessibilityLabel={`${opt.label} theme`}
+                  accessibilityRole="button">
                   <Icon
                     name={opt.icon}
                     size={16}
@@ -200,7 +199,9 @@ export default function ProfileScreen({ navigation }: Props) {
               key={idx}
               style={styles.menuItem}
               onPress={item.onPress}
-              activeOpacity={0.7}>
+              activeOpacity={0.7}
+              accessibilityLabel={item.label}
+              accessibilityRole="button">
               <View style={styles.menuItemLeft}>
                 <View style={styles.menuItemIcon}>
                   <Icon name={item.icon} size={20} color={colors.accent} />
@@ -215,7 +216,7 @@ export default function ProfileScreen({ navigation }: Props) {
           ))}
 
           {/* Version */}
-          <Text style={styles.versionText}>MadrasOne v1.0.0</Text>
+          <Text style={styles.versionText}>CampusOne</Text>
 
           <View style={styles.bottomSpacer} />
         </ScrollView>

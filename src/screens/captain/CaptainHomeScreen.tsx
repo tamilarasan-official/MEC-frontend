@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Alert, FlatList, Image,
+  RefreshControl, Alert, FlatList, Image, AppState,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
@@ -15,13 +15,8 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import CaptainHeader from '../../components/captain/CaptainHeader';
 import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
 import { Order, OrderStatus } from '../../types';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { lightHaptic, mediumHaptic } from '../../utils/haptics';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 type FilterKey = 'ready_serve' | 'pending' | 'preparing' | 'ready';
 
@@ -61,10 +56,16 @@ export default function CaptainHomeScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh every 5 seconds
+  // Auto-refresh every 5 seconds, pause when app is backgrounded
   useEffect(() => {
-    const interval = setInterval(() => dispatch(fetchActiveShopOrders()), 5000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => { interval = setInterval(() => dispatch(fetchActiveShopOrders()), 5000); };
+    const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
+    startPolling();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') startPolling(); else stopPolling();
+    });
+    return () => { stopPolling(); sub.remove(); };
   }, [dispatch]);
 
   const onRefresh = async () => {
@@ -79,25 +80,24 @@ export default function CaptainHomeScreen() {
     setIsRefreshing(false);
   };
 
-  // Stats
-  const activeOrders = shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status));
-  const pendingCount = activeOrders.filter(o => o.status === 'pending').length;
-  const preparingCount = activeOrders.filter(o => o.status === 'preparing').length;
-  const readyCount = activeOrders.filter(o => o.status === 'ready').length;
-  const readyServeCount = activeOrders.filter(o => o.isReadyServe && o.status === 'ready').length;
+  // Stats — memoized
+  const activeOrders = useMemo(() => shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status)), [shopOrders]);
+  const pendingCount = useMemo(() => activeOrders.filter(o => o.status === 'pending').length, [activeOrders]);
+  const preparingCount = useMemo(() => activeOrders.filter(o => o.status === 'preparing').length, [activeOrders]);
+  const readyCount = useMemo(() => activeOrders.filter(o => o.status === 'ready').length, [activeOrders]);
+  const readyServeCount = useMemo(() => activeOrders.filter(o => o.isReadyServe && o.status === 'ready').length, [activeOrders]);
   const inProgressCount = pendingCount + preparingCount + readyCount;
   const completedToday = dashboardStats?.completedToday ?? 0;
   const cancelledToday = dashboardStats?.cancelledToday ?? 0;
   const totalOrders = inProgressCount + completedToday + cancelledToday;
 
-  // Filter orders — ready-serve orders only in "Ready to Serve" tab, excluded from others
-  const getFilteredOrders = () => {
+  // Filter orders — memoized for performance
+  const filteredOrders = useMemo(() => {
     let orders: Order[];
     if (filter === 'ready_serve') {
       orders = activeOrders.filter(o => o.isReadyServe && o.status === 'ready');
     } else {
       orders = activeOrders.filter(o => {
-        // Exclude ready-serve orders from the normal "ready" tab
         if (o.isReadyServe && o.status === 'ready') return false;
         return o.status === filter;
       });
@@ -110,9 +110,7 @@ export default function CaptainHomeScreen() {
       );
     }
     return orders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  };
-
-  const filteredOrders = getFilteredOrders();
+  }, [activeOrders, filter, searchQuery]);
 
   const getFilterCount = (key: FilterKey) => {
     if (key === 'ready_serve') return readyServeCount;
@@ -176,7 +174,7 @@ export default function CaptainHomeScreen() {
         <View style={styles.overviewCard}>
           <View style={styles.overviewHeader}>
             <Text style={styles.overviewTitle}>TODAY'S OVERVIEW</Text>
-            <TouchableOpacity onPress={handleRefreshStats} style={styles.refreshBtn} disabled={isRefreshing}>
+            <TouchableOpacity onPress={handleRefreshStats} style={styles.refreshBtn} disabled={isRefreshing} accessibilityLabel="Refresh stats" accessibilityRole="button">
               <Icon
                 name="refresh"
                 size={16}
@@ -211,8 +209,10 @@ export default function CaptainHomeScreen() {
                   styles.filterTab,
                   isActive && { backgroundColor: activeColor },
                 ]}
-                onPress={() => setFilter(f.key)}
+                onPress={() => { lightHaptic(); setFilter(f.key); }}
                 activeOpacity={0.7}
+                accessibilityLabel={`Filter ${f.label}`}
+                accessibilityRole="button"
               >
                 <Icon
                   name={f.icon}
@@ -267,17 +267,17 @@ export default function CaptainHomeScreen() {
 }
 
 /* ─── Stat Item ─── */
-function StatItem({ value, label, color, styles }: { value: number; label: string; color: string; styles: any }) {
+const StatItem = React.memo(({ value, label, color, styles }: { value: number; label: string; color: string; styles: any }) => {
   return (
     <View style={styles.statItem}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
-}
+});
 
 /* ─── Order Card ─── */
-function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDelivered }: {
+const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDelivered }: {
   order: Order;
   colors: ThemeColors;
   styles: any;
@@ -344,7 +344,7 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
         {/* Items */}
         <View style={styles.itemsList}>
           {order.items.map((item, idx) => {
-            const isDelivered = (item as any).delivered ?? false;
+            const isDelivered = item.delivered ?? false;
             return (
               <View key={idx} style={styles.itemRow}>
                 {canCheckDeliver && (
@@ -352,6 +352,8 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
                     onPress={() => !isDelivered && onItemDelivered(order.id, idx)}
                     style={styles.checkboxBtn}
                     disabled={isDelivered}
+                    accessibilityLabel={isDelivered ? `${item.name} delivered` : `Mark ${item.name} delivered`}
+                    accessibilityRole="button"
                   >
                     <Icon
                       name={isDelivered ? 'checkbox' : 'square-outline'}
@@ -361,7 +363,7 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
                   </TouchableOpacity>
                 )}
                 {resolveImageUrl(item.image) ? (
-                  <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} />
+                  <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} accessibilityLabel={`${item.name} image`} />
                 ) : (
                   <View style={styles.itemImgPlaceholder}>
                     <Icon name="restaurant-outline" size={14} color={colors.mutedForeground} />
@@ -397,9 +399,11 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
             <>
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 2 }]}
-                onPress={() => onStatusUpdate(order.id, 'preparing')}
+                onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'preparing'); }}
                 disabled={isUpdating}
                 activeOpacity={0.7}
+                accessibilityLabel="Start preparing"
+                accessibilityRole="button"
               >
                 {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                   <>
@@ -410,9 +414,11 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => onStatusUpdate(order.id, 'cancelled')}
+                onPress={() => { mediumHaptic(); Alert.alert('Reject Order', 'Are you sure you want to reject this order?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reject', style: 'destructive', onPress: () => onStatusUpdate(order.id, 'cancelled') }]); }}
                 disabled={isUpdating}
                 activeOpacity={0.7}
+                accessibilityLabel="Reject order"
+                accessibilityRole="button"
               >
                 <Icon name="close-circle" size={18} color={colors.destructive} />
               </TouchableOpacity>
@@ -421,9 +427,11 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
           {order.status === 'preparing' && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 1 }]}
-              onPress={() => onStatusUpdate(order.id, 'ready')}
+              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'ready'); }}
               disabled={isUpdating}
               activeOpacity={0.7}
+              accessibilityLabel="Mark ready"
+              accessibilityRole="button"
             >
               {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                 <>
@@ -436,9 +444,11 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
           {(order.status === 'ready' || order.isReadyServe) && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: order.isReadyServe ? '#f97316' : colors.accent, flex: 1 }]}
-              onPress={() => onStatusUpdate(order.id, 'completed')}
+              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
               disabled={isUpdating}
               activeOpacity={0.7}
+              accessibilityLabel={order.isReadyServe ? 'Mark delivered' : 'Complete order'}
+              accessibilityRole="button"
             >
               {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                 <>
@@ -453,9 +463,11 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
           {order.status === 'partially_delivered' && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 1 }]}
-              onPress={() => onStatusUpdate(order.id, 'completed')}
+              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
               disabled={isUpdating}
               activeOpacity={0.7}
+              accessibilityLabel="Complete all items"
+              accessibilityRole="button"
             >
               {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
                 <>
@@ -469,7 +481,7 @@ function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDe
       </View>
     </View>
   );
-}
+});
 
 /* ─── Styles ─── */
 const createStyles = (colors: ThemeColors) => StyleSheet.create({

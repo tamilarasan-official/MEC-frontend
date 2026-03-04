@@ -7,13 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, FoodItem } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
@@ -31,13 +25,15 @@ export default function OffersScreen({ navigation }: Props) {
   const [offerItems, setOfferItems] = useState<FoodItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadOffers = useCallback(async () => {
     try {
       const data = await menuService.getOffers();
       setOfferItems(Array.isArray(data) ? data : []);
+      setError(null);
     } catch {
-      // ignore silently
+      setError('Something went wrong. Pull down to retry.');
     }
   }, []);
 
@@ -62,7 +58,7 @@ export default function OffersScreen({ navigation }: Props) {
 
   const renderOffer = ({ item, index }: { item: FoodItem; index: number }) => {
     const qty = getCartQty(item.id);
-    const discount = item.offerPrice ? Math.round((1 - item.offerPrice / item.price) * 100) : 0;
+    const discount = item.offerPrice && item.price > 0 ? Math.round((1 - item.offerPrice / item.price) * 100) : 0;
     const shopId = item.shopId || '';
     const shopName = item.shopName || 'Canteen';
 
@@ -71,7 +67,7 @@ export default function OffersScreen({ navigation }: Props) {
         {/* Image */}
         <View style={styles.offerImageWrap}>
           {item.image ? (
-            <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.offerImage} />
+            <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.offerImage} accessibilityLabel={`${item.name} image`} />
           ) : (
             <View style={[styles.offerImage, styles.offerImagePlaceholder]}>
               <Icon name="restaurant-outline" size={30} color={colors.textMuted} />
@@ -102,7 +98,9 @@ export default function OffersScreen({ navigation }: Props) {
               <TouchableOpacity
                 style={styles.addBtn}
                 onPress={() => dispatch(addToCart({ item, shopId, shopName }))}
-                activeOpacity={0.7}>
+                activeOpacity={0.7}
+                accessibilityLabel={`Add ${item.name} to cart`}
+                accessibilityRole="button">
                 <Icon name="add" size={18} color="#fff" />
               </TouchableOpacity>
             ) : (
@@ -110,14 +108,18 @@ export default function OffersScreen({ navigation }: Props) {
                 <TouchableOpacity
                   onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))}
                   style={styles.qtyBtn}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Decrease ${item.name} quantity`}
+                  accessibilityRole="button">
                   <Icon name="remove" size={14} color={colors.primary} />
                 </TouchableOpacity>
                 <Text style={styles.qtyText}>{qty}</Text>
                 <TouchableOpacity
                   onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))}
                   style={styles.qtyBtn}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Increase ${item.name} quantity`}
+                  accessibilityRole="button">
                   <Icon name="add" size={14} color={colors.primary} />
                 </TouchableOpacity>
               </View>
@@ -133,7 +135,7 @@ export default function OffersScreen({ navigation }: Props) {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Today's Offers</Text>
@@ -141,7 +143,9 @@ export default function OffersScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.cartBtn}
               onPress={() => navigation.navigate('Cart')}
-              activeOpacity={0.7}>
+              activeOpacity={0.7}
+              accessibilityLabel="View cart"
+              accessibilityRole="button">
               <Icon name="cart-outline" size={20} color={colors.text} />
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{totalItems > 9 ? '9+' : totalItems}</Text>
@@ -193,13 +197,20 @@ export default function OffersScreen({ navigation }: Props) {
               </>
             }
             ListEmptyComponent={
-              <View style={styles.empty}>
-                <View style={styles.emptyIconWrap}>
-                  <Icon name="pricetag-outline" size={34} color={colors.textMuted} />
+              error ? (
+                <View style={styles.empty}>
+                  <Icon name="alert-circle-outline" size={34} color={colors.textMuted} />
+                  <Text style={styles.emptyTitle}>{error}</Text>
                 </View>
-                <Text style={styles.emptyTitle}>No offers available</Text>
-                <Text style={styles.emptySubtitle}>Check back later for exciting deals!</Text>
-              </View>
+              ) : (
+                <View style={styles.empty}>
+                  <View style={styles.emptyIconWrap}>
+                    <Icon name="pricetag-outline" size={34} color={colors.textMuted} />
+                  </View>
+                  <Text style={styles.emptyTitle}>No offers available</Text>
+                  <Text style={styles.emptySubtitle}>Check back later for exciting deals!</Text>
+                </View>
+              )
             }
             ListFooterComponent={totalItems > 0 ? <View style={styles.listFooter} /> : null}
           />
@@ -210,7 +221,9 @@ export default function OffersScreen({ navigation }: Props) {
           <TouchableOpacity
             style={styles.floatingBar}
             onPress={() => navigation.navigate('Cart')}
-            activeOpacity={0.9}>
+            activeOpacity={0.9}
+            accessibilityLabel="View cart"
+            accessibilityRole="button">
             <View style={styles.floatingBarLeft}>
               <View style={styles.floatingBarIcon}>
                 <Icon name="bag-handle" size={22} color="#fff" />

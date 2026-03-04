@@ -41,7 +41,7 @@ export default function RootNavigator() {
   // Listen for order status popup events (from socket + FCM)
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: PopupData) => {
-      console.log('[RootNavigator] OrderStatusPopup event received:', data);
+      if (__DEV__) console.log('[RootNavigator] OrderStatusPopup event received:', data);
       setPopup(data);
     });
     return () => subscription.remove();
@@ -70,8 +70,12 @@ export default function RootNavigator() {
   // Connect/disconnect socket based on auth state
   useEffect(() => {
     if (isAuthenticated && user) {
-      connectSocket(user.id, user.role, user.shopId);
-      setupSocketListeners(dispatch, user.role, 'work');
+      try {
+        connectSocket(user.id, user.role, user.shopId);
+        setupSocketListeners(dispatch, user.role, 'work');
+      } catch {
+        // Socket connection failed — app continues without real-time updates
+      }
     } else {
       disconnectSocket();
     }
@@ -92,7 +96,7 @@ export default function RootNavigator() {
     // Notifee foreground event handler (notification tap while app is open)
     const unsubscribeNotifee = notifee.onForegroundEvent(({ type, detail }) => {
       if (type === EventType.PRESS) {
-        console.log('[Notifee] Foreground press:', detail.notification?.data);
+        if (__DEV__) console.log('[Notifee] Foreground press:', detail.notification?.data);
       }
     });
 
@@ -107,15 +111,15 @@ export default function RootNavigator() {
   useEffect(() => {
     if (!isAuthenticated) return;
     messaging().getInitialNotification().then(msg => {
-      if (msg?.data) {
+      if (msg?.data && __DEV__) {
         console.log('[Notifications] Cold-start:', msg.data);
       }
-    });
+    }).catch(() => {});
     notifee.getInitialNotification().then(initial => {
-      if (initial?.notification?.data) {
+      if (initial?.notification?.data && __DEV__) {
         console.log('[Notifee] Cold-start:', initial.notification.data);
       }
-    });
+    }).catch(() => {});
   }, [isAuthenticated]);
 
   if (isCheckingAuth) {

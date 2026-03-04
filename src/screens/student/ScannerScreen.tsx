@@ -23,6 +23,7 @@ export default function ScannerScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const scanCooldown = useRef(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineAnim = useRef(new Animated.Value(0)).current;
 
   const device = useCameraDevice('back');
@@ -71,12 +72,18 @@ export default function ScannerScreen() {
       setIsActive(false);
     } else {
       setScanError('Invalid QR code. Please scan a valid MEC QR code.');
-      setTimeout(() => {
+      errorTimerRef.current = setTimeout(() => {
         setScanError(null);
         scanCooldown.current = false;
       }, 2500);
     }
   }, [isActive]);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current !== null) clearTimeout(errorTimerRef.current);
+    };
+  }, []);
 
   const codeScanner = useCodeScanner({
     codeTypes: ['qr'],
@@ -129,7 +136,9 @@ export default function ScannerScreen() {
         <TouchableOpacity
           style={styles.settingsBtn}
           onPress={() => Linking.openSettings()}
-          activeOpacity={0.8}>
+          activeOpacity={0.8}
+          accessibilityLabel="Open Settings"
+          accessibilityRole="button">
           <Icon name="settings-outline" size={18} color="#fff" />
           <Text style={styles.settingsBtnText}>Open Settings</Text>
         </TouchableOpacity>

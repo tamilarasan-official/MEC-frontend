@@ -10,13 +10,25 @@ import { name as appName } from './app.json';
 import { handleBackgroundMessage } from './src/services/notificationService';
 
 // Register FCM background message handler (MUST be before AppRegistry)
-messaging().setBackgroundMessageHandler(handleBackgroundMessage);
+try {
+  messaging().setBackgroundMessageHandler(handleBackgroundMessage);
+} catch (e) {
+  // Firebase messaging not available — app continues without push notifications
+}
 
 // Register Notifee background event handler
-notifee.onBackgroundEvent(async ({ type, detail }) => {
-  if (type === EventType.PRESS) {
-    console.log('[Notifee] Background press:', detail.notification?.data);
-  }
-});
+try {
+  notifee.onBackgroundEvent(async ({ type, detail }) => {
+    if (type === EventType.PRESS || type === EventType.ACTION_PRESS) {
+      // Notification was pressed in background — app will open to the last screen
+      // Deep linking to specific screens requires navigation ref which isn't available in headless JS
+      if (__DEV__) {
+        console.log('[Notifee] Background press:', detail.notification?.data);
+      }
+    }
+  });
+} catch (e) {
+  // Notifee not available — app continues without local notification handling
+}
 
 AppRegistry.registerComponent(appName, () => App);

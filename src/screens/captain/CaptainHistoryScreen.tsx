@@ -16,6 +16,7 @@ export default function CaptainHistoryScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,13 +24,14 @@ export default function CaptainHistoryScreen() {
 
   const fetchData = useCallback(async () => {
     try {
+      setError(null);
       const historyResult = await orderService.getOrderHistory?.();
       const data = historyResult
         ? [...(historyResult.completed || []), ...(historyResult.cancelled || [])]
         : await orderService.getShopOrders();
       setOrders(data || []);
     } catch {
-      console.error('Failed to fetch history');
+      setError('Failed to load order history. Pull down to retry.');
     } finally {
       setLoading(false);
     }
@@ -159,7 +161,7 @@ export default function CaptainHistoryScreen() {
         {/* Order count + refresh */}
         <View style={styles.countRow}>
           <Text style={styles.countText}>{filtered.length} orders</Text>
-          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn}>
+          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn} accessibilityLabel="Refresh orders" accessibilityRole="button">
             <Icon name="refresh" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
@@ -173,9 +175,9 @@ export default function CaptainHistoryScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Icon name="document-text-outline" size={48} color={colors.mutedForeground} />
-              <Text style={styles.emptyTitle}>No orders found</Text>
-              <Text style={styles.emptySubtitle}>Past orders will appear here</Text>
+              <Icon name={error ? "alert-circle-outline" : "document-text-outline"} size={48} color={error ? '#ef4444' : colors.mutedForeground} />
+              <Text style={styles.emptyTitle}>{error ? 'Something went wrong' : 'No orders found'}</Text>
+              <Text style={styles.emptySubtitle}>{error || 'Past orders will appear here'}</Text>
             </View>
           }
         />

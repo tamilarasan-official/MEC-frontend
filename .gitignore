@@ -33,7 +33,20 @@ local.properties
 .cxx/
 *.keystore
 !debug.keystore
+release-key.keystore
 .kotlin/
+
+# Firebase config (contains API keys)
+android/app/google-services.json
+ios/frontend/GoogleService-Info.plist
+
+# Gradle properties (contains keystore passwords)
+android/gradle.properties
+
+# Environment variables
+.env
+.env.*
+!.env.example
 
 # node.js
 #

@@ -6,13 +6,7 @@ import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector } from '../../store';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveAvatarUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveAvatarUrl } from '../../utils/imageUrl';
 
 interface OwnerHeaderProps {
   searchQuery: string;

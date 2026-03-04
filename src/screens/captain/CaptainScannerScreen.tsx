@@ -24,6 +24,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
   const [scanError, setScanError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const scanCooldown = useRef(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineAnim = useRef(new Animated.Value(0)).current;
 
   const device = useCameraDevice('back');
@@ -54,6 +55,8 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
     return () => loop.stop();
   }, [lineAnim, visible]);
 
+  useEffect(() => { return () => { if (errorTimerRef.current !== null) clearTimeout(errorTimerRef.current); }; }, []);
+
   const handleCodeScanned = useCallback((codes: { value?: string }[]) => {
     if (scanCooldown.current || !isActive) return;
     const raw = codes[0]?.value;
@@ -69,7 +72,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
       setIsActive(false);
     } else {
       setScanError('Invalid QR code. Please scan a valid order QR code.');
-      setTimeout(() => {
+      errorTimerRef.current = setTimeout(() => {
         setScanError(null);
         scanCooldown.current = false;
       }, 2500);
@@ -126,7 +129,9 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
           <TouchableOpacity
             style={styles.settingsBtn}
             onPress={() => Linking.openSettings()}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+            accessibilityLabel="Open settings"
+            accessibilityRole="button">
             <Icon name="settings-outline" size={18} color="#fff" />
             <Text style={styles.settingsBtnText}>Open Settings</Text>
           </TouchableOpacity>
@@ -198,7 +203,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
 
         {/* Title bar */}
         <View style={styles.titleBar}>
-          <TouchableOpacity style={styles.backBtn} onPress={handleDismiss} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleDismiss} activeOpacity={0.7} accessibilityLabel="Close scanner" accessibilityRole="button">
             <Icon name="close" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.titleText}>Scan Order QR</Text>

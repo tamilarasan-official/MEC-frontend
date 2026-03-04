@@ -1,5 +1,5 @@
 // ============================================================
-// MadrasOne - Unified Type System (matches backend API)
+// CampusOne - Unified Type System (matches backend API)
 // ============================================================
 
 // ---- Enums / Literal Types ----
@@ -101,6 +101,14 @@ export interface Order {
   orderNumber?: string;
   paymentStatus?: string;
   qrData?: string;
+}
+
+// ---- Order Creation Response (handles split orders) ----
+export interface CreateOrderResult {
+  order: Order;
+  orders?: Order[];
+  wasSplit?: boolean;
+  newBalance?: number;
 }
 
 // ---- Service Details ----
@@ -220,6 +228,13 @@ export interface RegisterData {
   year?: number;
 }
 
+export interface RegisterWithOtpData {
+  name: string;
+  phone: string;
+  sessionId: string;
+  otp: string;
+}
+
 // ---- API Response ----
 export interface ApiResponse<T> {
   success: boolean;
@@ -248,6 +263,7 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  OTP: { phone: string; sessionId: string };
   Register: undefined;
 };
 

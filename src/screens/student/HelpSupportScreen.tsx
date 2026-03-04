@@ -29,10 +29,6 @@ const FAQS: FAQ[] = [
     question: 'How do I collect my order?',
     answer: "Once your order is ready, you'll receive a notification. Show your pickup token at the counter to collect your order.",
   },
-  {
-    question: 'What if I forget my password?',
-    answer: 'Use the "Forgot Password" option on the login screen to reset your password via email.',
-  },
 ];
 
 export default function HelpSupportScreen({ navigation }: Props) {
@@ -43,7 +39,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
     <ScreenWrapper>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Help & Support</Text>
@@ -53,34 +49,20 @@ export default function HelpSupportScreen({ navigation }: Props) {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.sectionLabel}>GET HELP</Text>
 
-          {/* Chat with Us */}
-          <View style={[styles.menuCard, styles.menuCardDisabled]}>
-            <View style={styles.menuLeft}>
-              <View style={[styles.menuIcon, { backgroundColor: colors.primaryBg }]}>
-                <Icon name="chatbubble-ellipses" size={18} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuTitle}>Chat with Us</Text>
-                <Text style={styles.menuSub}>Get instant help from our support team</Text>
-              </View>
-            </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Coming Soon</Text>
-            </View>
-          </View>
-
           {/* Contact Support */}
           <TouchableOpacity
             style={styles.menuCard}
-            onPress={() => Linking.openURL('mailto:support@madrasone.com')}
-            activeOpacity={0.7}>
+            onPress={() => Linking.openURL('mailto:campusone@madrascollege.ac.in').catch(() => {})}
+            activeOpacity={0.7}
+            accessibilityLabel="Contact Support"
+            accessibilityRole="button">
             <View style={styles.menuLeft}>
               <View style={[styles.menuIcon, { backgroundColor: colors.accentBg }]}>
                 <Icon name="call" size={18} color={colors.accent} />
               </View>
               <View>
                 <Text style={styles.menuTitle}>Contact Support</Text>
-                <Text style={styles.menuSub}>support@madrasone.com</Text>
+                <Text style={styles.menuSub}>campusone@madrascollege.ac.in</Text>
               </View>
             </View>
             <Icon name="open-outline" size={16} color={colors.textSecondary} />
@@ -95,6 +77,25 @@ export default function HelpSupportScreen({ navigation }: Props) {
               <Text style={styles.faqAnswer}>{faq.answer}</Text>
             </View>
           ))}
+
+          {/* Visit Support Portal */}
+          <TouchableOpacity
+            style={styles.menuCard}
+            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => {})}
+            activeOpacity={0.7}
+            accessibilityLabel="Visit Support Portal"
+            accessibilityRole="button">
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: colors.primaryBg }]}>
+                <Icon name="globe-outline" size={18} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.menuTitle}>Visit Support Portal</Text>
+                <Text style={styles.menuSub}>campusonesupport.madrascollege.ac.in</Text>
+              </View>
+            </View>
+            <Icon name="open-outline" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
 
           {/* Need More Help */}
           <View style={styles.helpCard}>
@@ -143,12 +144,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   menuTitle: { fontSize: 15, fontWeight: '600', color: c.text },
   menuSub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
 
-  comingSoonBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
-    backgroundColor: c.border,
-  },
-  comingSoonText: { fontSize: 11, fontWeight: '600', color: c.textSecondary },
-
   faqCard: {
     backgroundColor: c.card, borderRadius: 14, padding: 16,
     borderWidth: 1, borderColor: c.border, marginBottom: 10,
@@ -172,7 +167,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   helpTitle: { fontSize: 15, fontWeight: '600', color: c.text },
   helpSub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
   headerSpacer: { width: 36 },
-  menuCardDisabled: { opacity: 0.7 },
   sectionLabelSpaced: { marginTop: 24 },
   bottomSpacer: { height: 40 },
 });

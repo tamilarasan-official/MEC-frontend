@@ -18,13 +18,7 @@ import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
 import CreateQRPaymentModal from '../../components/owner/CreateQRPaymentModal';
 import QRPaymentDisplayModal from '../../components/owner/QRPaymentDisplayModal';
 import { QRPayment } from '../../types';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveAvatarUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveAvatarUrl } from '../../utils/imageUrl';
 
 // ---- Stat Item ----
 function StatItem({ value, label, color }: { value: string | number; label: string; color: string }) {
@@ -42,7 +36,7 @@ function QRPaymentCard({ payment, colors, styles, onPress }: { payment: QRPaymen
   const isPaid = payment.paidCount > 0;
 
   return (
-    <TouchableOpacity style={styles.qrCard} activeOpacity={0.7} onPress={onPress}>
+    <TouchableOpacity style={styles.qrCard} activeOpacity={0.7} onPress={onPress} accessibilityLabel={`QR payment ${payment.title}`} accessibilityRole="button">
       {/* Badges */}
       <View style={styles.qrCardBadges}>
         <View style={styles.qrTypeBadge}>
@@ -177,8 +171,9 @@ export default function StationeryHomeScreen() {
             source={require('../../assets/icons/appicon.png')}
             style={styles.logoImg}
             resizeMode="contain"
+            accessibilityLabel="App logo"
           />
-          <TouchableOpacity style={styles.walletPill} onPress={() => setShowWallet(true)} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.walletPill} onPress={() => setShowWallet(true)} activeOpacity={0.8} accessibilityLabel="Open wallet" accessibilityRole="button">
             <Icon name="wallet-outline" size={13} color="#f97316" />
             <Text style={styles.walletPillText}>Rs. {balance || 0}</Text>
           </TouchableOpacity>
@@ -188,6 +183,8 @@ export default function StationeryHomeScreen() {
             style={styles.headerIconBtn}
             activeOpacity={0.7}
             onPress={() => setShowSearch(!showSearch)}
+            accessibilityLabel="Toggle search"
+            accessibilityRole="button"
           >
             <Icon name="search" size={20} color={colors.mutedForeground} />
           </TouchableOpacity>
@@ -195,12 +192,14 @@ export default function StationeryHomeScreen() {
             style={styles.headerIconBtn}
             activeOpacity={0.7}
             onPress={() => navigation.navigate('Analytics')}
+            accessibilityLabel="View analytics"
+            accessibilityRole="button"
           >
             <Icon name="time-outline" size={20} color={colors.mutedForeground} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.profileIcon} activeOpacity={0.7} onPress={() => setShowProfile(true)}>
+          <TouchableOpacity style={styles.profileIcon} activeOpacity={0.7} onPress={() => setShowProfile(true)} accessibilityLabel="Open profile" accessibilityRole="button">
             {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.profileAvatarImg} />
+              <Image source={{ uri: avatarUri }} style={styles.profileAvatarImg} accessibilityLabel="Profile avatar" />
             ) : (
               <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
             )}
@@ -220,11 +219,14 @@ export default function StationeryHomeScreen() {
               placeholder="Search orders by number..."
               placeholderTextColor={colors.mutedForeground}
               autoFocus
+              accessibilityLabel="Search orders"
             />
           </View>
           <TouchableOpacity
             onPress={() => { setShowSearch(false); setSearchQuery(''); }}
             activeOpacity={0.7}
+            accessibilityLabel="Cancel search"
+            accessibilityRole="button"
           >
             <Text style={styles.searchCancelText}>Cancel</Text>
           </TouchableOpacity>
@@ -263,7 +265,7 @@ export default function StationeryHomeScreen() {
           >
             <View style={styles.overviewHeader}>
               <Text style={styles.overviewTitle}>QR PAYMENT OVERVIEW</Text>
-              <TouchableOpacity onPress={onRefresh} activeOpacity={0.7}>
+              <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} accessibilityLabel="Refresh payments" accessibilityRole="button">
                 <Icon name="refresh-outline" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
@@ -294,6 +296,8 @@ export default function StationeryHomeScreen() {
                 style={styles.createBtn}
                 onPress={() => setShowCreateModal(true)}
                 activeOpacity={0.7}
+                accessibilityLabel="Create QR payment"
+                accessibilityRole="button"
               >
                 <Icon name="add" size={16} color="#fff" />
                 <Text style={styles.createBtnText}>Create</Text>
@@ -337,7 +341,7 @@ export default function StationeryHomeScreen() {
       </ScrollView>
 
       {/* Modals */}
-      <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} />
+      <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} onOpenWallet={() => {}} />
       <OwnerWalletModal visible={showWallet} onClose={() => setShowWallet(false)} />
       <CreateQRPaymentModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} />
       <QRPaymentDisplayModal

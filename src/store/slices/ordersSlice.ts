@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { Order, OrderStatus, CartItem } from '../../types';
+import { Order, OrderStatus, CartItem, CreateOrderResult } from '../../types';
 import api from '../../services/api';
 
 // ---- API → Frontend mappers (same as orderService) ----
@@ -75,7 +75,25 @@ export const createOrder = createAsyncThunk(
       };
       const res = await api.post('/orders', payload);
       const d = res.data.data;
-      return mapOrder(d?.order || d);
+
+      // Handle split orders (mixed instant + regular items)
+      if (d?.wasSplit && Array.isArray(d?.orders)) {
+        const mappedOrders = d.orders.map(mapOrder);
+        return {
+          order: mappedOrders[0],
+          orders: mappedOrders,
+          wasSplit: true,
+          newBalance: d.newBalance,
+        } as CreateOrderResult;
+      }
+
+      // Single order (all instant or all regular)
+      const mappedOrder = mapOrder(d?.order || d);
+      return {
+        order: mappedOrder,
+        wasSplit: false,
+        newBalance: d?.newBalance,
+      } as CreateOrderResult;
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to create order');
     }
@@ -197,7 +215,19 @@ const ordersSlice = createSlice({
     // Create Order
     builder
       .addCase(createOrder.pending, (s) => { s.isLoading = true; s.error = null; })
-      .addCase(createOrder.fulfilled, (s, a) => { s.isLoading = false; s.currentOrder = a.payload; s.orders.unshift(a.payload); })
+      .addCase(createOrder.fulfilled, (s, a) => {
+        s.isLoading = false;
+        const result = a.payload;
+        s.currentOrder = result.order;
+        if (result.wasSplit && result.orders) {
+          // Add all split orders to the list
+          for (const o of result.orders) {
+            s.orders.unshift(o);
+          }
+        } else {
+          s.orders.unshift(result.order);
+        }
+      })
       .addCase(createOrder.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     // Fetch my orders
     builder

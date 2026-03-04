@@ -1,11 +1,15 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
-  Image, FlatList, ActivityIndicator, Modal, Alert,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, UIManager, Platform,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList, FoodItem, Order } from '../../types';
+import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyActiveOrders } from '../../store/slices/ordersSlice';
 import { fetchShops, fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
@@ -25,15 +29,10 @@ import ProfileDropdown from '../../components/student/ProfileDropdown';
 import { CartBottomSheet } from '../../components/student/CartBottomSheet';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
+import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Dashboard'>;
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
 
 interface PendingPayment {
   id: string;
@@ -62,8 +61,9 @@ function getCategoryIcon(cat: string): string {
   return CATEGORY_ICONS[cat] || 'grid-outline';
 }
 
-function FoodCardImage({ uri, style, placeholderStyle }: { uri: string | null; style: any; placeholderStyle: any }) {
+const FoodCardImage = React.memo(({ uri, style, placeholderStyle }: { uri: string | null; style: any; placeholderStyle: any }) => {
   const [failed, setFailed] = useState(false);
+  const onError = useCallback(() => setFailed(true), []);
 
   if (!uri || failed) {
     return (
@@ -77,10 +77,11 @@ function FoodCardImage({ uri, style, placeholderStyle }: { uri: string | null; s
     <Image
       source={{ uri }}
       style={style}
-      onError={() => setFailed(true)}
+      onError={onError}
+      accessibilityLabel="Food item image"
     />
   );
-}
+});
 
 export default function StudentDashboard({ navigation }: Props) {
   const { colors } = useTheme();
@@ -103,13 +104,23 @@ export default function StudentDashboard({ navigation }: Props) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [successOrder, setSuccessOrder] = useState<Order | null>(null);
+  const [splitOrders, setSplitOrders] = useState<Order[] | null>(null);
   const [showSuccessAnim, setShowSuccessAnim] = useState(false);
+  const [successOrderType, setSuccessOrderType] = useState<'instant' | 'regular' | 'split'>('instant');
   const [showFailAnim, setShowFailAnim] = useState(false);
   const [failError, setFailError] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<PendingPayment | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const submittingRef = useRef(false);
+  const paymentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (paymentTimerRef.current !== null) clearTimeout(paymentTimerRef.current);
+    };
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const canteenShop = shops.find(s => s.category === 'canteen');
@@ -156,7 +167,9 @@ export default function StudentDashboard({ navigation }: Props) {
   };
 
   const handleConfirmPayment = async () => {
+    if (submittingRef.current) return;
     if (!selectedPayment) return;
+    submittingRef.current = true;
     const balance = user?.balance || 0;
 
     setShowConfirmModal(false);
@@ -176,13 +189,13 @@ export default function StudentDashboard({ navigation }: Props) {
           key: orderData.keyId,
           amount: selectedPayment.amount * 100,
           currency: orderData.currency || 'INR',
-          name: 'MadrasOne',
+          name: 'CampusOne',
           description: selectedPayment.title,
           order_id: orderData.orderId,
           prefill: {
             name: user?.name || '',
             email: user?.email || '',
-            contact: (user as any)?.phone || '',
+            contact: user?.phone || '',
           },
           theme: { color: '#10b981' },
         };
@@ -195,10 +208,11 @@ export default function StudentDashboard({ navigation }: Props) {
         await walletService.payAdhocPayment(selectedPayment.id);
       }
 
+      successHaptic();
       setPaymentSuccess(true);
       setPendingPayments(prev => prev.filter(p => p.id !== selectedPayment.id));
       dispatch(fetchWalletBalance());
-      setTimeout(() => {
+      paymentTimerRef.current = setTimeout(() => {
         setPaymentSuccess(false);
         setSelectedPayment(null);
       }, 2500);
@@ -206,6 +220,8 @@ export default function StudentDashboard({ navigation }: Props) {
       if (e?.code !== 'PAYMENT_CANCELLED') {
         Alert.alert('Payment Failed', e?.response?.data?.message || e?.description || 'Please try again.');
       }
+    } finally {
+      submittingRef.current = false;
     }
     setPayingId(null);
   };
@@ -241,9 +257,24 @@ export default function StudentDashboard({ navigation }: Props) {
     });
   }, [shopMenu, selectedCategory, dietFilter]);
 
-  const getCartQty = (id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0;
-  const totalItems = cartItems.reduce((sum, c) => sum + c.quantity, 0);
-  const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
+  const keyExtractor = useCallback((i: FoodItem) => i.id, []);
+  const getCartQty = useCallback((id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0, [cartItems]);
+  const totalItems = useMemo(() => cartItems.reduce((sum, c) => sum + c.quantity, 0), [cartItems]);
+  const cartTotal = useMemo(() => cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0), [cartItems]);
+
+  // Animated floating cart bar
+  const cartBarAnim = useRef(new Animated.Value(0)).current;
+  const prevTotalItems = useRef(0);
+  useEffect(() => {
+    const hasItems = totalItems > 0;
+    const hadItems = prevTotalItems.current > 0;
+    if (hasItems && !hadItems) {
+      Animated.spring(cartBarAnim, { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }).start();
+    } else if (!hasItems && hadItems) {
+      Animated.timing(cartBarAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    }
+    prevTotalItems.current = totalItems;
+  }, [totalItems, cartBarAnim]);
 
   const formatDueDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -273,11 +304,13 @@ export default function StudentDashboard({ navigation }: Props) {
         {/* Food image / placeholder */}
         <TouchableOpacity
           style={styles.foodImageWrap}
-          onPress={() => qty === 0
-            ? dispatch(addToCart({ item, shopId: canteenShop!.id, shopName: canteenShop!.name }))
-            : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))
-          }
-          activeOpacity={0.8}>
+          onPress={() => { if (!canteenShop) return; lightHaptic(); qty === 0
+            ? dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name }))
+            : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }));
+          }}
+          activeOpacity={0.8}
+          accessibilityLabel={`Add ${item.name}`}
+          accessibilityRole="button">
           <FoodCardImage
             uri={imageUri}
             style={styles.foodImage}
@@ -303,17 +336,19 @@ export default function StudentDashboard({ navigation }: Props) {
             {qty === 0 ? (
               <TouchableOpacity
                 style={styles.addBtn}
-                onPress={() => dispatch(addToCart({ item, shopId: canteenShop!.id, shopName: canteenShop!.name }))}
-                activeOpacity={0.7}>
+                onPress={() => { if (!canteenShop) return; lightHaptic(); dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name })); }}
+                activeOpacity={0.7}
+                accessibilityLabel={`Add ${item.name} to cart`}
+                accessibilityRole="button">
                 <Icon name="add" size={18} color="#fff" />
               </TouchableOpacity>
             ) : (
               <View style={styles.qtyControl}>
-                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))} style={styles.qtyBtn}>
+                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
                   <Icon name="remove" size={14} color="#3b82f6" />
                 </TouchableOpacity>
                 <Text style={styles.qtyText}>{qty}</Text>
-                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))} style={styles.qtyBtn}>
+                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
                   <Icon name="add" size={14} color="#3b82f6" />
                 </TouchableOpacity>
               </View>
@@ -334,11 +369,14 @@ export default function StudentDashboard({ navigation }: Props) {
             source={require('../../assets/icons/appicon.png')}
             style={styles.logoBox}
             resizeMode="contain"
+            accessibilityLabel="CampusOne logo"
           />
           <TouchableOpacity
             style={styles.walletPill}
             onPress={() => setShowWallet(true)}
-            activeOpacity={0.8}>
+            activeOpacity={0.8}
+            accessibilityLabel="Open wallet"
+            accessibilityRole="button">
             <Icon name="wallet-outline" size={13} color="#3b82f6" />
             <Text style={styles.walletPillText}>Rs. {user?.balance || 0}</Text>
           </TouchableOpacity>
@@ -346,16 +384,18 @@ export default function StudentDashboard({ navigation }: Props) {
 
         {/* Right: Search + Profile */}
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowSearch(true)}>
+          <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowSearch(true)} accessibilityLabel="Search" accessibilityRole="button">
             <Icon name="search" size={20} color={colors.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.profileIcon}
             activeOpacity={0.7}
-            onPress={() => setShowProfile(true)}>
+            onPress={() => setShowProfile(true)}
+            accessibilityLabel="Open profile"
+            accessibilityRole="button">
             {unreadCount > 0 && <View style={styles.profileBadge} />}
             {resolveImageUrl(user?.avatarUrl) ? (
-              <Image source={{ uri: resolveImageUrl(user?.avatarUrl)! }} style={styles.profileAvatarImg} />
+              <Image source={{ uri: resolveImageUrl(user?.avatarUrl) ?? undefined }} style={styles.profileAvatarImg} accessibilityLabel="Profile avatar" />
             ) : (
               <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
             )}
@@ -365,9 +405,13 @@ export default function StudentDashboard({ navigation }: Props) {
 
       <FlatList
         data={filteredItems}
-        keyExtractor={i => i.id}
+        keyExtractor={keyExtractor}
         renderItem={renderFoodCard}
         contentContainerStyle={styles.listContent}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         ListHeaderComponent={
           <>
@@ -404,7 +448,9 @@ export default function StudentDashboard({ navigation }: Props) {
                           style={styles.payNowBtn}
                           onPress={() => handlePayNow(payment)}
                           disabled={isProcessing}
-                          activeOpacity={0.8}>
+                          activeOpacity={0.8}
+                          accessibilityLabel="Pay now"
+                          accessibilityRole="button">
                           {isProcessing ? (
                             <ActivityIndicator size="small" color="#fff" />
                           ) : (
@@ -431,7 +477,9 @@ export default function StudentDashboard({ navigation }: Props) {
                       key={order.id}
                       style={styles.activeOrderCard}
                       onPress={() => navigation.getParent()?.navigate('Orders')}
-                      activeOpacity={0.8}>
+                      activeOpacity={0.8}
+                      accessibilityLabel="View active order"
+                      accessibilityRole="button">
                       <View style={styles.activeOrderIcon}>
                         <Icon name="cube-outline" size={24} color="#3b82f6" />
                       </View>
@@ -460,8 +508,10 @@ export default function StudentDashboard({ navigation }: Props) {
                   <TouchableOpacity
                     key={cat}
                     style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
-                    onPress={() => setSelectedCategory(cat)}
-                    activeOpacity={0.7}>
+                    onPress={() => { lightHaptic(); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSelectedCategory(cat); }}
+                    activeOpacity={0.7}
+                    accessibilityLabel={`${cat} category`}
+                    accessibilityRole="button">
                     <Icon
                       name={getCategoryIcon(cat)}
                       size={14}
@@ -492,12 +542,17 @@ export default function StudentDashboard({ navigation }: Props) {
         ListFooterComponent={<View style={totalItems > 0 ? styles.footerWithCart : styles.footerCompact} />}
       />
 
-      {/* Floating Cart Bar */}
-      {totalItems > 0 && (
+      {/* Floating Cart Bar — animated slide up/down */}
+      <Animated.View style={[styles.floatingBarWrap, {
+        transform: [{ translateY: cartBarAnim.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }],
+        opacity: cartBarAnim,
+        pointerEvents: totalItems > 0 ? 'auto' : 'none',
+      }]}>
         <TouchableOpacity
-          style={styles.floatingBarWrap}
-          onPress={() => setShowCart(true)}
-          activeOpacity={0.9}>
+          onPress={() => { mediumHaptic(); setShowCart(true); }}
+          activeOpacity={0.9}
+          accessibilityLabel="View cart"
+          accessibilityRole="button">
           <LinearGradient
             colors={['#3b82f6', '#06d6a0']}
             start={{ x: 0, y: 0 }}
@@ -521,7 +576,7 @@ export default function StudentDashboard({ navigation }: Props) {
             </View>
           </LinearGradient>
         </TouchableOpacity>
-      )}
+      </Animated.View>
 
       {/* Modals */}
       <SearchModal visible={showSearch} onClose={() => setShowSearch(false)} />
@@ -529,6 +584,10 @@ export default function StudentDashboard({ navigation }: Props) {
         visible={showWallet}
         onClose={() => setShowWallet(false)}
         onTopUp={() => setShowTopUp(true)}
+        onTransactionPress={() => {
+          setShowWallet(false);
+          navigation.navigate('OrderHistory');
+        }}
       />
       <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
       <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
@@ -548,11 +607,24 @@ export default function StudentDashboard({ navigation }: Props) {
       <CartBottomSheet
         visible={showCart}
         onClose={() => setShowCart(false)}
-        onOrderSuccess={(order) => {
+        onOrderSuccess={(result: CreateOrderResult) => {
           setShowCart(false);
-          setSuccessOrder(order);
-          setShowSuccessAnim(true);
           dispatch(fetchMyActiveOrders());
+
+          if (result.wasSplit && result.orders && result.orders.length > 1) {
+            // Split order: show single screen with both tokens
+            setSplitOrders(result.orders);
+            setSuccessOrder(result.order);
+            setSuccessOrderType('split');
+            setShowSuccessAnim(true);
+          } else {
+            // Single order
+            const order = result.order;
+            setSplitOrders(null);
+            setSuccessOrder(order);
+            setSuccessOrderType(order.isReadyServe ? 'instant' : 'regular');
+            setShowSuccessAnim(true);
+          }
         }}
         onOrderFailure={(errorMessage) => {
           setShowCart(false);
@@ -565,9 +637,16 @@ export default function StudentDashboard({ navigation }: Props) {
       {showSuccessAnim && successOrder && (
         <OrderAnimation
           type="success"
+          orderType={successOrderType}
+          pickupToken={successOrder.pickupToken}
           orderId={successOrder.id}
-          total={successOrder.total}
-          onComplete={() => setShowSuccessAnim(false)}
+          total={splitOrders
+            ? splitOrders.reduce((sum, o) => sum + o.total, 0)
+            : successOrder.total}
+          splitOrders={splitOrders || undefined}
+          onComplete={() => {
+            setShowSuccessAnim(false);
+          }}
         />
       )}
 
@@ -585,7 +664,17 @@ export default function StudentDashboard({ navigation }: Props) {
         <OrderQRCard
           order={successOrder}
           onClose={() => {
+            // If split orders, show QR for the other order
+            if (splitOrders && splitOrders.length > 1) {
+              const nextOrder = splitOrders.find(o => o.id !== successOrder.id);
+              if (nextOrder) {
+                setSuccessOrder(nextOrder);
+                setSplitOrders(null);
+                return;
+              }
+            }
             setSuccessOrder(null);
+            setSplitOrders(null);
             dispatch(fetchMyActiveOrders());
             dispatch(fetchWalletBalance());
           }}
@@ -599,6 +688,8 @@ export default function StudentDashboard({ navigation }: Props) {
             style={StyleSheet.absoluteFill}
             onPress={() => { setShowConfirmModal(false); setSelectedPayment(null); }}
             activeOpacity={1}
+            accessibilityLabel="Close modal"
+            accessibilityRole="button"
           />
           <View style={styles.confirmCard}>
             <Text style={styles.confirmTitle}>Confirm Payment</Text>
@@ -634,14 +725,18 @@ export default function StudentDashboard({ navigation }: Props) {
                   <TouchableOpacity
                     style={[styles.methodBtn, paymentMethod === 'wallet' && styles.methodBtnActive]}
                     onPress={() => setPaymentMethod('wallet')}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Pay with wallet"
+                    accessibilityRole="button">
                     <Icon name="wallet-outline" size={20} color={paymentMethod === 'wallet' ? '#fff' : colors.primary} />
                     <Text style={[styles.methodBtnText, paymentMethod === 'wallet' && styles.methodBtnTextActive]}>Wallet</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.methodBtn, paymentMethod === 'razorpay' && styles.methodBtnActive]}
                     onPress={() => setPaymentMethod('razorpay')}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Pay with Razorpay"
+                    accessibilityRole="button">
                     <Icon name="card-outline" size={20} color={paymentMethod === 'razorpay' ? '#fff' : colors.primary} />
                     <Text style={[styles.methodBtnText, paymentMethod === 'razorpay' && styles.methodBtnTextActive]}>Razorpay</Text>
                   </TouchableOpacity>
@@ -660,7 +755,9 @@ export default function StudentDashboard({ navigation }: Props) {
                   <TouchableOpacity
                     style={styles.cancelBtn}
                     onPress={() => { setShowConfirmModal(false); setSelectedPayment(null); }}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Cancel payment"
+                    accessibilityRole="button">
                     <Text style={styles.cancelBtnText}>Cancel</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -670,7 +767,9 @@ export default function StudentDashboard({ navigation }: Props) {
                     ]}
                     onPress={handleConfirmPayment}
                     disabled={paymentMethod === 'wallet' && (user?.balance || 0) < selectedPayment.amount}
-                    activeOpacity={0.8}>
+                    activeOpacity={0.8}
+                    accessibilityLabel="Confirm payment"
+                    accessibilityRole="button">
                     <Text style={styles.confirmBtnText}>
                       {paymentMethod === 'razorpay' ? 'Pay with Razorpay' : 'Confirm'}
                     </Text>

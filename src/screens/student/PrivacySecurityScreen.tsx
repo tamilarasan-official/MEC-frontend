@@ -19,7 +19,7 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
     <ScreenWrapper>
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Privacy & Security</Text>
@@ -32,8 +32,10 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
           {/* Privacy Policy */}
           <TouchableOpacity
             style={styles.menuCard}
-            onPress={() => Linking.openURL('https://madrasone.com/privacy')}
-            activeOpacity={0.7}>
+            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => {})}
+            activeOpacity={0.7}
+            accessibilityLabel="Privacy Policy"
+            accessibilityRole="button">
             <View style={styles.menuLeft}>
               <View style={[styles.menuIcon, { backgroundColor: colors.accentBg }]}>
                 <Icon name="document-text" size={18} color={colors.accent} />
@@ -49,8 +51,10 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
           {/* Terms of Service */}
           <TouchableOpacity
             style={styles.menuCard}
-            onPress={() => Linking.openURL('https://madrasone.com/terms')}
-            activeOpacity={0.7}>
+            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => {})}
+            activeOpacity={0.7}
+            accessibilityLabel="Terms of Service"
+            accessibilityRole="button">
             <View style={styles.menuLeft}>
               <View style={[styles.menuIcon, { backgroundColor: colors.orangeBg }]}>
                 <Icon name="document-text" size={18} color={colors.orange500} />

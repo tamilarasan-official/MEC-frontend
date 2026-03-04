@@ -6,11 +6,12 @@ const authService = {
     const res = await api.post('/auth/login', { username, password, deviceId: `mobile-${Date.now()}`, deviceInfo: { platform: 'react-native' } });
     return res.data.data;
   },
-  sendOtp: async (phone: string): Promise<void> => {
-    await api.post('/auth/send-otp', { phoneNumber: phone });
+  sendOtp: async (phone: string): Promise<{ sessionId: string }> => {
+    const res = await api.post('/auth/send-otp', { phone });
+    return res.data.data;
   },
-  verifyOtp: async (phone: string, otp: string): Promise<LoginResponse> => {
-    const res = await api.post('/auth/verify-otp', { phoneNumber: phone, otp, deviceId: `mobile-${Date.now()}` });
+  verifyOtp: async (phone: string, otp: string, sessionId: string): Promise<LoginResponse> => {
+    const res = await api.post('/auth/verify-otp', { phone, sessionId, otp, deviceId: `mobile-${Date.now()}` });
     return res.data.data;
   },
   register: async (data: RegisterData): Promise<{ user: User; message: string }> => {

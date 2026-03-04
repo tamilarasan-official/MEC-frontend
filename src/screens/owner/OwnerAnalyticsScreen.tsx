@@ -209,7 +209,7 @@ export default function OwnerAnalyticsScreen() {
         <View style={styles.center}>
           <Icon name="alert-circle-outline" size={48} color={colors.destructive} />
           <Text style={styles.errorText}>Failed to load analytics</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchData}>
+          <TouchableOpacity style={styles.retryBtn} onPress={fetchData} accessibilityLabel="Retry loading" accessibilityRole="button">
             <Icon name="refresh" size={16} color="#fff" />
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -267,7 +267,7 @@ export default function OwnerAnalyticsScreen() {
     return { bg: colors.muted, text: colors.mutedForeground };
   };
 
-  // Revenue comparison chart data (weekly breakdown approximation)
+  // Revenue comparison chart data (weekly breakdown is estimated from monthly totals)
   const w4Revenue = thisMonthRevenue;
   const revenueBarData = [
     { label: 'W1', value: Math.round(lastMonthRevenue * 0.2), color: 'rgba(156,163,175,0.4)' },
@@ -334,6 +334,8 @@ export default function OwnerAnalyticsScreen() {
                 style={[styles.filterTab, salesFilter === f.key && styles.filterTabActive]}
                 onPress={() => setSalesFilter(f.key)}
                 activeOpacity={0.7}
+                accessibilityLabel={`${f.label} sales filter`}
+                accessibilityRole="button"
               >
                 <Text style={[styles.filterTabText, salesFilter === f.key && styles.filterTabTextActive]}>
                   {f.label}
@@ -360,6 +362,8 @@ export default function OwnerAnalyticsScreen() {
                 style={[styles.filterTab, ordersFilter === f.key && styles.filterTabActive]}
                 onPress={() => setOrdersFilter(f.key)}
                 activeOpacity={0.7}
+                accessibilityLabel={`${f.label} orders filter`}
+                accessibilityRole="button"
               >
                 <Text style={[styles.filterTabText, ordersFilter === f.key && styles.filterTabTextActive]}>
                   {f.label}
@@ -392,7 +396,7 @@ export default function OwnerAnalyticsScreen() {
 
         {/* ── Revenue Comparison Chart ── */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Revenue Comparison</Text>
+          <Text style={styles.sectionTitle}>Revenue Comparison (Estimated)</Text>
           <View style={styles.legendRow}>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: 'rgba(156,163,175,0.4)' }]} />
@@ -476,7 +480,7 @@ export default function OwnerAnalyticsScreen() {
         </View>
 
         {/* Refresh Button */}
-        <TouchableOpacity style={styles.refreshRow} onPress={onRefresh}>
+        <TouchableOpacity style={styles.refreshRow} onPress={onRefresh} accessibilityLabel="Refresh analytics" accessibilityRole="button">
           <Icon name="refresh" size={16} color={colors.mutedForeground} />
           <Text style={styles.refreshText}>Refresh Analytics</Text>
         </TouchableOpacity>

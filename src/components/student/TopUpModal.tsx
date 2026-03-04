@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, Keyboard, Platform, Animated, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Animated, ScrollView,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
@@ -27,9 +27,11 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { return () => { if (successTimerRef.current !== null) clearTimeout(successTimerRef.current); }; }, []);
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     if (visible) {
@@ -37,14 +39,6 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }).start();
     }
   }, [visible, slideAnim]);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, e => setKeyboardHeight(e.endCoordinates.height));
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
 
   const numericAmount = parseInt(amount || '0', 10);
 
@@ -61,7 +55,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         key: orderData.keyId,
         amount: numericAmount * 100,
         currency: orderData.currency || 'INR',
-        name: 'MadrasOne',
+        name: 'CampusOne',
         description: `Wallet Top-up Rs. ${numericAmount}`,
         order_id: orderData.orderId,
         prefill: {
@@ -79,7 +73,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       });
       setSuccess(true);
       dispatch(fetchWalletBalance());
-      setTimeout(() => {
+      successTimerRef.current = setTimeout(() => {
         setSuccess(false);
         setAmount('');
         onClose();
@@ -104,10 +98,13 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   return (
     <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
       {/* Backdrop tap to dismiss */}
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} />
+      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
 
-      <View style={styles.kvWrapper}>
-        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }], paddingBottom: keyboardHeight + 36 }]}>
+      <KeyboardAvoidingView
+        style={styles.kvWrapper}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}>
+        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
           {/* Drag handle */}
           <View style={styles.handleBar}>
@@ -120,7 +117,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
               <Text style={styles.title}>Top Up Wallet</Text>
               <Text style={styles.subtitle}>Add money to your balance</Text>
             </View>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7} accessibilityLabel="Close top up" accessibilityRole="button">
               <Icon name="close" size={18} color={colors.text} />
             </TouchableOpacity>
           </View>
@@ -146,6 +143,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
             placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"
             maxLength={5}
+            accessibilityLabel="Top up amount"
           />
 
           {/* Quick amounts */}
@@ -155,7 +153,9 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
                 key={a}
                 style={[styles.quickBtn, amount === String(a) && styles.quickBtnActive]}
                 onPress={() => { setAmount(String(a)); setError(''); }}
-                activeOpacity={0.7}>
+                activeOpacity={0.7}
+                accessibilityLabel={`Select rupees ${a}`}
+                accessibilityRole="button">
                 <Text style={[styles.quickBtnText, amount === String(a) && styles.quickBtnTextActive]}>
                   Rs. {a}
                 </Text>
@@ -179,7 +179,9 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
             style={[styles.submitBtn, (loading || numericAmount < 1) && styles.submitBtnDisabled]}
             onPress={handleTopUp}
             disabled={loading || numericAmount < 1}
-            activeOpacity={0.85}>
+            activeOpacity={0.85}
+            accessibilityLabel={numericAmount > 0 ? `Pay rupees ${numericAmount}` : 'Enter amount'}
+            accessibilityRole="button">
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
@@ -192,7 +194,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           <Text style={styles.helpText}>Or visit the college office for cash deposits.</Text>
           </ScrollView>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -203,12 +205,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   kvWrapper: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flex: 1, justifyContent: 'flex-end',
   },
   sheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingHorizontal: 20, paddingBottom: 36,
+    maxHeight: '85%',
   },
 
   handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },

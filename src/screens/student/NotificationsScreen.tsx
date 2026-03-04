@@ -53,7 +53,9 @@ export default function NotificationsScreen({ navigation }: Props) {
       <TouchableOpacity
         style={[styles.notifCard, !item.read && styles.notifUnread]}
         onPress={() => handleMarkRead(item.id)}
-        activeOpacity={0.7}>
+        activeOpacity={0.7}
+        accessibilityLabel={`Notification: ${item.title}`}
+        accessibilityRole="button">
         <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
           <Icon name={config.icon} size={20} color={config.color} />
         </View>
@@ -75,7 +77,7 @@ export default function NotificationsScreen({ navigation }: Props) {
     <ScreenWrapper>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
           <Icon name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -87,7 +89,7 @@ export default function NotificationsScreen({ navigation }: Props) {
           )}
         </View>
         {notifications.length > 0 ? (
-          <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn}>
+          <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn} accessibilityLabel="Clear all notifications" accessibilityRole="button">
             <Text style={styles.clearText}>Clear All</Text>
           </TouchableOpacity>
         ) : <View style={styles.clearBtnSpacer} />}

@@ -1,14 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Image,
 } from 'react-native';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveAvatarUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveAvatarUrl } from '../../utils/imageUrl';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -51,21 +45,28 @@ export default function ProfileDropdown({
     } catch { /* ignore */ }
   };
 
+  const [showSignOut, setShowSignOut] = useState(false);
+
   const handleLogout = () => {
+    setShowSignOut(true);
+  };
+
+  const confirmLogout = () => {
+    setShowSignOut(false);
     onClose();
     dispatch(logout());
   };
 
   return (
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} accessibilityLabel="Close profile menu" accessibilityRole="button">
         <TouchableOpacity activeOpacity={1} style={styles.dropdown}>
 
           {/* User Info */}
           <View style={styles.userSection}>
             <View style={styles.avatar}>
               {resolveAvatarUrl(user?.avatarUrl) ? (
-                <Image source={{ uri: resolveAvatarUrl(user?.avatarUrl)! }} style={styles.avatarImg} />
+                <Image source={{ uri: resolveAvatarUrl(user?.avatarUrl)! }} style={styles.avatarImg} accessibilityLabel="Profile avatar" />
               ) : (
                 <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
               )}
@@ -101,7 +102,9 @@ export default function ProfileDropdown({
                         isActive && (isVeg ? styles.dietBtnActiveVeg : styles.dietBtnActive),
                       ]}
                       onPress={() => handleDietChange(opt.value)}
-                      activeOpacity={0.7}>
+                      activeOpacity={0.7}
+                      accessibilityLabel={`${opt.label} diet filter`}
+                      accessibilityRole="button">
                       {isVeg && isActive && (
                         <Icon name="leaf" size={12} color="#fff" />
                       )}
@@ -121,7 +124,9 @@ export default function ProfileDropdown({
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => { onClose(); onNavigateCart?.(); }}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Cart"
+            accessibilityRole="button">
             <View>
               <Icon name="cart-outline" size={18} color="#3b82f6" />
               {cartCount > 0 && (
@@ -137,7 +142,9 @@ export default function ProfileDropdown({
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => { onClose(); onNavigateNotifications?.(); }}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Notifications"
+            accessibilityRole="button">
             <Icon name="notifications-outline" size={18} color="#f97316" />
             <Text style={styles.menuItemText}>Notifications</Text>
           </TouchableOpacity>
@@ -146,7 +153,9 @@ export default function ProfileDropdown({
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => { onClose(); onAddBalance?.(); }}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Add balance"
+            accessibilityRole="button">
             <View style={styles.addBalanceIcon}>
               <Icon name="add" size={14} color="#22c55e" />
             </View>
@@ -157,19 +166,49 @@ export default function ProfileDropdown({
           <TouchableOpacity
             style={styles.menuItem}
             onPress={() => { onClose(); onNavigateSettings?.(); }}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Settings"
+            accessibilityRole="button">
             <Icon name="settings-outline" size={18} color={colors.textMuted} />
             <Text style={styles.menuItemText}>Settings</Text>
           </TouchableOpacity>
 
           {/* Sign Out */}
-          <TouchableOpacity style={styles.menuItem} onPress={handleLogout} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.menuItem} onPress={handleLogout} activeOpacity={0.7} accessibilityLabel="Sign out" accessibilityRole="button">
             <Icon name="log-out-outline" size={18} color={colors.error} />
             <Text style={[styles.menuItemText, { color: colors.error }]}>Sign Out</Text>
           </TouchableOpacity>
 
         </TouchableOpacity>
       </TouchableOpacity>
+
+      {/* Custom Sign Out Confirmation */}
+      <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.signOutOverlay}>
+          <View style={styles.signOutDialog}>
+            <View style={styles.signOutIconWrap}>
+              <Icon name="log-out-outline" size={28} color={colors.error} />
+            </View>
+            <Text style={styles.signOutTitle}>Sign Out</Text>
+            <Text style={styles.signOutMessage}>Are you sure you want to sign out?</Text>
+            <View style={styles.signOutActions}>
+              <TouchableOpacity
+                style={styles.signOutCancelBtn}
+                onPress={() => setShowSignOut(false)}
+                activeOpacity={0.7}>
+                <Text style={styles.signOutCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.signOutConfirmBtn}
+                onPress={confirmLogout}
+                activeOpacity={0.7}>
+                <Icon name="log-out-outline" size={16} color="#fff" />
+                <Text style={styles.signOutConfirmText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -231,4 +270,47 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 3,
   },
   cartBadgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+  // Sign out confirmation dialog
+  signOutOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  signOutDialog: {
+    width: '100%', maxWidth: 300, backgroundColor: colors.card,
+    borderRadius: 20, padding: 24, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 24,
+    elevation: 16,
+  },
+  signOutIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 16,
+  },
+  signOutTitle: {
+    fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 8,
+  },
+  signOutMessage: {
+    fontSize: 14, color: colors.textMuted, textAlign: 'center',
+    lineHeight: 20, marginBottom: 24,
+  },
+  signOutActions: {
+    flexDirection: 'row', gap: 12, width: '100%',
+  },
+  signOutCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: colors.surface, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  signOutCancelText: {
+    fontSize: 14, fontWeight: '600', color: colors.text,
+  },
+  signOutConfirmBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: colors.error, alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  signOutConfirmText: {
+    fontSize: 14, fontWeight: '600', color: '#fff',
+  },
 });

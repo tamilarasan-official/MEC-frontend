@@ -1,5 +1,5 @@
 /**
- * MadrasOne - Campus Food & Services App
+ * CampusOne - Campus Food & Services App
  * React Native Application Entry Point
  */
 

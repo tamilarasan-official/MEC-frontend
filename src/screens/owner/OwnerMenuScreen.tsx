@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Image,
   ActivityIndicator, RefreshControl, Modal, Alert, Platform,
@@ -23,14 +23,7 @@ import OwnerHeader from '../../components/owner/OwnerHeader';
 import OwnerProfileDropdown from '../../components/owner/OwnerProfileDropdown';
 import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
 import api from '../../services/api';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.includes('/placeholder')) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 export default function OwnerMenuScreen() {
   const { colors } = useTheme();
@@ -54,6 +47,7 @@ export default function OwnerMenuScreen() {
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [offerModal, setOfferModal] = useState<FoodItem | null>(null);
   const [discountPercent, setDiscountPercent] = useState('');
+  const menuRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadMenu = useCallback(async (force = false) => {
     // Skip re-fetch if data was loaded less than 30s ago (unless forced)
@@ -63,6 +57,7 @@ export default function OwnerMenuScreen() {
 
   useEffect(() => { loadMenu(); }, [loadMenu]);
   useEffect(() => { if (!dashboardStats) dispatch(fetchDashboardStats()); }, [dashboardStats, dispatch]);
+  useEffect(() => { return () => { if (menuRefreshTimerRef.current !== null) clearTimeout(menuRefreshTimerRef.current); }; }, []);
 
   const onRefresh = async () => { setRefreshing(true); await loadMenu(true); setRefreshing(false); };
 
@@ -157,6 +152,8 @@ export default function OwnerMenuScreen() {
               style={styles.addItemBtn}
               onPress={() => { setEditingItem(null); setShowAddModal(true); }}
               activeOpacity={0.7}
+              accessibilityLabel="Add item"
+              accessibilityRole="button"
             >
               <Icon name="add" size={16} color="#fff" />
               <Text style={styles.addItemText}>Add Item</Text>
@@ -173,9 +170,10 @@ export default function OwnerMenuScreen() {
                 placeholderTextColor={colors.mutedForeground}
                 value={search}
                 onChangeText={setSearch}
+                accessibilityLabel="Search menu items"
               />
               {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')}>
+                <TouchableOpacity onPress={() => setSearch('')} accessibilityLabel="Clear search" accessibilityRole="button">
                   <Icon name="close-circle" size={16} color={colors.mutedForeground} />
                 </TouchableOpacity>
               )}
@@ -187,6 +185,8 @@ export default function OwnerMenuScreen() {
                   style={styles.categoryDropdown}
                   onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
                   activeOpacity={0.7}
+                  accessibilityLabel="Category filter"
+                  accessibilityRole="button"
                 >
                   <Text style={styles.categoryDropdownText} numberOfLines={1}>
                     {categoryFilter || 'All categories'}
@@ -199,6 +199,8 @@ export default function OwnerMenuScreen() {
                     <TouchableOpacity
                       style={[styles.dropdownItem, !categoryFilter && styles.dropdownItemActive]}
                       onPress={() => { setCategoryFilter(null); setShowCategoryDropdown(false); }}
+                      accessibilityLabel="All categories"
+                      accessibilityRole="button"
                     >
                       <Text style={[styles.dropdownItemText, !categoryFilter && styles.dropdownItemTextActive]}>
                         All categories
@@ -209,6 +211,8 @@ export default function OwnerMenuScreen() {
                         key={cat}
                         style={[styles.dropdownItem, categoryFilter === cat && styles.dropdownItemActive]}
                         onPress={() => { setCategoryFilter(cat); setShowCategoryDropdown(false); }}
+                        accessibilityLabel={`${cat} category`}
+                        accessibilityRole="button"
                       >
                         <Text style={[styles.dropdownItemText, categoryFilter === cat && styles.dropdownItemTextActive]}>
                           {cat}
@@ -240,6 +244,8 @@ export default function OwnerMenuScreen() {
                 <TouchableOpacity
                   style={styles.emptyBtn}
                   onPress={() => { setEditingItem(null); setShowAddModal(true); }}
+                  accessibilityLabel="Add first item"
+                  accessibilityRole="button"
                 >
                   <Icon name="add" size={18} color="#fff" />
                   <Text style={styles.emptyBtnText}>Add First Item</Text>
@@ -270,7 +276,7 @@ export default function OwnerMenuScreen() {
             setShowAddModal(false);
             setEditingItem(null);
             // Refresh menu after save
-            setTimeout(() => dispatch(fetchOwnerMenu()), 500);
+            menuRefreshTimerRef.current = setTimeout(() => dispatch(fetchOwnerMenu()), 500);
           }}
         />
 
@@ -287,12 +293,13 @@ export default function OwnerMenuScreen() {
                 keyboardType="numeric"
                 value={discountPercent}
                 onChangeText={setDiscountPercent}
+                accessibilityLabel="Discount percentage"
               />
               <View style={styles.offerActions}>
-                <TouchableOpacity style={styles.offerCancel} onPress={() => setOfferModal(null)}>
+                <TouchableOpacity style={styles.offerCancel} onPress={() => setOfferModal(null)} accessibilityLabel="Cancel offer" accessibilityRole="button">
                   <Text style={styles.offerCancelText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.offerSubmit} onPress={handleOfferSubmit}>
+                <TouchableOpacity style={styles.offerSubmit} onPress={handleOfferSubmit} accessibilityLabel="Set offer" accessibilityRole="button">
                   <Text style={styles.offerSubmitText}>Set Offer</Text>
                 </TouchableOpacity>
               </View>
@@ -327,7 +334,7 @@ const MenuItemCard = React.memo(function MenuItemCard({
       {/* Image + Veg badge */}
       <View style={styles.cardImageWrap}>
         {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" />
+          <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" accessibilityLabel={`${item.name} image`} />
         ) : (
           <View style={styles.cardImagePlaceholder}>
             <Icon name="restaurant-outline" size={24} color={colors.mutedForeground} />
@@ -369,10 +376,10 @@ const MenuItemCard = React.memo(function MenuItemCard({
 
       {/* Actions */}
       <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(item)} accessibilityLabel={`Edit ${item.name}`} accessibilityRole="button">
           <Icon name="create-outline" size={16} color={colors.mutedForeground} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={() => onDelete(item)}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => onDelete(item)} accessibilityLabel={`Delete ${item.name}`} accessibilityRole="button">
           <Icon name="trash-outline" size={16} color={colors.destructive} />
         </TouchableOpacity>
         <TouchableOpacity
@@ -382,6 +389,8 @@ const MenuItemCard = React.memo(function MenuItemCard({
           ]}
           onPress={() => onToggle(item)}
           activeOpacity={0.7}
+          accessibilityLabel={item.isAvailable ? `Disable ${item.name}` : `Enable ${item.name}`}
+          accessibilityRole="button"
         >
           <View style={[
             styles.cardToggleDot,
@@ -495,13 +504,13 @@ function AddEditModal({
           Alert.alert('Error', 'Failed to upload image. Please try again.');
         }
       } catch (err) {
-        console.error('Image upload failed:', err);
+        if (__DEV__) console.error('Image upload failed:', err);
         Alert.alert('Error', 'Failed to upload image. Please try again.');
       } finally {
         setImageUploading(false);
       }
     } catch (err) {
-      console.error('Image picker error:', err);
+      if (__DEV__) console.error('Image picker error:', err);
     }
   };
 
@@ -565,14 +574,14 @@ function AddEditModal({
     <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         {/* Backdrop dismiss */}
-        <Pressable style={styles.modalBackdrop} onPress={onClose} />
+        <Pressable style={styles.modalBackdrop} onPress={onClose} accessibilityLabel="Close modal" accessibilityRole="button" />
 
         {/* Form content */}
         <View style={[styles.formModal, { maxHeight: screenHeight * 0.92 }]}>
           {/* Header */}
           <View style={styles.formHeader}>
             <Text style={styles.formTitle}>{item ? 'Edit Item' : 'Add New Item'}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.formCloseBtn}>
+            <TouchableOpacity onPress={onClose} style={styles.formCloseBtn} accessibilityLabel="Close form" accessibilityRole="button">
               <Icon name="close" size={20} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
@@ -588,6 +597,7 @@ function AddEditModal({
                 placeholder="Item name"
                 placeholderTextColor={colors.mutedForeground}
                 maxLength={100}
+                accessibilityLabel="Item name"
               />
             </View>
 
@@ -602,6 +612,7 @@ function AddEditModal({
                 placeholderTextColor={colors.mutedForeground}
                 multiline
                 maxLength={500}
+                accessibilityLabel="Item description"
               />
             </View>
 
@@ -616,6 +627,7 @@ function AddEditModal({
                   placeholder="0"
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType="numeric"
+                  accessibilityLabel="Selling price"
                 />
               </View>
               <View style={styles.flex1}>
@@ -627,6 +639,7 @@ function AddEditModal({
                   placeholder="0"
                   placeholderTextColor={colors.mutedForeground}
                   keyboardType="numeric"
+                  accessibilityLabel="Cost price"
                 />
               </View>
             </View>
@@ -656,15 +669,19 @@ function AddEditModal({
                 onPress={handlePickImage}
                 activeOpacity={0.7}
                 disabled={imageUploading}
+                accessibilityLabel="Upload image"
+                accessibilityRole="button"
               >
                 {imageUploading ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : resolvedImageUri ? (
                   <View style={styles.imagePreviewWrap}>
-                    <Image source={{ uri: resolvedImageUri }} style={styles.imagePreview} resizeMode="cover" />
+                    <Image source={{ uri: resolvedImageUri }} style={styles.imagePreview} resizeMode="cover" accessibilityLabel="Item image preview" />
                     <TouchableOpacity
                       style={styles.imageRemoveBtn}
                       onPress={() => setImageUrl('')}
+                      accessibilityLabel="Remove image"
+                      accessibilityRole="button"
                     >
                       <Icon name="close-circle" size={22} color="#ef4444" />
                     </TouchableOpacity>
@@ -687,6 +704,8 @@ function AddEditModal({
                   style={styles.fieldInput}
                   onPress={() => setShowCatDropdown(!showCatDropdown)}
                   activeOpacity={0.7}
+                  accessibilityLabel="Select category"
+                  accessibilityRole="button"
                 >
                   <View style={styles.dropdownTrigger}>
                     <Text style={[
@@ -705,6 +724,8 @@ function AddEditModal({
                       <TouchableOpacity
                         style={[styles.dropdownItem, !category && styles.dropdownItemActive]}
                         onPress={() => { setCategory(''); setCategoryId(''); setShowCatDropdown(false); }}
+                        accessibilityLabel="No category"
+                        accessibilityRole="button"
                       >
                         <Text style={[styles.dropdownItemText, !category && styles.dropdownItemTextActive]}>
                           No category
@@ -715,6 +736,8 @@ function AddEditModal({
                           key={cat.id || cat.name}
                           style={[styles.dropdownItem, category === cat.name && styles.dropdownItemActive]}
                           onPress={() => handleSelectCategory(cat)}
+                          accessibilityLabel={`${cat.name} category`}
+                          accessibilityRole="button"
                         >
                           <Text style={[styles.dropdownItemText, category === cat.name && styles.dropdownItemTextActive]}>
                             {cat.name}{cat.isReadyServe ? ' \u26A1' : ''}
@@ -731,6 +754,7 @@ function AddEditModal({
                 onChangeText={setCustomCategory}
                 placeholder="Or type a new category"
                 placeholderTextColor={colors.mutedForeground}
+                accessibilityLabel="Custom category"
               />
             </View>
 
@@ -745,6 +769,7 @@ function AddEditModal({
                 placeholderTextColor={colors.mutedForeground}
                 keyboardType="numeric"
                 editable={!isInstant}
+                accessibilityLabel="Preparation time"
               />
             </View>
 
@@ -755,6 +780,8 @@ function AddEditModal({
                 style={styles.toggleRowItem}
                 onPress={() => setIsInstant(!isInstant)}
                 activeOpacity={0.7}
+                accessibilityLabel="Toggle ready to serve"
+                accessibilityRole="button"
               >
                 <View style={[
                   styles.togglePill,
@@ -775,6 +802,8 @@ function AddEditModal({
                 style={styles.toggleRowItem}
                 onPress={() => setIsVeg(!isVeg)}
                 activeOpacity={0.7}
+                accessibilityLabel="Toggle vegetarian"
+                accessibilityRole="button"
               >
                 <View style={[
                   styles.togglePill,
@@ -795,6 +824,8 @@ function AddEditModal({
                 style={styles.toggleRowItem}
                 onPress={() => setIsAvailable(!isAvailable)}
                 activeOpacity={0.7}
+                accessibilityLabel="Toggle available"
+                accessibilityRole="button"
               >
                 <View style={[
                   styles.togglePill,
@@ -818,10 +849,10 @@ function AddEditModal({
 
           {/* Action Buttons */}
           <View style={styles.formActions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} accessibilityLabel="Cancel" accessibilityRole="button">
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit}>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSubmit} accessibilityLabel={item ? 'Update item' : 'Add item'} accessibilityRole="button">
               <Icon name="checkmark" size={16} color="#fff" />
               <Text style={styles.saveBtnText}>{item ? 'Update' : 'Add Item'}</Text>
             </TouchableOpacity>

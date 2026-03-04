@@ -18,13 +18,15 @@ export default function LeaderboardScreen({ navigation }: Props) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
       const data = await walletService.getLeaderboard();
       setEntries(data);
+      setError(null);
     } catch (err) {
-      console.error('Failed to fetch leaderboard:', err);
+      setError('Something went wrong. Pull down to retry.');
     } finally {
       setLoading(false);
     }
@@ -48,7 +50,7 @@ export default function LeaderboardScreen({ navigation }: Props) {
     <ScreenWrapper>
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
           <Icon name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Leaderboard</Text>
@@ -91,7 +93,12 @@ export default function LeaderboardScreen({ navigation }: Props) {
             <Text style={styles.entrySpent}>Rs.{e.totalSpent}</Text>
           </View>
         ))}
-        {entries.length === 0 && (
+        {error ? (
+          <View style={styles.empty}>
+            <Icon name="alert-circle-outline" size={40} color={colors.textMuted} />
+            <Text style={styles.emptyText}>{error}</Text>
+          </View>
+        ) : entries.length === 0 && (
           <View style={styles.empty}>
             <Icon name="trophy-outline" size={40} color={colors.textMuted} />
             <Text style={styles.emptyText}>No data yet</Text>

@@ -11,13 +11,7 @@ import Icon from '../../components/common/Icon';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready', 'partially_delivered']);
 
@@ -87,7 +81,7 @@ export default function CaptainEatOrdersScreen() {
           <Text style={styles.title}>My Orders</Text>
           <Text style={styles.subtitle}>Track your food orders</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh}>
+        <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh} accessibilityLabel="Refresh orders" accessibilityRole="button">
           <Icon name="refresh" size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
@@ -113,7 +107,7 @@ export default function CaptainEatOrdersScreen() {
                   (() => {
                     const isReady = order.isReadyServe || order.status === 'ready' || order.status === 'partially_delivered';
                     return (
-                      <TouchableOpacity onPress={() => setSelectedOrder(order)} activeOpacity={0.9} style={styles.tokenWrap}>
+                      <TouchableOpacity onPress={() => setSelectedOrder(order)} activeOpacity={0.9} style={styles.tokenWrap} accessibilityLabel="Show order QR code" accessibilityRole="button">
                         <LinearGradient
                           colors={isReady ? ['#f97316', '#f59e0b', '#fb923c'] : ['#10b981', '#06d6a0', '#14b8a6']}
                           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -160,6 +154,7 @@ export default function CaptainEatOrdersScreen() {
                           source={{ uri: imageUri }}
                           style={styles.itemImage}
                           onError={() => handleImageError(imgKey)}
+                          accessibilityLabel={`${item.name} image`}
                         />
                       ) : (
                         <View style={[styles.itemImage, styles.itemImagePlaceholder]}>

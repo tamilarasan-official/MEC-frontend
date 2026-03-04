@@ -11,6 +11,7 @@ import { useAppSelector, useAppDispatch } from '../../store';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
 import menuService from '../../services/menuService';
 import { FoodItem } from '../../types';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 interface SearchModalProps {
   visible: boolean;
@@ -29,7 +30,10 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
   const [loading, setLoading] = useState(false);
   const itemsLoaded = useRef(false);
   const inputRef = useRef<TextInput>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slideAnim = useMemo(() => new Animated.Value(-800), []);
+
+  useEffect(() => { return () => { if (focusTimerRef.current !== null) clearTimeout(focusTimerRef.current); }; }, []);
 
   // Pre-load all menu items when modal opens (same approach as web app)
   const loadAllItems = useCallback(async () => {
@@ -60,7 +64,7 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
     if (visible) {
       slideAnim.setValue(-800);
       Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }).start();
-      setTimeout(() => inputRef.current?.focus(), 300);
+      focusTimerRef.current = setTimeout(() => inputRef.current?.focus(), 300);
       loadAllItems();
     } else {
       setQuery('');
@@ -102,16 +106,11 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
     }
   };
 
-  const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-  const resolveImage = (url?: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('http')) return url;
-    return `${IMAGE_BASE}${url}`;
-  };
+  const resolveImage = resolveImageUrl;
 
   return (
     <Modal visible={visible} animationType="none" transparent statusBarTranslucent>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} accessibilityLabel="Close search" accessibilityRole="button">
         <TouchableOpacity activeOpacity={1}>
         <Animated.View style={[styles.container, { paddingTop: insets.top + 8, transform: [{ translateY: slideAnim }] }]}>
           {/* Search Bar */}
@@ -127,8 +126,9 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
               returnKeyType="search"
               autoCapitalize="none"
               autoCorrect={false}
+              accessibilityLabel="Search items"
             />
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} accessibilityLabel="Close search" accessibilityRole="button">
               <Icon name="close" size={20} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
@@ -170,9 +170,11 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
                         key={item.id}
                         style={styles.resultItem}
                         activeOpacity={0.7}
-                        onPress={() => handleAdd(item)}>
+                        onPress={() => handleAdd(item)}
+                        accessibilityLabel={`Add ${item.name}`}
+                        accessibilityRole="button">
                         {imageUri ? (
-                          <Image source={{ uri: imageUri }} style={styles.itemImage} />
+                          <Image source={{ uri: imageUri }} style={styles.itemImage} accessibilityLabel={`${item.name} image`} />
                         ) : (
                           <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
                             <Icon name="restaurant-outline" size={18} color={colors.textMuted} />
@@ -190,13 +192,17 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
                           <View style={styles.qtyRow}>
                             <TouchableOpacity
                               style={styles.qtyBtn}
-                              onPress={(e) => { e.stopPropagation(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }}>
+                              onPress={(e) => { e.stopPropagation(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }}
+                              accessibilityLabel="Decrease quantity"
+                              accessibilityRole="button">
                               <Icon name="remove" size={14} color={colors.accent} />
                             </TouchableOpacity>
                             <Text style={styles.qtyText}>{qty}</Text>
                             <TouchableOpacity
                               style={styles.qtyBtn}
-                              onPress={(e) => { e.stopPropagation(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }}>
+                              onPress={(e) => { e.stopPropagation(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }}
+                              accessibilityLabel="Increase quantity"
+                              accessibilityRole="button">
                               <Icon name="add" size={14} color={colors.accent} />
                             </TouchableOpacity>
                           </View>

@@ -1,31 +1,30 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  Image, RefreshControl, ActivityIndicator, ScrollView,
+  Image, RefreshControl, ActivityIndicator, ScrollView, Animated, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, FoodItem } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { resolveImageUrl } from '../../utils/imageUrl';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
+import { lightHaptic, mediumHaptic } from '../../utils/haptics';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Menu'>;
 
 export default function MenuScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { shopId, shopName } = route.params;
+  const { shopId, shopName } = route.params || {};
+  if (!shopId) {
+    navigation.goBack();
+    return null;
+  }
   const dispatch = useAppDispatch();
   const { menuItems: shopMenu, isLoading: menuLoading, categories } = useAppSelector(s => s.menu);
   const { items: cartItems } = useAppSelector(s => s.cart);
@@ -56,9 +55,24 @@ export default function MenuScreen({ route, navigation }: Props) {
 
   const offerItems = useMemo(() => filteredItems.filter((i: FoodItem) => i.isOffer), [filteredItems]);
 
-  const getCartQty = (id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0;
-  const totalItems = cartItems.reduce((sum, c) => sum + c.quantity, 0);
-  const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
+  const getCartQty = useCallback((id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0, [cartItems]);
+  const totalItems = useMemo(() => cartItems.reduce((sum, c) => sum + c.quantity, 0), [cartItems]);
+  const cartTotal = useMemo(() => cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0), [cartItems]);
+  const keyExtractor = useCallback((i: FoodItem) => i.id, []);
+
+  // Animated floating cart bar
+  const cartBarAnim = useRef(new Animated.Value(totalItems > 0 ? 1 : 0)).current;
+  const prevTotalItems = useRef(totalItems);
+  useEffect(() => {
+    const hasItems = totalItems > 0;
+    const hadItems = prevTotalItems.current > 0;
+    if (hasItems && !hadItems) {
+      Animated.spring(cartBarAnim, { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }).start();
+    } else if (!hasItems && hadItems) {
+      Animated.timing(cartBarAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    }
+    prevTotalItems.current = totalItems;
+  }, [totalItems, cartBarAnim]);
 
   // Ensure categories are strings (API may return objects)
   const allCategories = ['All', ...categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean)];
@@ -71,10 +85,12 @@ export default function MenuScreen({ route, navigation }: Props) {
       <View style={styles.foodCard}>
         <TouchableOpacity
           style={styles.foodImageWrap}
-          onPress={() => qty === 0 ? dispatch(addToCart({ item, shopId, shopName })) : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))}
-          activeOpacity={0.8}>
+          onPress={() => { lightHaptic(); qty === 0 ? dispatch(addToCart({ item, shopId, shopName })) : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }}
+          activeOpacity={0.8}
+          accessibilityLabel={`Add ${item.name}`}
+          accessibilityRole="button">
           {item.image ? (
-            <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.foodImage} />
+            <Image source={{ uri: resolveImageUrl(item.image) ?? undefined }} style={styles.foodImage} accessibilityLabel={`${item.name} image`} />
           ) : (
             <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
               <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
@@ -91,16 +107,16 @@ export default function MenuScreen({ route, navigation }: Props) {
           <View style={styles.foodBottom}>
             <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
             {qty === 0 ? (
-              <TouchableOpacity style={styles.addBtn} onPress={() => dispatch(addToCart({ item, shopId, shopName }))} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.addBtn} onPress={() => { lightHaptic(); dispatch(addToCart({ item, shopId, shopName })); }} activeOpacity={0.7} accessibilityLabel={`Add ${item.name} to cart`} accessibilityRole="button">
                 <Icon name="add" size={16} color="#fff" />
               </TouchableOpacity>
             ) : (
               <View style={styles.qtyControl}>
-                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))} style={styles.qtyBtn}>
+                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
                   <Icon name="remove" size={14} color={colors.primary} />
                 </TouchableOpacity>
                 <Text style={styles.qtyText}>{qty}</Text>
-                <TouchableOpacity onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))} style={styles.qtyBtn}>
+                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
                   <Icon name="add" size={14} color={colors.primary} />
                 </TouchableOpacity>
               </View>
@@ -116,7 +132,7 @@ export default function MenuScreen({ route, navigation }: Props) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back" accessibilityRole="button">
           <Icon name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{shopName}</Text>
@@ -132,6 +148,7 @@ export default function MenuScreen({ route, navigation }: Props) {
           onChangeText={setSearchQuery}
           placeholder="Search items..."
           placeholderTextColor={colors.textMuted}
+          accessibilityLabel="Search menu items"
         />
       </View>
 
@@ -141,8 +158,10 @@ export default function MenuScreen({ route, navigation }: Props) {
           <TouchableOpacity
             key={cat}
             style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
-            onPress={() => setSelectedCategory(cat)}
-            activeOpacity={0.7}>
+            onPress={() => { lightHaptic(); setSelectedCategory(cat); }}
+            activeOpacity={0.7}
+            accessibilityLabel={`${cat} category`}
+            accessibilityRole="button">
             <Text style={[styles.catText, selectedCategory === cat && styles.catTextActive]}>{cat}</Text>
           </TouchableOpacity>
         ))}
@@ -153,9 +172,13 @@ export default function MenuScreen({ route, navigation }: Props) {
       ) : (
         <FlatList
           data={filteredItems}
-          keyExtractor={i => i.id}
+          keyExtractor={keyExtractor}
           renderItem={renderFoodCard}
           contentContainerStyle={styles.list}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           ListHeaderComponent={
             offerItems.length > 0 ? (
@@ -165,10 +188,10 @@ export default function MenuScreen({ route, navigation }: Props) {
                   {offerItems.map((item: FoodItem) => {
                     const discount = item.offerPrice ? Math.round((1 - item.offerPrice / item.price) * 100) : 0;
                     return (
-                      <TouchableOpacity key={item.id} style={styles.offerCard} onPress={() => dispatch(addToCart({ item, shopId, shopName }))} activeOpacity={0.8}>
+                      <TouchableOpacity key={item.id} style={styles.offerCard} onPress={() => dispatch(addToCart({ item, shopId, shopName }))} activeOpacity={0.8} accessibilityLabel={`Add ${item.name} offer`} accessibilityRole="button">
                         <View style={styles.offerDiscountBadge}><Text style={styles.offerDiscountText}>{discount}% OFF</Text></View>
                         {item.image ? (
-                          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.offerImage} />
+                          <Image source={{ uri: resolveImageUrl(item.image) ?? undefined }} style={styles.offerImage} accessibilityLabel={`${item.name} offer image`} />
                         ) : (
                           <View style={[styles.offerImage, styles.foodImagePlaceholder]}>
                             <Icon name="restaurant-outline" size={24} color={colors.textMuted} />
@@ -199,12 +222,18 @@ export default function MenuScreen({ route, navigation }: Props) {
         />
       )}
 
-      {/* Floating Cart Bar */}
-      {totalItems > 0 && (
+      {/* Floating Cart Bar — animated */}
+      <Animated.View style={[styles.floatingBarWrap, {
+        transform: [{ translateY: cartBarAnim.interpolate({ inputRange: [0, 1], outputRange: [100, 0] }) }],
+        opacity: cartBarAnim,
+        pointerEvents: totalItems > 0 ? 'auto' : 'none',
+      }]}>
         <TouchableOpacity
+          onPress={() => { mediumHaptic(); navigation.navigate('Cart'); }}
+          activeOpacity={0.9}
           style={styles.floatingBar}
-          onPress={() => navigation.navigate('Cart')}
-          activeOpacity={0.9}>
+          accessibilityLabel="View cart"
+          accessibilityRole="button">
           <View style={styles.floatingBarLeft}>
             <View style={styles.floatingBarIcon}>
               <Icon name="bag-handle" size={22} color="#fff" />
@@ -222,7 +251,7 @@ export default function MenuScreen({ route, navigation }: Props) {
             <Icon name="arrow-forward" size={18} color="#fff" />
           </View>
         </TouchableOpacity>
-      )}
+      </Animated.View>
     </View>
     </ScreenWrapper>
   );
@@ -275,8 +304,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
   emptySubtitle: { fontSize: 13, color: colors.textMuted },
-  floatingBar: {
+  floatingBarWrap: {
     position: 'absolute', bottom: 20, left: 16, right: 16,
+  },
+  floatingBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.primary, borderRadius: 20, padding: 14,
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 10,

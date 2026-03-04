@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView,
   Image, RefreshControl, ActivityIndicator, TextInput, Switch,
@@ -16,6 +16,7 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import menuService from '../../services/menuService';
 import orderService from '../../services/orderService';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Stationery'>;
 
@@ -44,6 +45,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const [menuItems, setMenuItems] = useState<FoodItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Print tab form
   const [pageCount, setPageCount] = useState(1);
@@ -55,13 +57,15 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+  const submittingRef = useRef(false);
 
   const loadMenu = useCallback(async () => {
     try {
       const items = await menuService.getShopMenu(shopId);
       setMenuItems(Array.isArray(items) ? items.filter(i => i.isAvailable) : []);
+      setError(null);
     } catch {
-      // ignore silently
+      setError('Something went wrong. Pull down to retry.');
     }
   }, [shopId]);
 
@@ -92,15 +96,17 @@ export default function StationeryScreen({ route, navigation }: Props) {
   };
 
   const handleSubmitPrint = async () => {
-    const total = calculateTotal();
-    const balance = user?.balance || 0;
-    if (balance < total) {
-      setSubmitError(`Insufficient balance. Required: Rs. ${total}, Available: Rs. ${balance}`);
-      return;
-    }
-    setSubmitError(null);
-    setIsSubmitting(true);
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
+      const total = calculateTotal();
+      const balance = user?.balance || 0;
+      if (balance < total) {
+        setSubmitError(`Insufficient balance. Required: Rs. ${total}, Available: Rs. ${balance}`);
+        return;
+      }
+      setSubmitError(null);
+      setIsSubmitting(true);
       const order = await orderService.createStationeryOrder({
         shopId,
         pageCount,
@@ -122,6 +128,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
       setSubmitError(e?.response?.data?.message || 'Failed to place order. Please try again.');
     } finally {
       setIsSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
@@ -132,7 +139,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
       <View style={[styles.foodCard, qty > 0 && styles.foodCardActive]}>
         <View style={styles.foodImageWrap}>
           {item.image ? (
-            <Image source={{ uri: item.image }} style={styles.foodImage} />
+            <Image source={{ uri: resolveImageUrl(item.image) || undefined }} style={styles.foodImage} accessibilityLabel={`${item.name} image`} />
           ) : (
             <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
               <Icon name="document-outline" size={22} color={colors.textMuted} />
@@ -160,20 +167,26 @@ export default function StationeryScreen({ route, navigation }: Props) {
               <TouchableOpacity
                 style={styles.addBtn}
                 onPress={() => dispatch(addToCart({ item, shopId, shopName }))}
-                activeOpacity={0.7}>
+                activeOpacity={0.7}
+                accessibilityLabel={`Add ${item.name} to cart`}
+                accessibilityRole="button">
                 <Icon name="add" size={16} color="#fff" />
               </TouchableOpacity>
             ) : (
               <View style={styles.qtyControl}>
                 <TouchableOpacity
                   onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))}
-                  style={styles.qtyBtn}>
+                  style={styles.qtyBtn}
+                  accessibilityLabel={`Decrease ${item.name} quantity`}
+                  accessibilityRole="button">
                   <Icon name="remove" size={14} color={colors.orange500} />
                 </TouchableOpacity>
                 <Text style={styles.qtyText}>{qty}</Text>
                 <TouchableOpacity
                   onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))}
-                  style={styles.qtyBtn}>
+                  style={styles.qtyBtn}
+                  accessibilityLabel={`Increase ${item.name} quantity`}
+                  accessibilityRole="button">
                   <Icon name="add" size={14} color={colors.orange500} />
                 </TouchableOpacity>
               </View>
@@ -189,7 +202,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7} accessibilityLabel="Go back" accessibilityRole="button">
             <Icon name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
@@ -201,7 +214,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.cartBtn}
             onPress={() => navigation.navigate('Cart')}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="View cart"
+            accessibilityRole="button">
             <Icon name="cart-outline" size={20} color={colors.text} />
             {totalItems > 0 && (
               <View style={styles.cartBadge}>
@@ -216,14 +231,18 @@ export default function StationeryScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={[styles.tab, activeTab === 'items' && styles.tabActive]}
             onPress={() => setActiveTab('items')}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Shop Items tab"
+            accessibilityRole="button">
             <Icon name="storefront-outline" size={15} color={activeTab === 'items' ? '#fff' : colors.textMuted} />
             <Text style={[styles.tabText, activeTab === 'items' && styles.tabTextActive]}>Shop Items</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'print' && styles.tabActive]}
             onPress={() => setActiveTab('print')}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+            accessibilityLabel="Print and Xerox tab"
+            accessibilityRole="button">
             <Icon name="print-outline" size={15} color={activeTab === 'print' ? '#fff' : colors.textMuted} />
             <Text style={[styles.tabText, activeTab === 'print' && styles.tabTextActive]}>Print & Xerox</Text>
           </TouchableOpacity>
@@ -245,11 +264,18 @@ export default function StationeryScreen({ route, navigation }: Props) {
                 <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.orange500} />
               }
               ListEmptyComponent={
-                <View style={styles.empty}>
-                  <Icon name="document-outline" size={44} color={colors.textMuted} />
-                  <Text style={styles.emptyTitle}>No items available</Text>
-                  <Text style={styles.emptySubtitle}>Check back later for stationery items</Text>
-                </View>
+                error ? (
+                  <View style={styles.empty}>
+                    <Icon name="alert-circle-outline" size={44} color={colors.textMuted} />
+                    <Text style={styles.emptyTitle}>{error}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.empty}>
+                    <Icon name="document-outline" size={44} color={colors.textMuted} />
+                    <Text style={styles.emptyTitle}>No items available</Text>
+                    <Text style={styles.emptySubtitle}>Check back later for stationery items</Text>
+                  </View>
+                )
               }
               ListFooterComponent={totalItems > 0 ? <View style={styles.listFooter} /> : null}
             />
@@ -292,7 +318,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
                     style={[styles.counterBtn, pageCount <= 1 && styles.counterBtnDisabled]}
                     onPress={() => setPageCount(p => Math.max(1, p - 1))}
                     disabled={pageCount <= 1}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Decrease page count"
+                    accessibilityRole="button">
                     <Icon name="remove" size={20} color={pageCount <= 1 ? colors.textMuted : colors.text} />
                   </TouchableOpacity>
                   <TextInput
@@ -301,11 +329,14 @@ export default function StationeryScreen({ route, navigation }: Props) {
                     onChangeText={v => setPageCount(Math.max(1, Math.min(1000, parseInt(v) || 1)))}
                     keyboardType="number-pad"
                     selectTextOnFocus
+                    accessibilityLabel="Page count"
                   />
                   <TouchableOpacity
                     style={styles.counterBtnAdd}
                     onPress={() => setPageCount(p => Math.min(1000, p + 1))}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Increase page count"
+                    accessibilityRole="button">
                     <Icon name="add" size={20} color="#fff" />
                   </TouchableOpacity>
                 </View>
@@ -320,7 +351,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
                     style={[styles.counterBtn, copies <= 1 && styles.counterBtnDisabled]}
                     onPress={() => setCopies(c => Math.max(1, c - 1))}
                     disabled={copies <= 1}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Decrease copy count"
+                    accessibilityRole="button">
                     <Icon name="remove" size={20} color={copies <= 1 ? colors.textMuted : colors.text} />
                   </TouchableOpacity>
                   <TextInput
@@ -329,11 +362,14 @@ export default function StationeryScreen({ route, navigation }: Props) {
                     onChangeText={v => setCopies(Math.max(1, Math.min(100, parseInt(v) || 1)))}
                     keyboardType="number-pad"
                     selectTextOnFocus
+                    accessibilityLabel="Copy count"
                   />
                   <TouchableOpacity
                     style={styles.counterBtnAdd}
                     onPress={() => setCopies(c => Math.min(100, c + 1))}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel="Increase copy count"
+                    accessibilityRole="button">
                     <Icon name="add" size={20} color="#fff" />
                   </TouchableOpacity>
                 </View>
@@ -345,7 +381,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
                 <TouchableOpacity
                   style={[styles.printTypeBtn, colorType === 'bw' && styles.printTypeBtnActive]}
                   onPress={() => setColorType('bw')}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                  accessibilityLabel="Black and White print"
+                  accessibilityRole="button">
                   <Text style={[styles.printTypeName, colorType === 'bw' && styles.printTypeNameActive]}>
                     Black & White
                   </Text>
@@ -354,7 +392,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
                 <TouchableOpacity
                   style={[styles.printTypeBtn, colorType === 'color' && styles.printTypeBtnActive]}
                   onPress={() => setColorType('color')}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                  accessibilityLabel="Color print"
+                  accessibilityRole="button">
                   <Text style={[styles.printTypeName, colorType === 'color' && styles.printTypeNameActive]}>
                     Color
                   </Text>
@@ -370,7 +410,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
                     key={size.id}
                     style={[styles.paperSizeBtn, paperSize === size.id && styles.paperSizeBtnActive]}
                     onPress={() => setPaperSize(size.id)}
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    accessibilityLabel={`${size.name} paper size`}
+                    accessibilityRole="button">
                     <Text style={[styles.paperSizeText, paperSize === size.id && styles.paperSizeTextActive]}>
                       {size.name}
                     </Text>
@@ -389,6 +431,8 @@ export default function StationeryScreen({ route, navigation }: Props) {
                   onValueChange={setDoubleSided}
                   trackColor={{ false: colors.muted, true: colors.orange500 }}
                   thumbColor="#fff"
+                  accessibilityLabel="Toggle double sided"
+                  accessibilityRole="switch"
                 />
               </View>
 
@@ -403,6 +447,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
                 multiline
                 maxLength={500}
                 textAlignVertical="top"
+                accessibilityLabel="Special instructions"
               />
 
               {/* Error */}
@@ -457,7 +502,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
                 style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}
                 onPress={handleSubmitPrint}
                 disabled={isSubmitting}
-                activeOpacity={0.8}>
+                activeOpacity={0.8}
+                accessibilityLabel="Place stationery order"
+                accessibilityRole="button">
                 {isSubmitting ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
@@ -478,7 +525,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={styles.floatingBar}
             onPress={() => navigation.navigate('Cart')}
-            activeOpacity={0.9}>
+            activeOpacity={0.9}
+            accessibilityLabel="View cart"
+            accessibilityRole="button">
             <View style={styles.floatingBarLeft}>
               <View style={styles.floatingBarIcon}>
                 <Icon name="bag-handle" size={22} color="#fff" />

@@ -1,10 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Local development backend URL
-// const BASE_URL = 'http://192.168.1.8:3030/api/v1';
-// Production backend URL
-const BASE_URL = 'https://backend.mec.welocalhost.com/api/v1';
+// ── Server origin (single source of truth) ──────────────────────
+// Change this ONE value when switching between dev / staging / production.
+// Local:      http://192.168.1.8:3030
+// Dev:        https://backend.mec.welocalhost.com
+// Production: https://campusoneapi.madrascollege.ac.in
+export const API_ORIGIN = 'https://campusoneapi.madrascollege.ac.in';
+
+const BASE_URL = `${API_ORIGIN}/api/v1`;
 
 const ACCESS_TOKEN_KEY = '@madrasone_access_token';
 const REFRESH_TOKEN_KEY = '@madrasone_refresh_token';
@@ -48,7 +52,8 @@ api.interceptors.response.use(
   (r) => r,
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-    if (error.response?.status === 401 && !original._retry) {
+    const isAuthRoute = original.url?.includes('/auth/login') || original.url?.includes('/auth/register') || original.url?.includes('/auth/verify-otp') || original.url?.includes('/auth/register-with-otp');
+    if (error.response?.status === 401 && !original._retry && !isAuthRoute) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -72,6 +77,11 @@ api.interceptors.response.use(
       } catch (err) {
         processQueue(err as Error);
         await clearTokens();
+        // Force logout on token refresh failure
+        try {
+          const { store } = require('../store');
+          store.dispatch({ type: 'auth/resetAuth' });
+        } catch {}
         throw err;
       } finally {
         isRefreshing = false;

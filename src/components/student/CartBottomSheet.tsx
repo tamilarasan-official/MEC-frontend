@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Image,
   ActivityIndicator, Animated,
 } from 'react-native';
+import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { updateQuantity, removeFromCart, clearCart } from '../../store/slices/cartSlice';
@@ -10,19 +11,13 @@ import { createOrder } from '../../store/slices/ordersSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../common/Icon';
-import { Order } from '../../types';
-
-const IMAGE_BASE = 'https://backend.mec.welocalhost.com';
-function resolveImageUrl(url?: string | null): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  return `${IMAGE_BASE}${url}`;
-}
+import { Order, CreateOrderResult } from '../../types';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 interface CartBottomSheetProps {
   visible: boolean;
   onClose: () => void;
-  onOrderSuccess: (order: Order) => void;
+  onOrderSuccess: (result: CreateOrderResult) => void;
   onOrderFailure: (errorMessage?: string) => void;
 }
 
@@ -44,13 +39,25 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   const [ordering, setOrdering] = useState(false);
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
+  const backdropAnim = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
     if (visible) {
       slideAnim.setValue(600);
-      Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }).start();
+      backdropAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
+        Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, backdropAnim]);
+
+  const handleClose = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => onClose());
+  }, [slideAnim, backdropAnim, onClose]);
 
   const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
   const totalCount = cartItems.reduce((sum, c) => sum + c.quantity, 0);
@@ -70,11 +77,21 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       dispatch(clearCart());
       setOrdering(false);
       onClose();
-      onOrderSuccess({
+      // Ensure order has shopName and total filled
+      const enrichedResult: CreateOrderResult = {
         ...result,
-        total: result.total ?? savedTotal,
-        shopName: result.shopName || savedShopName,
-      } as Order);
+        order: {
+          ...result.order,
+          total: result.order.total ?? savedTotal,
+          shopName: result.order.shopName || savedShopName,
+        },
+        orders: result.orders?.map(o => ({
+          ...o,
+          total: o.total ?? 0,
+          shopName: o.shopName || savedShopName,
+        })),
+      };
+      onOrderSuccess(enrichedResult);
     } catch (err: any) {
       const msg = typeof err === 'string' ? err : err?.message || 'Something went wrong. Please try again.';
       setOrdering(false);
@@ -84,8 +101,10 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close cart" accessibilityRole="button" />
+      </Animated.View>
 
       <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
         {/* Drag handle */}
@@ -94,7 +113,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
         </View>
 
         {/* Active orders at top */}
-        {activeOrders.slice(0, 2).map(order => {
+        {(activeOrders ?? []).slice(0, 2).map(order => {
           const sc = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
           return (
             <View key={order.id} style={styles.activeOrderRow}>
@@ -117,7 +136,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
             </View>
           );
         })}
-        {activeOrders.length > 0 && <View style={styles.sectionDivider} />}
+        {(activeOrders ?? []).length > 0 && <View style={styles.sectionDivider} />}
 
         {/* Header */}
         <View style={styles.header}>
@@ -125,7 +144,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
             <Text style={styles.headerTitle}>Your Cart</Text>
             <Text style={styles.headerSub}>{totalCount} item{totalCount !== 1 ? 's' : ''}</Text>
           </View>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.closeBtn} onPress={handleClose} activeOpacity={0.7} accessibilityLabel="Close cart" accessibilityRole="button">
             <Icon name="close" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
@@ -140,7 +159,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
             return (
               <View key={c.item.id} style={styles.itemCard}>
                 {resolveImageUrl(c.item.image) ? (
-                  <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.itemImg} />
+                  <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.itemImg} accessibilityLabel={`${c.item.name} image`} />
                 ) : (
                   <View style={[styles.itemImg, styles.itemImgFallback]}>
                     <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
@@ -150,8 +169,10 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                   <View style={styles.itemTop}>
                     <Text style={styles.itemName} numberOfLines={2}>{c.item.name}</Text>
                     <TouchableOpacity
-                      onPress={() => dispatch(removeFromCart(c.item.id))}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      onPress={() => { lightHaptic(); dispatch(removeFromCart(c.item.id)); }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel={`Remove ${c.item.name}`}
+                      accessibilityRole="button">
                       <Icon name="trash-outline" size={18} color={colors.textMuted} />
                     </TouchableOpacity>
                   </View>
@@ -161,13 +182,17 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                     <View style={styles.stepper}>
                       <TouchableOpacity
                         style={styles.stepBtn}
-                        onPress={() => dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity - 1 }))}>
+                        onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity - 1 })); }}
+                        accessibilityLabel="Decrease quantity"
+                        accessibilityRole="button">
                         <Icon name="remove" size={16} color={colors.text} />
                       </TouchableOpacity>
                       <Text style={styles.stepQty}>{c.quantity}</Text>
                       <TouchableOpacity
                         style={styles.stepBtn}
-                        onPress={() => dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 }))}>
+                        onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 })); }}
+                        accessibilityLabel="Increase quantity"
+                        accessibilityRole="button">
                         <Icon name="add" size={16} color={colors.text} />
                       </TouchableOpacity>
                     </View>
@@ -199,7 +224,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                 Insufficient balance. Add Rs.{cartTotal - balance} to proceed.
               </Text>
             )}
-            <TouchableOpacity onPress={handlePay} disabled={!hasBalance || ordering} activeOpacity={0.85}>
+            <TouchableOpacity onPress={() => { mediumHaptic(); handlePay(); }} disabled={!hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={`Pay rupees ${cartTotal}`} accessibilityRole="button">
               <LinearGradient
                 colors={hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
                 start={{ x: 0, y: 0 }}

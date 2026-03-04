@@ -156,7 +156,7 @@ export function handleForegroundMessage(
   // Determine channel and display strategy
   if (type === 'order' && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
     // Show full-screen popup for all order status changes
-    console.log('[FCM] Emitting ORDER_STATUS_POPUP_EVENT:', status, orderNumber);
+    if (__DEV__) console.log('[FCM] Emitting ORDER_STATUS_POPUP_EVENT:', status, orderNumber);
     DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
       status,
       orderNumber: orderNumber || orderId?.slice(-6) || '',
@@ -224,9 +224,9 @@ async function registerTokenWithBackend(token: string, userId: string): Promise<
       deviceId: `${Platform.OS}-${userId}`,
       platform: Platform.OS,
     });
-    console.log('[Notifications] FCM token registered with backend');
+    if (__DEV__) console.log('[Notifications] FCM token registered with backend');
   } catch (error) {
-    console.warn('[Notifications] Failed to register FCM token:', error);
+    if (__DEV__) console.warn('[Notifications] Failed to register FCM token:', error);
   }
 }
 
@@ -236,10 +236,10 @@ export async function unregisterToken(): Promise<void> {
     const token = await messaging().getToken();
     if (token) {
       await api.delete('/auth/fcm-token', { data: { token } });
-      console.log('[Notifications] FCM token unregistered');
+      if (__DEV__) console.log('[Notifications] FCM token unregistered');
     }
   } catch (error) {
-    console.warn('[Notifications] Failed to unregister FCM token:', error);
+    if (__DEV__) console.warn('[Notifications] Failed to unregister FCM token:', error);
   }
 }
 
@@ -265,14 +265,14 @@ export async function initializeNotifications(userId: string): Promise<void> {
         authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
       if (!enabled) {
-        console.warn('[Notifications] iOS permission not granted');
+        if (__DEV__) console.warn('[Notifications] iOS permission not granted');
         return;
       }
     }
     if (Platform.OS === 'android') {
       const settings = await notifee.requestPermission();
       if (settings.authorizationStatus < AuthorizationStatus.AUTHORIZED) {
-        console.warn('[Notifications] Android permission not granted');
+        if (__DEV__) console.warn('[Notifications] Android permission not granted');
         return;
       }
     }
@@ -289,9 +289,9 @@ export async function initializeNotifications(userId: string): Promise<void> {
     // 4. Set up token refresh listener
     setupTokenRefreshListener(userId);
 
-    console.log('[Notifications] Initialized for user:', userId);
+    if (__DEV__) console.log('[Notifications] Initialized for user:', userId);
   } catch (error) {
-    console.warn('[Notifications] Initialization failed:', error);
+    if (__DEV__) console.warn('[Notifications] Initialization failed:', error);
   }
 }
 
