@@ -2,9 +2,9 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, ActivityIndicator, StyleSheet, DeviceEventEmitter } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootState, AppDispatch } from '../store';
 import { refreshUserData } from '../store/slices/authSlice';
+import { getAccessToken } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/colors';
@@ -15,7 +15,7 @@ import StudentTabs from './tabs/StudentTabs';
 import CaptainTabs from './tabs/CaptainTabs';
 import OwnerTabs from './tabs/OwnerTabs';
 import { connectSocket, disconnectSocket, setupSocketListeners } from '../services/socketService';
-import messaging from '@react-native-firebase/messaging';
+import { getMessaging, onMessage, getInitialNotification } from '@react-native-firebase/messaging';
 import notifee, { EventType } from '@notifee/react-native';
 import {
   initializeNotifications,
@@ -53,7 +53,7 @@ export default function RootNavigator() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const token = await AsyncStorage.getItem('@madrasone_access_token');
+        const token = await getAccessToken();
         if (token) {
           // Try to fetch the current user with the stored token
           await dispatch(refreshUserData()).unwrap();
@@ -89,7 +89,7 @@ export default function RootNavigator() {
     initializeNotifications(user.id);
 
     // Foreground FCM message listener
-    const unsubscribeFcm = messaging().onMessage((remoteMessage) => {
+    const unsubscribeFcm = onMessage(getMessaging(), (remoteMessage) => {
       handleForegroundMessage(remoteMessage, dispatch);
     });
 
@@ -110,7 +110,7 @@ export default function RootNavigator() {
   // Handle cold-start notification (app opened by tapping a notification)
   useEffect(() => {
     if (!isAuthenticated) return;
-    messaging().getInitialNotification().then(msg => {
+    getInitialNotification(getMessaging()).then(msg => {
       if (msg?.data && __DEV__) {
         console.log('[Notifications] Cold-start:', msg.data);
       }

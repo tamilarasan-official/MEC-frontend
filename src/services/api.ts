@@ -1,17 +1,12 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Keychain from 'react-native-keychain';
 
-// ── Server origin (single source of truth) ──────────────────────
-// Change this ONE value when switching between dev / staging / production.
-// Local:      http://192.168.1.8:3030
-// Dev:        https://backend.mec.welocalhost.com
-// Production: https://campusoneapi.madrascollege.ac.in
+// ── Server origin ───────────────────────────────────────────────
 export const API_ORIGIN = 'https://campusoneapi.madrascollege.ac.in';
 
 const BASE_URL = `${API_ORIGIN}/api/v1`;
 
-const ACCESS_TOKEN_KEY = '@madrasone_access_token';
-const REFRESH_TOKEN_KEY = '@madrasone_refresh_token';
+const KEYCHAIN_SERVICE = 'com.campusone.tokens';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -19,15 +14,36 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-export const getAccessToken = async () => AsyncStorage.getItem(ACCESS_TOKEN_KEY);
-export const getRefreshToken = async () => AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+async function getStoredTokens(): Promise<{ accessToken: string; refreshToken: string } | null> {
+  const result = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
+  if (!result) return null;
+  try {
+    return JSON.parse(result.password);
+  } catch {
+    return null;
+  }
+}
+
+export const getAccessToken = async (): Promise<string | null> => {
+  const tokens = await getStoredTokens();
+  return tokens?.accessToken ?? null;
+};
+
+export const getRefreshToken = async (): Promise<string | null> => {
+  const tokens = await getStoredTokens();
+  return tokens?.refreshToken ?? null;
+};
 
 export const setTokens = async (access: string, refresh: string) => {
-  await AsyncStorage.multiSet([[ACCESS_TOKEN_KEY, access], [REFRESH_TOKEN_KEY, refresh]]);
+  await Keychain.setGenericPassword(
+    'tokens',
+    JSON.stringify({ accessToken: access, refreshToken: refresh }),
+    { service: KEYCHAIN_SERVICE },
+  );
 };
 
 export const clearTokens = async () => {
-  await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
+  await Keychain.resetGenericPassword({ service: KEYCHAIN_SERVICE });
 };
 
 // Request interceptor

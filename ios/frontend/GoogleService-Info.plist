@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.frontend</string>
+	<string>com.mec.campusone</string>
 	<key>PROJECT_ID</key>
 	<string>madrasone-d2b81</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:958328313952:ios:279d4f2cddfdb072250b05</string>
+	<string>1:958328313952:ios:a9a504d0ab1f3f84250b05</string>
 </dict>
 </plist>

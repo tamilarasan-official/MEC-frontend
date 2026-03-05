@@ -69,6 +69,7 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
 
 export const disconnectSocket = () => {
   if (socket) {
+    socket.auth = {};
     socket.disconnect();
     socket = null;
   }
@@ -185,11 +186,21 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
 
   // General notifications
   socket.on('notification', (payload: any) => {
+    if (
+      !payload ||
+      typeof payload.title !== 'string' ||
+      typeof payload.message !== 'string'
+    ) {
+      if (__DEV__) console.warn('[Socket] Invalid notification payload, skipping');
+      return;
+    }
+    const title = payload.title.slice(0, 200);
+    const message = payload.message.slice(0, 1000);
     dispatch(addNotification({
       id: payload.id || `notif-${Date.now()}`,
       type: payload.type || 'system',
-      title: payload.title,
-      message: payload.message,
+      title,
+      message,
       createdAt: payload.createdAt || new Date().toISOString(),
       read: false,
     }));

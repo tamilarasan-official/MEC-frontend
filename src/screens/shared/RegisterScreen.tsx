@@ -229,11 +229,13 @@ export default function RegisterScreen({ navigation }: Props) {
                   activeOpacity={0.85}
                   accessibilityLabel="Send OTP"
                   accessibilityRole="button">
-                  <LinearGradient
-                    colors={['#9333ea', '#7c3aed']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.btnGradient}>
+                  <View style={styles.btnContent}>
+                    <LinearGradient
+                      colors={['#9333ea', '#7c3aed']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFill}
+                    />
                     {loading ? (
                       <ActivityIndicator color="#fff" />
                     ) : (
@@ -242,7 +244,7 @@ export default function RegisterScreen({ navigation }: Props) {
                         <Icon name="arrow-forward" size={18} color="#fff" />
                       </View>
                     )}
-                  </LinearGradient>
+                  </View>
                 </TouchableOpacity>
               </>
             ) : (
@@ -277,11 +279,13 @@ export default function RegisterScreen({ navigation }: Props) {
                   activeOpacity={0.85}
                   accessibilityLabel="Create Account"
                   accessibilityRole="button">
-                  <LinearGradient
-                    colors={['#9333ea', '#7c3aed']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.btnGradient}>
+                  <View style={styles.btnContent}>
+                    <LinearGradient
+                      colors={['#9333ea', '#7c3aed']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={StyleSheet.absoluteFill}
+                    />
                     {loading ? (
                       <>
                         <ActivityIndicator size="small" color="#fff" />
@@ -293,7 +297,7 @@ export default function RegisterScreen({ navigation }: Props) {
                         <Icon name="arrow-forward" size={18} color="#fff" />
                       </View>
                     )}
-                  </LinearGradient>
+                  </View>
                 </TouchableOpacity>
 
                 {/* Resend OTP */}
@@ -382,10 +386,10 @@ const styles = StyleSheet.create({
   },
 
   // Buttons
-  btnWrap: { marginTop: 4 },
+  btnWrap: { marginTop: 4, borderRadius: 14, overflow: 'hidden' },
   btnDisabled: { opacity: 0.5 },
-  btnGradient: {
-    flexDirection: 'row', borderRadius: 14, paddingVertical: 18, alignItems: 'center', justifyContent: 'center', gap: 10,
+  btnContent: {
+    flexDirection: 'row', paddingVertical: 18, alignItems: 'center', justifyContent: 'center', gap: 10,
   },
   btnInner: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },

@@ -2,15 +2,16 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { User, LoginResponse, RegisterData, RegisterWithOtpData } from '../../types';
 import api, { setTokens, clearTokens } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import uuid from 'react-native-uuid';
 import { unregisterToken, cleanupNotifications } from '../../services/notificationService';
 import { fetchWalletBalance, resetUserState } from './userSlice';
 import { createOrder, resetOrders } from './ordersSlice';
 
 const DEVICE_ID_KEY = '@campusone_device_id';
-async function getDeviceId(): Promise<string> {
+export async function getDeviceId(): Promise<string> {
   let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    deviceId = `mobile-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+    deviceId = `mobile-${uuid.v4()}`;
     await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
@@ -50,18 +51,14 @@ export const login = createAsyncThunk(
       let msg = 'Login failed. Please try again.';
       if (!error.response) {
         msg = 'Network error. Please check your connection.';
-      } else if (status === 401) {
-        msg = serverMsg || 'Invalid username or password';
+      } else if (status === 401 || status === 404) {
+        msg = 'Invalid credentials. Please try again.';
       } else if (status === 403) {
         msg = serverMsg || 'Your account is not yet approved';
-      } else if (status === 404) {
-        msg = serverMsg || 'Account not found. Please register first.';
       } else if (status === 429) {
         msg = 'Too many attempts. Please try again later.';
       } else if (status >= 500) {
         msg = 'Server error. Please try again later.';
-      } else if (serverMsg) {
-        msg = serverMsg;
       }
       return rejectWithValue(msg);
     }
@@ -83,13 +80,11 @@ export const sendOtp = createAsyncThunk(
       } else if (status === 409) {
         msg = serverMsg || 'An account with this phone number already exists. Please login instead.';
       } else if (status === 404) {
-        msg = serverMsg || 'Account not found. Please register first.';
+        msg = 'Failed to send OTP. Please try again.';
       } else if (status === 429) {
         msg = 'Too many attempts. Please try again later.';
       } else if (status >= 500) {
         msg = 'Server error. Please try again later.';
-      } else if (serverMsg) {
-        msg = serverMsg;
       }
       return rejectWithValue(msg);
     }

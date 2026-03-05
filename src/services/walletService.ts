@@ -1,10 +1,6 @@
 import api from './api';
 import { Transaction } from '../types';
 
-// Fallback Razorpay key — backend returns the key in the create-order response.
-// This constant is only used if the backend omits keyId in its response.
-const RAZORPAY_KEY_FALLBACK = '';
-
 const walletService = {
   getBalance: async (): Promise<{ balance: number }> => {
     const res = await api.get('/student/wallet');
@@ -80,11 +76,15 @@ const walletService = {
   createRazorpayOrder: async (amount: number): Promise<{ orderId: string; amount: number; currency: string; keyId: string }> => {
     const res = await api.post('/razorpay/create-order', { amount });
     const d = res.data.data;
+    const keyId = d.key || d.keyId;
+    if (!keyId) {
+      throw new Error('Razorpay key not returned by server. Cannot proceed with payment.');
+    }
     return {
       orderId: d.id || d.orderId || '',
       amount: d.amount || amount,
       currency: d.currency || 'INR',
-      keyId: d.key || d.keyId || RAZORPAY_KEY_FALLBACK,
+      keyId,
     };
   },
   verifyRazorpayPayment: async (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }): Promise<any> => {

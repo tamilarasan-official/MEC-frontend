@@ -3,7 +3,7 @@
  */
 
 import { AppRegistry } from 'react-native';
-import messaging from '@react-native-firebase/messaging';
+import { getMessaging, setBackgroundMessageHandler } from '@react-native-firebase/messaging';
 import notifee, { EventType } from '@notifee/react-native';
 import App from './App';
 import { name as appName } from './app.json';
@@ -11,7 +11,7 @@ import { handleBackgroundMessage } from './src/services/notificationService';
 
 // Register FCM background message handler (MUST be before AppRegistry)
 try {
-  messaging().setBackgroundMessageHandler(handleBackgroundMessage);
+  setBackgroundMessageHandler(getMessaging(), handleBackgroundMessage);
 } catch (e) {
   // Firebase messaging not available — app continues without push notifications
 }

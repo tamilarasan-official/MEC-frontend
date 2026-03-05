@@ -400,9 +400,9 @@ export default function CaptainEatScreen() {
       <CartBottomSheet
         visible={showCart}
         onClose={() => setShowCart(false)}
-        onOrderSuccess={(order) => {
+        onOrderSuccess={(result) => {
           setShowCart(false);
-          setSuccessOrder(order);
+          setSuccessOrder(result.order);
           setShowSuccessAnim(true);
           dispatch(fetchMyActiveOrders());
         }}

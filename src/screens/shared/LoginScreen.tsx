@@ -103,11 +103,13 @@ export default function LoginScreen({ navigation }: Props) {
               activeOpacity={0.85}
               accessibilityLabel="Send OTP"
               accessibilityRole="button">
-              <LinearGradient
-                colors={['#9333ea', '#7c3aed']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.signInGradient}>
+              <View style={styles.signInInner}>
+                <LinearGradient
+                  colors={['#9333ea', '#7c3aed']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
                 {loading ? (
                   <>
                     <ActivityIndicator size="small" color="#fff" />
@@ -119,7 +121,7 @@ export default function LoginScreen({ navigation }: Props) {
                     <Text style={styles.signInText}>Send OTP</Text>
                   </>
                 )}
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -183,11 +185,11 @@ const styles = StyleSheet.create({
   },
 
   // Send OTP
-  signInBtn: { marginTop: 8 },
+  signInBtn: { marginTop: 8, borderRadius: 14, overflow: 'hidden' },
   btnDisabled: { opacity: 0.5 },
-  signInGradient: {
+  signInInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    borderRadius: 14, paddingVertical: 18,
+    paddingVertical: 18,
   },
   signInText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 

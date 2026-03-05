@@ -193,11 +193,13 @@ export default function OTPScreen({ navigation, route }: Props) {
             activeOpacity={0.85}
             accessibilityLabel="Verify and login"
             accessibilityRole="button">
-            <LinearGradient
-              colors={['#9333ea', '#7c3aed']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.verifyGradient}>
+            <View style={styles.verifyInner}>
+              <LinearGradient
+                colors={['#9333ea', '#7c3aed']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
               {loading ? (
                 <>
                   <ActivityIndicator size="small" color="#fff" />
@@ -209,7 +211,7 @@ export default function OTPScreen({ navigation, route }: Props) {
                   <Icon name="arrow-forward" size={16} color="#fff" />
                 </>
               )}
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
 
           {/* Change Number + Resend */}
@@ -294,11 +296,11 @@ const styles = StyleSheet.create({
   errorText: { color: '#fca5a5', fontSize: 13, textAlign: 'center' },
 
   // Verify button
-  verifyBtn: { marginTop: 4 },
+  verifyBtn: { marginTop: 4, borderRadius: 14, overflow: 'hidden' },
   btnDisabled: { opacity: 0.5 },
-  verifyGradient: {
+  verifyInner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    borderRadius: 14, paddingVertical: 18,
+    paddingVertical: 18,
   },
   verifyText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 

@@ -1,4 +1,11 @@
-import messaging, { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
+import {
+  getMessaging,
+  getToken,
+  requestPermission,
+  onTokenRefresh,
+  AuthorizationStatus as FBAuthorizationStatus,
+} from '@react-native-firebase/messaging';
+import type { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
 import notifee, {
   AndroidImportance,
   AndroidCategory,
@@ -7,6 +14,7 @@ import notifee, {
 } from '@notifee/react-native';
 import { Platform, DeviceEventEmitter } from 'react-native';
 import api from './api';
+import { getDeviceId } from '../store/slices/authSlice';
 import { AppDispatch } from '../store';
 import { addNotification } from '../store/slices/userSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
@@ -217,11 +225,12 @@ export async function handleBackgroundMessage(
 }
 
 // ── Register FCM token with backend ─────────────────────────────
-async function registerTokenWithBackend(token: string, userId: string): Promise<void> {
+async function registerTokenWithBackend(token: string, _userId: string): Promise<void> {
   try {
+    const deviceId = await getDeviceId();
     await api.post('/auth/fcm-token', {
       token,
-      deviceId: `${Platform.OS}-${userId}`,
+      deviceId,
       platform: Platform.OS,
     });
     if (__DEV__) console.log('[Notifications] FCM token registered with backend');
@@ -233,7 +242,7 @@ async function registerTokenWithBackend(token: string, userId: string): Promise<
 // ── Unregister FCM token (called on logout) ─────────────────────
 export async function unregisterToken(): Promise<void> {
   try {
-    const token = await messaging().getToken();
+    const token = await getToken(getMessaging());
     if (token) {
       await api.delete('/auth/fcm-token', { data: { token } });
       if (__DEV__) console.log('[Notifications] FCM token unregistered');
@@ -250,7 +259,7 @@ export function setupTokenRefreshListener(userId: string): void {
   if (tokenRefreshUnsubscribe) {
     tokenRefreshUnsubscribe();
   }
-  tokenRefreshUnsubscribe = messaging().onTokenRefresh((newToken) => {
+  tokenRefreshUnsubscribe = onTokenRefresh(getMessaging(), (newToken) => {
     registerTokenWithBackend(newToken, userId);
   });
 }
@@ -260,10 +269,10 @@ export async function initializeNotifications(userId: string): Promise<void> {
   try {
     // 1. Request permissions
     if (Platform.OS === 'ios') {
-      const authStatus = await messaging().requestPermission();
+      const authStatus = await requestPermission(getMessaging());
       const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+        authStatus === FBAuthorizationStatus.AUTHORIZED ||
+        authStatus === FBAuthorizationStatus.PROVISIONAL;
       if (!enabled) {
         if (__DEV__) console.warn('[Notifications] iOS permission not granted');
         return;
@@ -281,7 +290,7 @@ export async function initializeNotifications(userId: string): Promise<void> {
     await createChannels();
 
     // 3. Get FCM token and register with backend
-    const token = await messaging().getToken();
+    const token = await getToken(getMessaging());
     if (token) {
       await registerTokenWithBackend(token, userId);
     }

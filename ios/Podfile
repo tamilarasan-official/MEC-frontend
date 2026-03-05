@@ -14,7 +14,12 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
-target 'frontend' do
+# Fix for Firebase Swift pods requiring modular headers
+pod 'GoogleUtilities', :modular_headers => true
+pod 'FirebaseCore', :modular_headers => true
+pod 'FirebaseCoreInternal', :modular_headers => true
+
+target 'CampusOne' do
   config = use_native_modules!
 
   use_react_native!(
@@ -23,6 +28,32 @@ target 'frontend' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # Copy vendor dSYMs into archive for crash symbolication
+  script_phase :name => 'Copy Vendor dSYMs',
+    :script => <<~SCRIPT,
+      if [ "${DWARF_DSYM_FOLDER_PATH}" != "" ]; then
+        RAZORPAY_DSYM="${PODS_ROOT}/razorpay-core-pod/Pod/core/Razorpay.xcframework/ios-arm64/dSYMs/Razorpay.framework.dSYM"
+        if [ -d "$RAZORPAY_DSYM" ]; then
+          cp -R "$RAZORPAY_DSYM" "${DWARF_DSYM_FOLDER_PATH}/"
+          echo "Copied Razorpay.framework.dSYM"
+        fi
+
+        # Copy Hermes dSYMs — search build products and common locations
+        for DSYM in $(find "${BUILT_PRODUCTS_DIR}" -name "hermesvm.framework.dSYM" -type d 2>/dev/null); do
+          cp -R "$DSYM" "${DWARF_DSYM_FOLDER_PATH}/"
+          echo "Copied $DSYM"
+        done
+        # Also search the archive dSYMs path
+        if [ "${ARCHIVE_DSYMS_PATH}" != "" ]; then
+          for DSYM in $(find "${PODS_ROOT}/hermes-engine" -name "*.dSYM" -type d 2>/dev/null); do
+            cp -R "$DSYM" "${ARCHIVE_DSYMS_PATH}/"
+            echo "Copied $DSYM to archive"
+          done
+        fi
+      fi
+    SCRIPT
+    :execution_position => :after_compile
+
   post_install do |installer|
     react_native_post_install(
       installer,
@@ -30,5 +61,14 @@ target 'frontend' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Ensure dSYMs are generated for hermes-engine during archive
+    installer.pods_project.targets.each do |target|
+      if target.name == 'hermes-engine'
+        target.build_configurations.each do |config|
+          config.build_settings['DEBUG_INFORMATION_FORMAT'] = 'dwarf-with-dsym'
+        end
+      end
+    end
   end
 end
