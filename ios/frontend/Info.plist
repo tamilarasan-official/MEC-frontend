@@ -37,6 +37,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>CampusOne needs camera access to scan QR codes for order pickup.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CampusOne needs access to your photo library to let you upload a profile picture.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>CampusOne needs your location to show nearby food options and delivery tracking.</string>
 	<key>RCTNewArchEnabled</key>
@@ -82,6 +84,8 @@
 		</dict>
 	</dict>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
 </plist>
