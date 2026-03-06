@@ -93,7 +93,16 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       };
       onOrderSuccess(enrichedResult);
     } catch (err: any) {
-      const msg = typeof err === 'string' ? err : err?.message || 'Something went wrong. Please try again.';
+      let msg: string;
+      if (typeof err === 'string') {
+        msg = err;
+      } else if (err?.response?.data?.message) {
+        msg = err.response.data.message;
+      } else if (err?.message && err.message !== 'Rejected') {
+        msg = err.message;
+      } else {
+        msg = 'Order failed. Please check your balance and try again.';
+      }
       setOrdering(false);
       onClose();
       onOrderFailure(msg);

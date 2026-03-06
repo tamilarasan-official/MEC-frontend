@@ -61,11 +61,9 @@ export const fetchDashboardStats = createAsyncThunk('user/fetchDashboardStats', 
   } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
-export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (_, { rejectWithValue }) => {
-  try {
-    const res = await api.get('/orders/shop/analytics');
-    return res.data.data as AnalyticsData;
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (params?: { startDate?: string; endDate?: string }) => {
+  const res = await api.get('/orders/shop/analytics', { params });
+  return res.data.data as AnalyticsData;
 });
 
 export const fetchShopDetails = createAsyncThunk('user/fetchShopDetails', async (_, { rejectWithValue }) => {

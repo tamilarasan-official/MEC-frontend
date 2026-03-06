@@ -149,16 +149,14 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
 
           <View style={styles.divider} />
 
-          {/* Notifications (eat mode only) */}
-          {userMode === 'eat' && (
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => { onClose(); onNavigateNotifications?.(); }}
-              activeOpacity={0.7}>
-              <Icon name="notifications-outline" size={18} color="#f97316" />
-              <Text style={styles.menuItemText}>Notifications</Text>
-            </TouchableOpacity>
-          )}
+          {/* Notifications */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => { onClose(); onNavigateNotifications?.(); }}
+            activeOpacity={0.7}>
+            <Icon name="notifications-outline" size={18} color="#f97316" />
+            <Text style={styles.menuItemText}>Notifications</Text>
+          </TouchableOpacity>
 
           {/* Help & Support */}
           <TouchableOpacity

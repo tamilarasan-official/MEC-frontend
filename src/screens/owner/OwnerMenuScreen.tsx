@@ -268,15 +268,29 @@ export default function OwnerMenuScreen() {
           categoryObjects={ownerCategories}
           onClose={() => { setShowAddModal(false); setEditingItem(null); }}
           onSave={(data) => {
+            const doSave = async () => {
+              try {
+                if (editingItem) {
+                  await dispatch(updateMenuItem({ itemId: editingItem.id, data })).unwrap();
+                } else {
+                  await dispatch(createMenuItem(data)).unwrap();
+                }
+                setShowAddModal(false);
+                setEditingItem(null);
+                menuRefreshTimerRef.current = setTimeout(() => dispatch(fetchOwnerMenu()), 500);
+              } catch (err: any) {
+                const msg = typeof err === 'string' ? err : err?.message || 'Failed to save item. Please try again.';
+                Alert.alert('Error', msg);
+              }
+            };
             if (editingItem) {
-              dispatch(updateMenuItem({ itemId: editingItem.id, data }));
+              Alert.alert('Update Item', `Save changes to "${editingItem.name}"?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Update', onPress: doSave },
+              ]);
             } else {
-              dispatch(createMenuItem(data));
+              doSave();
             }
-            setShowAddModal(false);
-            setEditingItem(null);
-            // Refresh menu after save
-            menuRefreshTimerRef.current = setTimeout(() => dispatch(fetchOwnerMenu()), 500);
           }}
         />
 
@@ -524,6 +538,10 @@ function AddEditModal({
     const finalCategoryName = customCategory.trim() || category;
     if (!name.trim() || !price.trim()) {
       Alert.alert('Required', 'Name and selling price are required.');
+      return;
+    }
+    if (!finalCategoryName) {
+      Alert.alert('Required', 'Please select or enter a category.');
       return;
     }
     const p = parseFloat(price);

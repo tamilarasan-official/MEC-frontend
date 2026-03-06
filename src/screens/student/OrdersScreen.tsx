@@ -138,9 +138,11 @@ export default function OrdersScreen() {
                 <View style={styles.orderHeader}>
                   <View style={styles.flex1}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.orderId} numberOfLines={1}>#{order.id}</Text>
+                      <Text style={[styles.orderId, { flex: 1, flexShrink: 1 }]} numberOfLines={1}>
+                        #{order.orderNumber || order.id.slice(-8)}
+                      </Text>
                       {order.isReadyServe && (
-                        <View style={{ backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <View style={{ backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                           <Icon name="flash" size={11} color="#f97316" />
                           <Text style={{ fontSize: 10, fontWeight: '700', color: '#f97316' }}>INSTANT</Text>
                         </View>

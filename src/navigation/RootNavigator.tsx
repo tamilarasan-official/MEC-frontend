@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, ActivityIndicator, StyleSheet, DeviceEventEmitter } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
 import { refreshUserData } from '../store/slices/authSlice';
-import { getAccessToken } from '../services/api';
+import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/colors';
@@ -54,12 +54,26 @@ export default function RootNavigator() {
     const checkAuth = async () => {
       try {
         const token = await getAccessToken();
-        if (token) {
-          // Try to fetch the current user with the stored token
-          await dispatch(refreshUserData()).unwrap();
+        if (!token) {
+          setIsCheckingAuth(false);
+          return;
         }
+
+        // Check 3-day inactivity — if expired, clear session and show login
+        const expired = await isSessionExpired();
+        if (expired) {
+          await clearTokens();
+          setIsCheckingAuth(false);
+          return;
+        }
+
+        // Token exists and session is within 3 days — restore session
+        await dispatch(refreshUserData()).unwrap();
+        // Session restored successfully — update last activity
+        await updateLastActivity();
       } catch {
-        // Token expired or invalid - user stays logged out
+        // Token refresh failed — interceptor handles retry + 3-day logic
+        // User stays logged out only if interceptor cleared the tokens
       } finally {
         setIsCheckingAuth(false);
       }
@@ -80,6 +94,22 @@ export default function RootNavigator() {
       disconnectSocket();
     }
     return () => { disconnectSocket(); };
+  }, [isAuthenticated, user, dispatch]);
+
+  // Disconnect socket when app is backgrounded to save battery (Bug #59)
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (appStateRef.current.match(/active/) && nextAppState === 'background') {
+        disconnectSocket();
+      } else if (appStateRef.current.match(/background|inactive/) && nextAppState === 'active') {
+        connectSocket(user.id, user.role, user.shopId);
+        setupSocketListeners(dispatch, user.role, 'work');
+      }
+      appStateRef.current = nextAppState;
+    });
+    return () => subscription.remove();
   }, [isAuthenticated, user, dispatch]);
 
   // Initialize push notifications after authentication

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StudentTabParamList } from '../../types';
 import StudentHomeStack from '../stacks/StudentHomeStack';
 import OrdersScreen from '../../screens/student/OrdersScreen';
@@ -47,6 +48,8 @@ const styles = StyleSheet.create({
 
 export default function StudentTabs() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 56 + Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
 
   return (
     <Tab.Navigator
@@ -58,8 +61,8 @@ export default function StudentTabs() {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 64,
-          paddingBottom: 8,
+          height: tabBarHeight,
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 4,
         },
         tabBarLabelStyle: {

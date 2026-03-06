@@ -71,6 +71,32 @@ export default function ProfileScreen({ navigation }: Props) {
     }
   };
 
+  const handleRemoveAvatar = async () => {
+    setAvatarUploading(true);
+    try {
+      await walletService.updateProfile({ avatarUrl: null });
+      if (user) {
+        dispatch(setUser({ ...user, avatarUrl: undefined }));
+        setAvatarError(false);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not remove profile picture. Please try again.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const handleAvatarPress = () => {
+    const options: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [
+      { text: 'Upload New Photo', onPress: handleAvatarUpload },
+    ];
+    if (user?.avatarUrl) {
+      options.push({ text: 'Remove Photo', onPress: handleRemoveAvatar, style: 'destructive' });
+    }
+    options.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Profile Photo', 'Choose an option', options);
+  };
+
   return (
     <ScreenWrapper>
       <View style={styles.container}>
@@ -95,7 +121,7 @@ export default function ProfileScreen({ navigation }: Props) {
             colors={['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.04)']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={styles.profileCard}>
-            <TouchableOpacity style={styles.avatar} onPress={handleAvatarUpload} activeOpacity={0.8} disabled={avatarUploading} accessibilityLabel="Change profile picture" accessibilityRole="button">
+            <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} activeOpacity={0.8} disabled={avatarUploading} accessibilityLabel="Change profile picture" accessibilityRole="button">
               {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
                 <Image
                   source={{ uri: `${resolveAvatarUrl(user?.avatarUrl)!}?t=${avatarTs}`, cache: 'reload' }}

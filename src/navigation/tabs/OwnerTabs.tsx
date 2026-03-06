@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
@@ -104,6 +105,9 @@ const NON_FOOD_CATEGORIES = ['stationery', 'laundry', 'other'];
 
 export default function OwnerTabs() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = 56 + Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
+  const tabBarPaddingBottom = Math.max(insets.bottom, 8);
   const userMode = useSelector((s: RootState) => s.user.userMode);
   const shopDetails = useSelector((s: RootState) => s.user.shopDetails);
   const dispatch = useDispatch<AppDispatch>();
@@ -134,8 +138,8 @@ export default function OwnerTabs() {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
             borderTopWidth: 1,
-            height: 64,
-            paddingBottom: 8,
+            height: tabBarHeight,
+            paddingBottom: tabBarPaddingBottom,
             paddingTop: 4,
           },
           tabBarLabelStyle: {
@@ -176,8 +180,8 @@ export default function OwnerTabs() {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
             borderTopWidth: 1,
-            height: 64,
-            paddingBottom: 8,
+            height: tabBarHeight,
+            paddingBottom: tabBarPaddingBottom,
             paddingTop: 4,
           },
           tabBarLabelStyle: {

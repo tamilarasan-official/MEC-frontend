@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Animated, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Animated, ScrollView, Keyboard,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
@@ -79,8 +79,14 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         onClose();
       }, 2000);
     } catch (e: any) {
-      if (e?.code === 'PAYMENT_CANCELLED') {
-        setError('Payment cancelled');
+      if (e?.code === 'PAYMENT_CANCELLED' || e?.description?.toLowerCase()?.includes('cancelled')) {
+        setError('Payment cancelled.');
+      } else if (e?.code === 'BAD_REQUEST_ERROR' || e?.description?.toLowerCase()?.includes('gateway')) {
+        setError('Payment gateway is currently unavailable. Please try again later.');
+      } else if (e?.code === 'NETWORK_ERROR' || e?.message?.toLowerCase()?.includes('network')) {
+        setError('Network error. Please check your connection and try again.');
+      } else if (e?.response?.status >= 500) {
+        setError('Server error. Please try again later.');
       } else {
         setError(e?.response?.data?.message || e?.description || 'Payment failed. Please try again.');
       }
@@ -89,10 +95,17 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   };
 
   const handleClose = () => {
-    setAmount('');
-    setError('');
-    setSuccess(false);
-    onClose();
+    Keyboard.dismiss();
+    Animated.timing(slideAnim, {
+      toValue: 600,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      setAmount('');
+      setError('');
+      setSuccess(false);
+      onClose();
+    });
   };
 
   return (

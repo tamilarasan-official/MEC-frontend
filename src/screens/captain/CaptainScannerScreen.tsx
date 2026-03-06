@@ -71,11 +71,19 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
       setScanError(null);
       setIsActive(false);
     } else {
-      setScanError('Invalid QR code. Please scan a valid order QR code.');
+      // Provide specific error based on what was scanned
+      let errorMsg = 'Invalid QR code. Please scan a valid order QR code.';
+      try {
+        const parsed = JSON.parse(raw.trim());
+        if (parsed?.type === 'shop_qr_payment') {
+          errorMsg = 'This is a payment QR code, not an order QR. Please scan the order QR from the student\'s app.';
+        }
+      } catch { /* not JSON — generic error is fine */ }
+      setScanError(errorMsg);
       errorTimerRef.current = setTimeout(() => {
         setScanError(null);
         scanCooldown.current = false;
-      }, 2500);
+      }, 3000);
     }
   }, [isActive]);
 
