@@ -13,6 +13,9 @@ interface CartState {
   shopName: string | null;
 }
 
+const MAX_QUANTITY_PER_ITEM = 10;
+const MAX_DISTINCT_ITEMS = 20;
+
 const initialState: CartState = {
   items: [],
   shopId: null,
@@ -33,8 +36,10 @@ const cartSlice = createSlice({
       state.shopName = shopName;
       const idx = state.items.findIndex(c => c.item.id === item.id);
       if (idx >= 0) {
-        state.items[idx].quantity += 1;
-      } else {
+        if (state.items[idx].quantity < MAX_QUANTITY_PER_ITEM) {
+          state.items[idx].quantity += 1;
+        }
+      } else if (state.items.length < MAX_DISTINCT_ITEMS) {
         state.items.push({ item, quantity: 1 });
       }
     },
@@ -50,13 +55,15 @@ const cartSlice = createSlice({
           state.items.splice(idx, 1);
           if (state.items.length === 0) { state.shopId = null; state.shopName = null; }
         } else {
-          state.items[idx].quantity = quantity;
+          state.items[idx].quantity = Math.min(quantity, MAX_QUANTITY_PER_ITEM);
         }
       }
     },
     incrementQuantity: (state, action: PayloadAction<string>) => {
       const idx = state.items.findIndex(c => c.item.id === action.payload);
-      if (idx >= 0) state.items[idx].quantity += 1;
+      if (idx >= 0 && state.items[idx].quantity < MAX_QUANTITY_PER_ITEM) {
+        state.items[idx].quantity += 1;
+      }
     },
     decrementQuantity: (state, action: PayloadAction<string>) => {
       const idx = state.items.findIndex(c => c.item.id === action.payload);

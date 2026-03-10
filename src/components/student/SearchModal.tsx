@@ -29,6 +29,16 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
   const [allItems, setAllItems] = useState<(FoodItem & { shopLabel: string })[]>([]);
   const [loading, setLoading] = useState(false);
   const itemsLoaded = useRef(false);
+  const prevShopIds = useRef('');
+
+  // Reset cache when shops change
+  useEffect(() => {
+    const ids = shops.map(s => s.id).sort().join(',');
+    if (prevShopIds.current && prevShopIds.current !== ids) {
+      itemsLoaded.current = false;
+    }
+    prevShopIds.current = ids;
+  }, [shops]);
   const inputRef = useRef<TextInput>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slideAnim = useMemo(() => new Animated.Value(-800), []);

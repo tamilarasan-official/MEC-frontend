@@ -1,6 +1,24 @@
 import api from './api';
 import { DashboardStats, AnalyticsData } from '../types';
 
+export interface OwnerTransfer {
+  period: string;
+  amount: number;
+  status: 'pending' | 'completed';
+  completedAt?: string;
+  notes?: string;
+}
+
+export interface OwnerPayablesData {
+  currentMonth: {
+    period: string;
+    payableAmount: number;
+    transferStatus: 'pending' | 'completed';
+    completedAt?: string;
+  };
+  transfers: OwnerTransfer[];
+}
+
 const analyticsService = {
   getOwnerDashboard: async (): Promise<DashboardStats> => {
     const res = await api.get('/orders/shop/stats');
@@ -25,6 +43,10 @@ const analyticsService = {
   },
   removeCaptain: async (id: string): Promise<void> => {
     await api.delete(`/owner/captains/${id}`);
+  },
+  getOwnerPayables: async (): Promise<OwnerPayablesData> => {
+    const res = await api.get('/owner/payables');
+    return res.data.data;
   },
 };
 

@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -13,6 +13,7 @@
     "@gorhom/bottom-sheet": "^5.2.8",
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/datetimepicker": "^8.6.0",
     "@react-native-firebase/app": "^23.8.6",
     "@react-native-firebase/messaging": "^23.8.6",
     "@react-native-vector-icons/fontawesome": "^12.4.0",
@@ -27,6 +28,7 @@
     "keychain": "^1.5.0",
     "react": "19.2.0",
     "react-native": "^0.83.1",
+    "react-native-config": "^1.6.1",
     "react-native-gesture-handler": "^2.30.0",
     "react-native-image-picker": "^8.2.1",
     "react-native-keychain": "^10.0.0",

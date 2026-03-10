@@ -32,13 +32,27 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   useEffect(() => { return () => { if (successTimerRef.current !== null) clearTimeout(successTimerRef.current); }; }, []);
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
+  const backdropAnim = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
     if (visible) {
       slideAnim.setValue(600);
-      Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }).start();
+      backdropAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
+        Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, backdropAnim]);
+
+  // Reset state when modal closes (avoids state updates during animation)
+  useEffect(() => {
+    if (!visible) {
+      setAmount('');
+      setError('');
+      setSuccess(false);
+    }
+  }, [visible]);
 
   const numericAmount = parseInt(amount || '0', 10);
 
@@ -95,23 +109,23 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   };
 
   const handleClose = () => {
-    Keyboard.dismiss();
-    Animated.timing(slideAnim, {
-      toValue: 600,
-      duration: 250,
-      useNativeDriver: true,
-    }).start(() => {
-      setAmount('');
-      setError('');
-      setSuccess(false);
+    // Animate sheet down + fade backdrop simultaneously
+    // Keyboard dismiss happens AFTER animation to prevent KAV layout reflow glitch
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      Keyboard.dismiss();
       onClose();
     });
   };
 
   return (
     <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
-      {/* Backdrop tap to dismiss */}
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
+      {/* Animated backdrop */}
+      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
+      </Animated.View>
 
       <KeyboardAvoidingView
         style={styles.kvWrapper}

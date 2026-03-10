@@ -88,12 +88,7 @@ const walletService = {
     };
   },
   verifyRazorpayPayment: async (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }): Promise<any> => {
-    const payload = {
-      orderId: data.razorpay_order_id,
-      paymentId: data.razorpay_payment_id,
-      signature: data.razorpay_signature,
-    };
-    const res = await api.post('/razorpay/verify-payment', payload);
+    const res = await api.post('/razorpay/verify-payment', data);
     return res.data.data;
   },
 };

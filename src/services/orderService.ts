@@ -65,7 +65,7 @@ const orderService = {
     return mapOrders(res.data.data || res.data);
   },
   getMyActiveOrders: async (): Promise<Order[]> => {
-    const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 10 } });
+    const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 50 } });
     return mapOrders(res.data.data || res.data);
   },
   getShopOrders: async (status?: string): Promise<Order[]> => {
@@ -102,10 +102,12 @@ const orderService = {
     return mapOrder(res.data.data);
   },
   getOrderHistory: async (): Promise<{ completed: Order[]; cancelled: Order[] }> => {
-    const [completed, cancelled] = await Promise.all([
+    const results = await Promise.allSettled([
       api.get('/orders/shop', { params: { status: 'completed' } }).then(r => mapOrders(r.data.data || r.data)),
       api.get('/orders/shop', { params: { status: 'cancelled' } }).then(r => mapOrders(r.data.data || r.data)),
     ]);
+    const completed = results[0].status === 'fulfilled' ? results[0].value : [];
+    const cancelled = results[1].status === 'fulfilled' ? results[1].value : [];
     return { completed, cancelled };
   },
   getOrderById: async (orderId: string): Promise<Order> => {

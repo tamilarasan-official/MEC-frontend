@@ -22,6 +22,8 @@ import {
   handleForegroundMessage,
   cleanupNotifications,
 } from '../services/notificationService';
+import { checkForUpdate, UpdateInfo } from '../services/versionService';
+import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -37,6 +39,7 @@ export default function RootNavigator() {
   const { user, isAuthenticated } = useSelector((s: RootState) => s.auth);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [popup, setPopup] = useState<PopupData | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 
   // Listen for order status popup events (from socket + FCM)
   useEffect(() => {
@@ -79,6 +82,13 @@ export default function RootNavigator() {
       }
     };
     checkAuth();
+
+    // Version check — fire-and-forget, non-blocking
+    checkForUpdate().then((info) => {
+      if (info?.updateAvailable) {
+        setUpdateInfo(info);
+      }
+    });
   }, [dispatch]);
 
   // Connect/disconnect socket based on auth state
@@ -179,6 +189,20 @@ export default function RootNavigator() {
           status={popup.status}
           orderNumber={popup.orderNumber}
           onDismiss={dismissPopup}
+        />
+      )}
+
+      {updateInfo && (
+        <UpdatePromptModal
+          visible={!!updateInfo}
+          forceUpdate={updateInfo.forceUpdate}
+          latestVersion={updateInfo.latestVersion}
+          updateUrl={updateInfo.updateUrl}
+          onDismiss={() => {
+            if (!updateInfo.forceUpdate) {
+              setUpdateInfo(null);
+            }
+          }}
         />
       )}
     </>

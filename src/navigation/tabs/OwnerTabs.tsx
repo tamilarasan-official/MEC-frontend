@@ -193,6 +193,7 @@ export default function OwnerTabs() {
         <Tab.Screen
           name={isNonFoodShop ? 'StationeryDashboard' : 'Home'}
           component={isNonFoodShop ? StationeryHomeScreen : OwnerHomeScreen}
+          key={isNonFoodShop ? 'stationery' : 'home'}
           options={{
             tabBarLabel: 'Home',
             tabBarIcon: HomeIcon,

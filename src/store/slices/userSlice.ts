@@ -61,9 +61,11 @@ export const fetchDashboardStats = createAsyncThunk('user/fetchDashboardStats', 
   } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
-export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (params?: { startDate?: string; endDate?: string }) => {
-  const res = await api.get('/orders/shop/analytics', { params });
-  return res.data.data as AnalyticsData;
+export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (params: { startDate?: string; endDate?: string } | undefined, { rejectWithValue }) => {
+  try {
+    const res = await api.get('/orders/shop/analytics', { params });
+    return res.data.data as AnalyticsData;
+  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
 export const fetchShopDetails = createAsyncThunk('user/fetchShopDetails', async (_, { rejectWithValue }) => {
@@ -125,7 +127,9 @@ const userSlice = createSlice({
       if (a.payload.newBalance !== undefined) s.balance = a.payload.newBalance;
     });
     builder.addCase(fetchDashboardStats.fulfilled, (s, a) => { s.dashboardStats = a.payload; });
-    builder.addCase(fetchAnalytics.fulfilled, (s, a) => { s.analytics = a.payload; });
+    builder.addCase(fetchAnalytics.pending, (s) => { s.isLoading = true; s.error = null; });
+    builder.addCase(fetchAnalytics.fulfilled, (s, a) => { s.isLoading = false; s.analytics = a.payload; });
+    builder.addCase(fetchAnalytics.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     builder.addCase(fetchShopDetails.fulfilled, (s, a) => { s.shopDetails = a.payload; });
     builder.addCase(toggleShopStatus.fulfilled, (s, a) => {
       if (s.shopDetails) s.shopDetails.isActive = a.payload.isActive;

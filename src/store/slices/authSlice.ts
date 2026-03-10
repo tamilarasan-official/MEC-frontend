@@ -47,14 +47,19 @@ export const login = createAsyncThunk(
       return user;
     } catch (error: any) {
       const status = error.response?.status;
-      const serverMsg = error.response?.data?.message;
+      const errorCode = error.response?.data?.error?.code;
+      const serverMsg = error.response?.data?.error?.message || error.response?.data?.message;
       let msg = 'Login failed. Please try again.';
       if (!error.response) {
         msg = 'Network error. Please check your connection.';
       } else if (status === 401 || status === 404) {
         msg = 'Invalid credentials. Please try again.';
       } else if (status === 403) {
-        msg = serverMsg || 'Your account is not yet approved';
+        if (errorCode === 'ACCOUNT_DEACTIVATED') {
+          msg = 'Your account has been deactivated. Please contact administration.';
+        } else {
+          msg = serverMsg || 'Your account is not yet approved';
+        }
       } else if (status === 429) {
         msg = 'Too many attempts. Please try again later.';
       } else if (status >= 500) {
@@ -106,7 +111,13 @@ export const loginWithOtp = createAsyncThunk(
       await setTokens(tokens.accessToken, tokens.refreshToken);
       return user;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'OTP verification failed');
+      const status = error.response?.status;
+      const errorCode = error.response?.data?.error?.code;
+      const serverMsg = error.response?.data?.error?.message || error.response?.data?.message;
+      if (status === 403 && errorCode === 'ACCOUNT_DEACTIVATED') {
+        return rejectWithValue('Your account has been deactivated. Please contact administration.');
+      }
+      return rejectWithValue(serverMsg || 'OTP verification failed');
     }
   },
 );
@@ -256,6 +267,7 @@ const authSlice = createSlice({
     builder
       .addCase(refreshUserData.fulfilled, (state, action) => {
         state.user = action.payload;
+        state.isAuthenticated = true;
       });
     // Sync balance from wallet fetch
     builder

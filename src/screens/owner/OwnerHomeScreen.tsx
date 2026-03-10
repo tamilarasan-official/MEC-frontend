@@ -3,9 +3,9 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   RefreshControl, Alert, Image, AppState,
 } from 'react-native';
-import { useSelector, useDispatch } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
-import { RootState, AppDispatch } from '../../store';
+import { useAppSelector, useAppDispatch } from '../../store';
+import { RootState } from '../../store';
 import { fetchActiveShopOrders, updateOrderStatus, markItemDelivered } from '../../store/slices/ordersSlice';
 import { fetchDashboardStats, fetchShopDetails } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
@@ -32,10 +32,10 @@ const FILTERS: { key: FilterKey; label: string; icon: string; color: string }[] 
 export default function OwnerHomeScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const dispatch = useDispatch<AppDispatch>();
+  const dispatch = useAppDispatch();
   const navigation = useNavigation<any>();
-  const shopOrders = useSelector((s: RootState) => s.orders.shopOrders);
-  const dashboardStats = useSelector((s: RootState) => s.user.dashboardStats);
+  const shopOrders = useAppSelector((s: RootState) => s.orders.shopOrders);
+  const dashboardStats = useAppSelector((s: RootState) => s.user.dashboardStats);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('pending');

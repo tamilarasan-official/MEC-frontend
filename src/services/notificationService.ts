@@ -227,11 +227,13 @@ export async function handleBackgroundMessage(
 // ── Register FCM token with backend ─────────────────────────────
 async function registerTokenWithBackend(token: string, _userId: string): Promise<void> {
   try {
+    const { getCurrentVersion } = require('./versionService');
     const deviceId = await getDeviceId();
     await api.post('/auth/fcm-token', {
       token,
       deviceId,
       platform: Platform.OS,
+      appVersion: getCurrentVersion(),
     });
     if (__DEV__) console.log('[Notifications] FCM token registered with backend');
   } catch (error) {

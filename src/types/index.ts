@@ -194,6 +194,19 @@ export interface AnalyticsData {
     quantity: number;
     revenue: number;
   }>;
+  // Period-based data from backend
+  todaySales?: number;
+  weekSales?: number;
+  alltimeSales?: number;
+  todayOrders?: number;
+  weekOrders?: number;
+  alltimeOrders?: number;
+  revenueComparison?: Array<{ week: string; lastMonth: number; thisMonth: number }>;
+  // Custom date range fields
+  customRange?: boolean;
+  customRevenue?: number;
+  customOrders?: number;
+  customProfit?: number;
 }
 
 // ---- Notification ----
@@ -275,7 +288,6 @@ export type StudentTabParamList = {
 
 export type StudentHomeStackParamList = {
   Dashboard: undefined;
-  Stores: undefined;
   Menu: { shopId: string; shopName: string };
   Stationery: { shopId: string; shopName: string };
   Offers: undefined;

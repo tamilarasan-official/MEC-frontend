@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
@@ -25,6 +25,11 @@ export default function QRPaymentConfirmModal({
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (successTimerRef.current !== null) clearTimeout(successTimerRef.current); };
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -46,7 +51,7 @@ export default function QRPaymentConfirmModal({
     try {
       await walletService.payAdhocPayment(paymentData.paymentId);
       setSuccess(true);
-      setTimeout(() => {
+      successTimerRef.current = setTimeout(() => {
         onSuccess();
       }, 1500);
     } catch (e: any) {

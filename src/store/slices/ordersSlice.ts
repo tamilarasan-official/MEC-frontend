@@ -116,7 +116,7 @@ export const fetchMyActiveOrders = createAsyncThunk(
   'orders/fetchMyActiveOrders',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 10 } });
+      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 50 } });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch active orders');
@@ -236,7 +236,9 @@ const ordersSlice = createSlice({
       .addCase(fetchMyOrders.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     // Fetch active orders
     builder
-      .addCase(fetchMyActiveOrders.fulfilled, (s, a) => { s.activeOrders = a.payload; });
+      .addCase(fetchMyActiveOrders.pending, (s) => { s.error = null; })
+      .addCase(fetchMyActiveOrders.fulfilled, (s, a) => { s.activeOrders = a.payload; })
+      .addCase(fetchMyActiveOrders.rejected, (s, a) => { s.error = a.payload as string; });
     // Fetch shop orders
     builder
       .addCase(fetchShopOrders.pending, (s) => { s.isLoading = true; })
@@ -244,22 +246,30 @@ const ordersSlice = createSlice({
       .addCase(fetchShopOrders.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     // Active shop orders
     builder
-      .addCase(fetchActiveShopOrders.fulfilled, (s, a) => { s.shopOrders = a.payload; });
+      .addCase(fetchActiveShopOrders.pending, (s) => { s.error = null; })
+      .addCase(fetchActiveShopOrders.fulfilled, (s, a) => { s.shopOrders = a.payload; })
+      .addCase(fetchActiveShopOrders.rejected, (s, a) => { s.error = a.payload as string; });
     // Update status
     builder
+      .addCase(updateOrderStatus.pending, (s) => { s.error = null; })
       .addCase(updateOrderStatus.fulfilled, (s, a) => {
         const idx = s.shopOrders.findIndex(o => o.id === a.payload.id);
         if (idx >= 0) s.shopOrders[idx] = a.payload;
-      });
+      })
+      .addCase(updateOrderStatus.rejected, (s, a) => { s.error = a.payload as string; });
     // Mark item delivered
     builder
+      .addCase(markItemDelivered.pending, (s) => { s.error = null; })
       .addCase(markItemDelivered.fulfilled, (s, a) => {
         const idx = s.shopOrders.findIndex(o => o.id === a.payload.id);
         if (idx >= 0) s.shopOrders[idx] = a.payload;
-      });
+      })
+      .addCase(markItemDelivered.rejected, (s, a) => { s.error = a.payload as string; });
     // Verify QR
     builder
-      .addCase(verifyQRCode.fulfilled, (s, a) => { if (a.payload.order) s.currentOrder = a.payload.order; });
+      .addCase(verifyQRCode.pending, (s) => { s.error = null; })
+      .addCase(verifyQRCode.fulfilled, (s, a) => { if (a.payload.order) s.currentOrder = a.payload.order; })
+      .addCase(verifyQRCode.rejected, (s, a) => { s.error = a.payload as string; });
   },
 });
 

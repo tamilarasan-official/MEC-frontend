@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as Keychain from 'react-native-keychain';
+import Config from 'react-native-config';
 
 // ── Server origin ───────────────────────────────────────────────
 export const API_ORIGIN = 'https://campusoneapi.madrascollege.ac.in';
@@ -9,8 +10,9 @@ const BASE_URL = `${API_ORIGIN}/api/v1`;
 const KEYCHAIN_TOKEN_SERVICE = 'com.campusone.tokens';
 const KEYCHAIN_ACTIVITY_SERVICE = 'com.campusone.activity';
 
-// API key for mobile app verification — must match backend APP_API_KEY
-const APP_API_KEY = '272183449088151d1938eca9e9de6cd2cb7a7001ad073cc050352117c1b52ca3';
+// API key for mobile app verification — loaded from .env via react-native-config
+// Hardcoded fallback ensures the app works even if Config fails to inject at build time
+const APP_API_KEY = Config.APP_API_KEY || '272183449088151d1938eca9e9de6cd2cb7a7001ad073cc050352117c1b52ca3';
 
 // Session inactivity limit — 3 days in milliseconds
 const SESSION_MAX_INACTIVE_MS = 3 * 24 * 60 * 60 * 1000;

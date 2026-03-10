@@ -88,100 +88,116 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
 
   // Order status changed
   socket.on('order:status_changed', (payload: OrderUpdatePayload) => {
-    const status = payload.status as 'preparing' | 'ready' | 'completed' | 'cancelled';
+    try {
+      const status = payload.status as 'preparing' | 'ready' | 'completed' | 'cancelled';
 
-    // Check AND mark dedup key — skip if FCM already handled this event
-    const dedupKey = `${payload.orderId}:${status}`;
-    const alreadySeen = isDuplicate(dedupKey);
+      // Check AND mark dedup key — skip if FCM already handled this event
+      const dedupKey = `${payload.orderId}:${status}`;
+      const alreadySeen = isDuplicate(dedupKey);
 
-    // Always show popup (important visual feedback even if FCM was first)
-    const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
-    if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
-      if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
-      DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
-        status,
-        orderNumber: payload.orderNumber || payload.orderId.slice(-6),
-      });
-    }
+      // Always show popup (important visual feedback even if FCM was first)
+      const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
+      if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
+        if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
+        DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
+          status,
+          orderNumber: payload.orderNumber || payload.orderId.slice(-6),
+        });
+      }
 
-    // Only add to Redux if not already handled by FCM
-    if (!alreadySeen) {
-      const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
-      const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
-      const statusLabels: Record<string, string> = {
-        preparing: `Your order is being prepared${itemsSuffix}`,
-        ready: `Your order is ready for pickup!${itemsSuffix}`,
-        completed: `Your order has been completed${itemsSuffix}`,
-        cancelled: `Your order has been cancelled${itemsSuffix}`,
-      };
-      const orderNum = payload.orderNumber || payload.orderId.slice(-6);
-      const title = payload.notification?.title || `Order #${orderNum}`;
-      const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
+      // Only add to Redux if not already handled by FCM
+      if (!alreadySeen) {
+        const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
+        const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
+        const statusLabels: Record<string, string> = {
+          preparing: `Your order is being prepared${itemsSuffix}`,
+          ready: `Your order is ready for pickup!${itemsSuffix}`,
+          completed: `Your order has been completed${itemsSuffix}`,
+          cancelled: `Your order has been cancelled${itemsSuffix}`,
+        };
+        const orderNum = payload.orderNumber || payload.orderId.slice(-6);
+        const title = payload.notification?.title || `Order #${orderNum}`;
+        const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
 
-      dispatch(addNotification({
-        id: `notif-${Date.now()}`,
-        type: 'order',
-        title,
-        message,
-        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
-        createdAt: payload.updatedAt,
-        read: false,
-      }));
+        dispatch(addNotification({
+          id: `notif-${Date.now()}`,
+          type: 'order',
+          title,
+          message,
+          data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
+          createdAt: payload.updatedAt,
+          read: false,
+        }));
+      }
+    } catch (e) {
+      if (__DEV__) console.warn('[Socket] Error in order:status_changed handler:', e);
     }
   });
 
   // New order (for staff)
   socket.on('order:new', (payload: { orderId: string; orderNumber: string; total: number; pickupToken?: string }) => {
-    // Check AND mark dedup key — skip if FCM already handled this event
-    const alreadySeen = isDuplicate(`${payload.orderId}:new`);
-    if (alreadySeen) return;
+    try {
+      // Check AND mark dedup key — skip if FCM already handled this event
+      const alreadySeen = isDuplicate(`${payload.orderId}:new`);
+      if (alreadySeen) return;
 
-    const msg = `Order #${payload.orderNumber || payload.pickupToken || ''} - Rs. ${payload.total}`;
-    dispatch(addNotification({
-      id: `notif-${Date.now()}`,
-      type: 'order',
-      title: 'New Order!',
-      message: msg,
-      data: { orderId: payload.orderId, orderNumber: payload.orderNumber },
-      createdAt: new Date().toISOString(),
-      read: false,
-    }));
+      const msg = `Order #${payload.orderNumber || payload.pickupToken || ''} - Rs. ${payload.total}`;
+      dispatch(addNotification({
+        id: `notif-${Date.now()}`,
+        type: 'order',
+        title: 'New Order!',
+        message: msg,
+        data: { orderId: payload.orderId, orderNumber: payload.orderNumber },
+        createdAt: new Date().toISOString(),
+        read: false,
+      }));
 
-    displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES);
+      displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES);
+    } catch (e) {
+      if (__DEV__) console.warn('[Socket] Error in order:new handler:', e);
+    }
   });
 
   // Wallet updates
   socket.on('wallet:updated', (payload: { type: string; amount: number; balance: number; message: string }) => {
-    const titleMap: Record<string, string> = { credit: 'Money Added', debit: 'Money Deducted', refund: 'Refund Received' };
-    const title = titleMap[payload.type] || 'Wallet Updated';
-    const msg = payload.message || `Rs. ${payload.amount} updated`;
-    dispatch(addNotification({
-      id: `notif-${Date.now()}`,
-      type: 'wallet',
-      title,
-      message: msg,
-      createdAt: new Date().toISOString(),
-      read: false,
-    }));
+    try {
+      const titleMap: Record<string, string> = { credit: 'Money Added', debit: 'Money Deducted', refund: 'Refund Received' };
+      const title = titleMap[payload.type] || 'Wallet Updated';
+      const msg = payload.message || `Rs. ${payload.amount} updated`;
+      dispatch(addNotification({
+        id: `notif-${Date.now()}`,
+        type: 'wallet',
+        title,
+        message: msg,
+        createdAt: new Date().toISOString(),
+        read: false,
+      }));
 
-    // Only show system notification for credits/refunds (user is in-app for debits)
-    if (payload.type !== 'debit') {
-      displayLocalNotification(title, msg, { type: payload.type }, CHANNEL_WALLET);
+      // Only show system notification for credits/refunds (user is in-app for debits)
+      if (payload.type !== 'debit') {
+        displayLocalNotification(title, msg, { type: payload.type }, CHANNEL_WALLET);
+      }
+    } catch (e) {
+      if (__DEV__) console.warn('[Socket] Error in wallet:updated handler:', e);
     }
   });
 
   // Announcements
   socket.on('announcement', (payload: { title: string; message: string }) => {
-    dispatch(addNotification({
-      id: `notif-${Date.now()}`,
-      type: 'announcement',
-      title: payload.title,
-      message: payload.message,
-      createdAt: new Date().toISOString(),
-      read: false,
-    }));
+    try {
+      dispatch(addNotification({
+        id: `notif-${Date.now()}`,
+        type: 'announcement',
+        title: payload.title,
+        message: payload.message,
+        createdAt: new Date().toISOString(),
+        read: false,
+      }));
 
-    displayLocalNotification(payload.title, payload.message, {}, CHANNEL_GENERAL);
+      displayLocalNotification(payload.title, payload.message, {}, CHANNEL_GENERAL);
+    } catch (e) {
+      if (__DEV__) console.warn('[Socket] Error in announcement handler:', e);
+    }
   });
 
   // General notifications

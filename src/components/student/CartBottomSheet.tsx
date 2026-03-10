@@ -55,7 +55,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   const handleClose = useCallback(() => {
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
-      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
     ]).start(() => onClose());
   }, [slideAnim, backdropAnim, onClose]);
 
@@ -198,8 +198,9 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                       </TouchableOpacity>
                       <Text style={styles.stepQty}>{c.quantity}</Text>
                       <TouchableOpacity
-                        style={styles.stepBtn}
-                        onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 })); }}
+                        style={[styles.stepBtn, c.quantity >= 10 && { opacity: 0.3 }]}
+                        onPress={() => { if (c.quantity < 10) { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 })); } }}
+                        disabled={c.quantity >= 10}
                         accessibilityLabel="Increase quantity"
                         accessibilityRole="button">
                         <Icon name="add" size={16} color={colors.text} />

@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, FlatList,
-  ActivityIndicator, Animated,
+  ActivityIndicator, Animated, ScrollView,
 } from 'react-native';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -12,6 +12,7 @@ import {
 } from '../../store/slices/userSlice';
 import { Transaction } from '../../types';
 import TopUpModal from '../student/TopUpModal';
+import analyticsService, { type OwnerPayablesData } from '../../services/analyticsService';
 
 type WalletTab = 'eat' | 'work';
 
@@ -34,6 +35,14 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
   const [txnLoading, setTxnLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [showTopUp, setShowTopUp] = useState(false);
+  const [payablesData, setPayablesData] = useState<OwnerPayablesData | null>(null);
+  const [payablesLoading, setPayablesLoading] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
 
@@ -50,6 +59,7 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
   const loadData = useCallback(async () => {
     setTxnLoading(true);
     setStatsLoading(true);
+    setPayablesLoading(true);
     try {
       await Promise.all([
         dispatch(fetchWalletBalance()),
@@ -59,6 +69,11 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
     } catch { /* ignore */ }
     setTxnLoading(false);
     setStatsLoading(false);
+    // Fetch payables separately (non-blocking)
+    analyticsService.getOwnerPayables()
+      .then(data => { if (mountedRef.current) setPayablesData(data); })
+      .catch(() => { /* ignore */ })
+      .finally(() => { if (mountedRef.current) setPayablesLoading(false); });
   }, [dispatch]);
 
   const displayBalance = user?.balance ?? balance ?? 0;
@@ -142,8 +157,13 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
     </View>
   );
 
+  const formatPayablePeriod = (p: string) => {
+    const [y, m] = p.split('-').map(Number);
+    return new Date(y, m - 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  };
+
   const renderWorkTab = () => (
-    <View style={styles.tabContent}>
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       {statsLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="small" color={colors.accent} />
@@ -209,9 +229,74 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
               </Text>
             </View>
           </View>
+
+          {/* Payables & Transfer Status */}
+          {payablesLoading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : payablesData && (
+            <View style={styles.payablesSection}>
+              <Text style={styles.sectionTitle}>Payables</Text>
+              <View style={styles.payableCard}>
+                <View style={styles.payableHeader}>
+                  <View>
+                    <Text style={styles.payableLabel}>
+                      {formatPayablePeriod(payablesData.currentMonth.period)}
+                    </Text>
+                    <Text style={styles.payableAmount}>
+                      Rs. {payablesData.currentMonth.payableAmount}
+                    </Text>
+                  </View>
+                  <View style={[
+                    styles.payableStatusBadge,
+                    { backgroundColor: payablesData.currentMonth.transferStatus === 'completed'
+                      ? 'rgba(16,185,129,0.12)' : 'rgba(249,115,22,0.12)' },
+                  ]}>
+                    <Icon
+                      name={payablesData.currentMonth.transferStatus === 'completed'
+                        ? 'checkmark-circle' : 'time-outline'}
+                      size={14}
+                      color={payablesData.currentMonth.transferStatus === 'completed'
+                        ? '#10b981' : '#f97316'}
+                    />
+                    <Text style={[styles.payableStatusText, {
+                      color: payablesData.currentMonth.transferStatus === 'completed'
+                        ? '#10b981' : '#f97316',
+                    }]}>
+                      {payablesData.currentMonth.transferStatus === 'completed'
+                        ? 'Transferred' : 'Pending'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Recent transfers */}
+                {payablesData.transfers.length > 0 && (
+                  <View style={styles.transferHistory}>
+                    <Text style={styles.transferHistoryTitle}>Recent Transfers</Text>
+                    {payablesData.transfers.slice(0, 3).map(t => (
+                      <View key={t.period} style={styles.transferRow}>
+                        <Text style={styles.transferPeriod}>
+                          {formatPayablePeriod(t.period)}
+                        </Text>
+                        <View style={styles.transferRight}>
+                          <Text style={styles.transferAmount}>Rs. {t.amount}</Text>
+                          <Icon
+                            name={t.status === 'completed' ? 'checkmark-circle' : 'time-outline'}
+                            size={14}
+                            color={t.status === 'completed' ? '#10b981' : '#f97316'}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
         </>
       )}
-    </View>
+    </ScrollView>
   );
 
   return (
@@ -408,4 +493,32 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   orderStatusLabel: { fontSize: 13, color: colors.mutedForeground },
   orderStatusValue: { fontSize: 14, fontWeight: '700' },
+
+  // Payables
+  payablesSection: { marginTop: 16 },
+  payableCard: {
+    padding: 16, borderRadius: 16,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+  },
+  payableHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  payableLabel: { fontSize: 11, color: colors.mutedForeground },
+  payableAmount: { fontSize: 20, fontWeight: '800', color: colors.foreground, marginTop: 2 },
+  payableStatusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+  },
+  payableStatusText: { fontSize: 12, fontWeight: '600' },
+  transferHistory: {
+    marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  transferHistoryTitle: { fontSize: 11, color: colors.mutedForeground, fontWeight: '600', marginBottom: 8 },
+  transferRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  transferPeriod: { fontSize: 12, color: colors.mutedForeground },
+  transferRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  transferAmount: { fontSize: 12, fontWeight: '600', color: colors.foreground },
 });

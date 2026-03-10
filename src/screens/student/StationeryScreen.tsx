@@ -33,7 +33,12 @@ type ActiveTab = 'items' | 'print';
 export default function StationeryScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { shopId, shopName } = route.params;
+  const { shopId, shopName } = route.params || {};
+
+  if (!shopId) {
+    navigation.goBack();
+    return null;
+  }
   const dispatch = useAppDispatch();
   const { items: cartItems } = useAppSelector(s => s.cart);
   const user = useAppSelector(s => s.auth.user);

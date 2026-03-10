@@ -136,18 +136,16 @@ export default function OrdersScreen() {
 
                 {/* Order ID + Status */}
                 <View style={styles.orderHeader}>
-                  <View style={styles.flex1}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[styles.orderId, { flex: 1, flexShrink: 1 }]} numberOfLines={1}>
-                        #{order.orderNumber || order.id.slice(-8)}
-                      </Text>
-                      {order.isReadyServe && (
-                        <View style={{ backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                          <Icon name="flash" size={11} color="#f97316" />
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#f97316' }}>INSTANT</Text>
-                        </View>
-                      )}
-                    </View>
+                  <View style={styles.orderHeaderLeft}>
+                    <Text style={styles.orderId} numberOfLines={1}>
+                      #{order.orderNumber || order.id.slice(-8)}
+                    </Text>
+                    {order.isReadyServe && (
+                      <View style={styles.instantBadge}>
+                        <Icon name="flash" size={11} color="#f97316" />
+                        <Text style={styles.instantText}>INSTANT</Text>
+                      </View>
+                    )}
                     <Text style={styles.orderDate}>{formatOrderDate(order.createdAt)}</Text>
                   </View>
                   <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
@@ -271,13 +269,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // Order Header
   orderHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    marginBottom: 14,
+    marginBottom: 14, gap: 8,
+  },
+  orderHeaderLeft: {
+    flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6,
   },
   orderId: { fontSize: 13, fontWeight: '600', color: colors.text },
-  orderDate: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  instantBadge: {
+    backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+  },
+  instantText: { fontSize: 10, fontWeight: '700', color: '#f97316' },
+  orderDate: { fontSize: 12, color: colors.textMuted, width: '100%', marginTop: 1 },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, flexShrink: 0,
   },
   statusLabel: { fontSize: 11, fontWeight: '600' },
 

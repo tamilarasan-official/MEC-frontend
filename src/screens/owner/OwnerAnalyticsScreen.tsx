@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Dimensions,
+  RefreshControl, Dimensions, Platform, Modal,
 } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { RootState, AppDispatch } from '../../store';
@@ -16,7 +17,7 @@ import OwnerHeader from '../../components/owner/OwnerHeader';
 import OwnerProfileDropdown from '../../components/owner/OwnerProfileDropdown';
 import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
 
-type TimeFilter = 'today' | 'week' | 'month' | 'all';
+type TimeFilter = 'today' | 'week' | 'month' | 'all' | 'custom';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -157,11 +158,20 @@ export default function OwnerAnalyticsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [salesFilter, setSalesFilter] = useState<TimeFilter>('today');
   const [ordersFilter, setOrdersFilter] = useState<TimeFilter>('month');
+  // Custom date range state
+  const [customStartDate, setCustomStartDate] = useState<Date>(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7); return d;
+  });
+  const [customEndDate, setCustomEndDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState<'start' | 'end' | null>(null);
+  const [showDateRangeModal, setShowDateRangeModal] = useState(false);
+  const [customLoading, setCustomLoading] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (startDate?: string, endDate?: string) => {
     try {
+      const params = startDate && endDate ? { startDate, endDate } : undefined;
       await Promise.all([
-        dispatch(fetchAnalytics()),
+        dispatch(fetchAnalytics(params)),
         dispatch(fetchDashboardStats()),
       ]);
     } finally {
@@ -171,9 +181,43 @@ export default function OwnerAnalyticsScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const applyCustomRange = useCallback(async () => {
+    setCustomLoading(true);
+    setShowDateRangeModal(false);
+    setSalesFilter('custom');
+    setOrdersFilter('custom');
+    const start = customStartDate.toISOString().split('T')[0];
+    const end = customEndDate.toISOString().split('T')[0];
+    await fetchData(start, end);
+    setCustomLoading(false);
+  }, [customStartDate, customEndDate, fetchData]);
+
+  const clearCustomRange = useCallback(async () => {
+    setSalesFilter('today');
+    setOrdersFilter('month');
+    setLoading(true);
+    await fetchData();
+  }, [fetchData]);
+
+  const formatDateShort = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const handleDateChange = (field: 'start' | 'end') => (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === 'android') setShowDatePicker(null);
+    if (selectedDate) {
+      if (field === 'start') setCustomStartDate(selectedDate);
+      else setCustomEndDate(selectedDate);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchData();
+    if (salesFilter === 'custom' || ordersFilter === 'custom') {
+      const start = customStartDate.toISOString().split('T')[0];
+      const end = customEndDate.toISOString().split('T')[0];
+      await fetchData(start, end);
+    } else {
+      await fetchData();
+    }
     setRefreshing(false);
   };
 
@@ -209,7 +253,7 @@ export default function OwnerAnalyticsScreen() {
         <View style={styles.center}>
           <Icon name="alert-circle-outline" size={48} color={colors.destructive} />
           <Text style={styles.errorText}>Failed to load analytics</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={fetchData} accessibilityLabel="Retry loading" accessibilityRole="button">
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchData()} accessibilityLabel="Retry loading" accessibilityRole="button">
             <Icon name="refresh" size={16} color="#fff" />
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -226,37 +270,43 @@ export default function OwnerAnalyticsScreen() {
     profitMargin, topItems,
   } = analytics;
 
-  // Data by time filter
-  const getSalesValue = (f: TimeFilter) => {
+  const isCustom = analytics.customRange === true;
+
+  // Data by time filter — use real backend data
+  const getSalesValue = (f: TimeFilter): number => {
     switch (f) {
-      case 'today': return dashboardStats?.todayRevenue ?? 0;
-      case 'week': return Math.round(thisMonthRevenue * 0.25);
+      case 'today': return analytics.todaySales ?? dashboardStats?.todayRevenue ?? 0;
+      case 'week': return analytics.weekSales ?? 0;
       case 'month': return thisMonthRevenue;
-      case 'all': return dashboardStats?.totalRevenue ?? 0;
+      case 'all': return analytics.alltimeSales ?? dashboardStats?.totalRevenue ?? 0;
+      case 'custom': return analytics.customRevenue ?? thisMonthRevenue;
     }
   };
-  const getSalesLabel = (f: TimeFilter) => {
+  const getSalesLabel = (f: TimeFilter): string => {
     switch (f) {
       case 'today': return 'Today Revenue';
-      case 'week': return 'This Week Revenue';
+      case 'week': return 'Last 7 Days Revenue';
       case 'month': return 'This Month Revenue';
       case 'all': return 'Total Revenue';
+      case 'custom': return `${formatDateShort(customStartDate)} – ${formatDateShort(customEndDate)}`;
     }
   };
-  const getOrdersValue = (f: TimeFilter) => {
+  const getOrdersValue = (f: TimeFilter): number => {
     switch (f) {
-      case 'today': return dashboardStats?.todayOrders ?? 0;
-      case 'week': return Math.round(thisMonthOrders * 0.25);
+      case 'today': return analytics.todayOrders ?? dashboardStats?.todayOrders ?? 0;
+      case 'week': return analytics.weekOrders ?? 0;
       case 'month': return thisMonthOrders;
-      case 'all': return totalCompletedOrders;
+      case 'all': return analytics.alltimeOrders ?? totalCompletedOrders;
+      case 'custom': return analytics.customOrders ?? thisMonthOrders;
     }
   };
-  const getOrdersLabel = (f: TimeFilter) => {
+  const getOrdersLabel = (f: TimeFilter): string => {
     switch (f) {
       case 'today': return 'Today Orders';
-      case 'week': return 'This Week Orders';
+      case 'week': return 'Last 7 Days Orders';
       case 'month': return 'Month Orders';
       case 'all': return 'Total Orders';
+      case 'custom': return `${formatDateShort(customStartDate)} – ${formatDateShort(customEndDate)}`;
     }
   };
 
@@ -267,14 +317,20 @@ export default function OwnerAnalyticsScreen() {
     return { bg: colors.muted, text: colors.mutedForeground };
   };
 
-  // Revenue comparison chart data (weekly breakdown is estimated from monthly totals)
-  const w4Revenue = thisMonthRevenue;
-  const revenueBarData = [
-    { label: 'W1', value: Math.round(lastMonthRevenue * 0.2), color: 'rgba(156,163,175,0.4)' },
-    { label: 'W2', value: Math.round(lastMonthRevenue * 0.3), color: 'rgba(156,163,175,0.4)' },
-    { label: 'W3', value: Math.round(lastMonthRevenue * 0.25), color: 'rgba(156,163,175,0.4)' },
-    { label: 'W4', value: w4Revenue, color: '#3b82f6' },
-  ];
+  // Revenue comparison chart data — use real backend weekly breakdown when available
+  const comparison = analytics.revenueComparison;
+  const revenueBarData = comparison && comparison.length === 4
+    ? comparison.map(w => ({
+        label: w.week,
+        value: w.thisMonth,
+        color: '#3b82f6',
+      }))
+    : [
+        { label: 'W1', value: Math.round(thisMonthRevenue * 0.2), color: '#3b82f6' },
+        { label: 'W2', value: Math.round(thisMonthRevenue * 0.3), color: '#3b82f6' },
+        { label: 'W3', value: Math.round(thisMonthRevenue * 0.25), color: '#3b82f6' },
+        { label: 'W4', value: Math.round(thisMonthRevenue * 0.25), color: '#3b82f6' },
+      ];
 
   // Top items chart data
   const topItemsBarData = topItems.slice(0, 5).map(item => ({
@@ -285,7 +341,7 @@ export default function OwnerAnalyticsScreen() {
     { key: 'today', label: 'Today' },
     { key: 'week', label: 'Week' },
     { key: 'month', label: 'Month' },
-    { key: 'all', label: 'All Time' },
+    { key: 'all', label: 'All' },
   ];
 
   return (
@@ -299,6 +355,36 @@ export default function OwnerAnalyticsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
       >
+        {/* ── Date Range Picker ── */}
+        <View style={styles.dateRangeBar}>
+          {(salesFilter === 'custom' || ordersFilter === 'custom') ? (
+            <View style={styles.dateRangeActive}>
+              <Icon name="calendar-outline" size={14} color={colors.accent} />
+              <Text style={styles.dateRangeActiveText}>
+                {formatDateShort(customStartDate)} – {formatDateShort(customEndDate)}
+              </Text>
+              <TouchableOpacity onPress={() => setShowDateRangeModal(true)} style={styles.dateRangeEditBtn}>
+                <Icon name="create-outline" size={14} color={colors.accent} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={clearCustomRange} style={styles.dateRangeClearBtn}>
+                <Icon name="close-circle" size={16} color={colors.destructive} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.dateRangeBtn} onPress={() => setShowDateRangeModal(true)} activeOpacity={0.7}>
+              <Icon name="calendar-outline" size={16} color={colors.accent} />
+              <Text style={styles.dateRangeBtnText}>Custom Date Range</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {customLoading && (
+          <View style={styles.customLoadingRow}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.customLoadingText}>Loading custom range...</Text>
+          </View>
+        )}
+
         {/* ── Sales Card ── */}
         <View style={styles.sectionCard}>
           <View style={styles.cardHeader}>
@@ -332,7 +418,14 @@ export default function OwnerAnalyticsScreen() {
               <TouchableOpacity
                 key={f.key}
                 style={[styles.filterTab, salesFilter === f.key && styles.filterTabActive]}
-                onPress={() => setSalesFilter(f.key)}
+                onPress={() => {
+                  if (salesFilter === 'custom' && f.key !== 'custom') {
+                    // Re-fetch default data when switching from custom
+                    setLoading(true);
+                    fetchData();
+                  }
+                  setSalesFilter(f.key);
+                }}
                 activeOpacity={0.7}
                 accessibilityLabel={`${f.label} sales filter`}
                 accessibilityRole="button"
@@ -360,7 +453,13 @@ export default function OwnerAnalyticsScreen() {
               <TouchableOpacity
                 key={f.key}
                 style={[styles.filterTab, ordersFilter === f.key && styles.filterTabActive]}
-                onPress={() => setOrdersFilter(f.key)}
+                onPress={() => {
+                  if (ordersFilter === 'custom' && f.key !== 'custom') {
+                    setLoading(true);
+                    fetchData();
+                  }
+                  setOrdersFilter(f.key);
+                }}
                 activeOpacity={0.7}
                 accessibilityLabel={`${f.label} orders filter`}
                 accessibilityRole="button"
@@ -395,20 +494,18 @@ export default function OwnerAnalyticsScreen() {
         </View>
 
         {/* ── Revenue Comparison Chart ── */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Revenue Comparison (Estimated)</Text>
-          <View style={styles.legendRow}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: 'rgba(156,163,175,0.4)' }]} />
-              <Text style={styles.legendText}>Last Month</Text>
+        {!isCustom && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Weekly Revenue Breakdown</Text>
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
+                <Text style={styles.legendText}>This Month</Text>
+              </View>
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
-              <Text style={styles.legendText}>This Month</Text>
-            </View>
+            <VBarChart data={revenueBarData} colors={colors} />
           </View>
-          <VBarChart data={revenueBarData} colors={colors} />
-        </View>
+        )}
 
         {/* ── Performance Metrics ── */}
         <View style={styles.sectionCard}>
@@ -431,13 +528,13 @@ export default function OwnerAnalyticsScreen() {
             {/* Stats */}
             <View style={styles.perfStats}>
               <View style={styles.perfStatRow}>
-                <Text style={styles.perfStatLabel}>This Month Revenue</Text>
-                <Text style={styles.perfStatValue}>Rs.{thisMonthRevenue.toLocaleString()}</Text>
+                <Text style={styles.perfStatLabel}>{isCustom ? 'Period Revenue' : 'This Month Revenue'}</Text>
+                <Text style={styles.perfStatValue}>Rs.{(isCustom ? analytics.customRevenue ?? 0 : thisMonthRevenue).toLocaleString()}</Text>
               </View>
               <View style={styles.perfDivider} />
               <View style={styles.perfStatRow}>
-                <Text style={styles.perfStatLabel}>This Month Profit</Text>
-                <Text style={styles.perfStatValue}>Rs.{thisMonthProfit.toLocaleString()}</Text>
+                <Text style={styles.perfStatLabel}>{isCustom ? 'Period Profit' : 'This Month Profit'}</Text>
+                <Text style={styles.perfStatValue}>Rs.{(isCustom ? analytics.customProfit ?? 0 : thisMonthProfit).toLocaleString()}</Text>
               </View>
               <View style={styles.perfDivider} />
               <View style={styles.perfStatRow}>
@@ -490,6 +587,115 @@ export default function OwnerAnalyticsScreen() {
 
       <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} onOpenWallet={() => setShowWallet(true)} />
       <OwnerWalletModal visible={showWallet} onClose={() => setShowWallet(false)} />
+
+      {/* Date Range Picker Modal */}
+      <Modal visible={showDateRangeModal} transparent animationType="fade" onRequestClose={() => setShowDateRangeModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.dateModal}>
+            <Text style={styles.dateModalTitle}>Select Date Range</Text>
+
+            {/* From Date */}
+            <TouchableOpacity style={styles.dateField} onPress={() => setShowDatePicker(showDatePicker === 'start' ? null : 'start')}>
+              <Text style={styles.dateFieldLabel}>From</Text>
+              <View style={[styles.dateFieldValue, showDatePicker === 'start' && { borderColor: colors.accent }]}>
+                <Icon name="calendar-outline" size={16} color={colors.accent} />
+                <Text style={styles.dateFieldText}>{formatDateShort(customStartDate)}</Text>
+              </View>
+            </TouchableOpacity>
+            {Platform.OS === 'ios' && showDatePicker === 'start' && (
+              <DateTimePicker
+                value={customStartDate}
+                mode="date"
+                display="spinner"
+                maximumDate={new Date()}
+                onChange={handleDateChange('start')}
+                style={{ height: 120, marginBottom: 8 }}
+              />
+            )}
+
+            {/* To Date */}
+            <TouchableOpacity style={styles.dateField} onPress={() => setShowDatePicker(showDatePicker === 'end' ? null : 'end')}>
+              <Text style={styles.dateFieldLabel}>To</Text>
+              <View style={[styles.dateFieldValue, showDatePicker === 'end' && { borderColor: colors.accent }]}>
+                <Icon name="calendar-outline" size={16} color={colors.accent} />
+                <Text style={styles.dateFieldText}>{formatDateShort(customEndDate)}</Text>
+              </View>
+            </TouchableOpacity>
+            {Platform.OS === 'ios' && showDatePicker === 'end' && (
+              <DateTimePicker
+                value={customEndDate}
+                mode="date"
+                display="spinner"
+                maximumDate={new Date()}
+                onChange={handleDateChange('end')}
+                style={{ height: 120, marginBottom: 8 }}
+              />
+            )}
+
+            {/* Quick presets */}
+            <View style={styles.presetRow}>
+              {[
+                { label: 'Last 7 days', days: 7 },
+                { label: 'Last 30 days', days: 30 },
+                { label: 'Last 90 days', days: 90 },
+              ].map(preset => (
+                <TouchableOpacity
+                  key={preset.days}
+                  style={styles.presetBtn}
+                  onPress={() => {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setDate(start.getDate() - preset.days);
+                    setCustomStartDate(start);
+                    setCustomEndDate(end);
+                  }}
+                >
+                  <Text style={styles.presetBtnText}>{preset.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Actions */}
+            <View style={styles.dateModalActions}>
+              <TouchableOpacity style={styles.dateModalCancel} onPress={() => setShowDateRangeModal(false)}>
+                <Text style={styles.dateModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dateModalApply, customStartDate > customEndDate && { opacity: 0.5 }]}
+                onPress={applyCustomRange}
+                disabled={customStartDate > customEndDate}
+              >
+                <Icon name="checkmark" size={16} color="#fff" />
+                <Text style={styles.dateModalApplyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+
+            {customStartDate > customEndDate && (
+              <Text style={styles.dateError}>Start date must be before end date</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Android Native Date Pickers (rendered outside modal) */}
+      {Platform.OS === 'android' && showDatePicker === 'start' && (
+        <DateTimePicker
+          value={customStartDate}
+          mode="date"
+          display="default"
+          maximumDate={new Date()}
+          onChange={handleDateChange('start')}
+        />
+      )}
+      {Platform.OS === 'android' && showDatePicker === 'end' && (
+        <DateTimePicker
+          value={customEndDate}
+          mode="date"
+          display="default"
+          maximumDate={new Date()}
+          onChange={handleDateChange('end')}
+        />
+      )}
     </ScreenWrapper>
   );
 }
@@ -598,4 +804,64 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12,
   },
   refreshText: { fontSize: 13, color: colors.mutedForeground },
+
+  // Date range bar
+  dateRangeBar: { marginBottom: 12 },
+  dateRangeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+  },
+  dateRangeBtnText: { fontSize: 13, fontWeight: '600', color: colors.accent },
+  dateRangeActive: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14,
+    backgroundColor: `${colors.accent}15`, borderWidth: 1, borderColor: colors.accent,
+  },
+  dateRangeActiveText: { fontSize: 13, fontWeight: '600', color: colors.foreground, flex: 1 },
+  dateRangeEditBtn: { padding: 4 },
+  dateRangeClearBtn: { padding: 4 },
+  customLoadingRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12,
+  },
+  customLoadingText: { fontSize: 12, color: colors.mutedForeground },
+
+  // Date range modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  dateModal: {
+    width: '100%', backgroundColor: colors.card, borderRadius: 20,
+    padding: 20, borderWidth: 1, borderColor: colors.border,
+  },
+  dateModalTitle: {
+    fontSize: 18, fontWeight: '700', color: colors.foreground, marginBottom: 20, textAlign: 'center',
+  },
+  dateField: { marginBottom: 16 },
+  dateFieldLabel: { fontSize: 12, fontWeight: '600', color: colors.mutedForeground, marginBottom: 6 },
+  dateFieldValue: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
+  },
+  dateFieldText: { fontSize: 15, fontWeight: '600', color: colors.foreground },
+  presetRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  presetBtn: {
+    flex: 1, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: colors.muted, alignItems: 'center',
+  },
+  presetBtnText: { fontSize: 11, fontWeight: '600', color: colors.mutedForeground },
+  dateModalActions: { flexDirection: 'row', gap: 12 },
+  dateModalCancel: {
+    flex: 1, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: colors.muted, alignItems: 'center',
+  },
+  dateModalCancelText: { fontSize: 14, fontWeight: '600', color: colors.mutedForeground },
+  dateModalApply: {
+    flex: 1, flexDirection: 'row', gap: 6, paddingVertical: 12, borderRadius: 12,
+    backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center',
+  },
+  dateModalApplyText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  dateError: { fontSize: 12, color: colors.destructive, textAlign: 'center', marginTop: 8 },
 });
