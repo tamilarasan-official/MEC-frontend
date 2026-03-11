@@ -85,7 +85,7 @@ export const sendOtp = createAsyncThunk(
       } else if (status === 409) {
         msg = serverMsg || 'An account with this phone number already exists. Please login instead.';
       } else if (status === 404) {
-        msg = 'Failed to send OTP. Please try again.';
+        msg = serverMsg || 'No account found with this phone number. Please create an account first.';
       } else if (status === 429) {
         msg = 'Too many attempts. Please try again later.';
       } else if (status >= 500) {
