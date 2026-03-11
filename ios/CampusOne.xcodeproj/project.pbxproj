@@ -243,7 +243,7 @@
 			name = "[CP-User] Copy Vendor dSYMs";
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"${DWARF_DSYM_FOLDER_PATH}\" != \"\" ]; then\n  RAZORPAY_DSYM=\"${PODS_ROOT}/razorpay-core-pod/Pod/core/Razorpay.xcframework/ios-arm64/dSYMs/Razorpay.framework.dSYM\"\n  if [ -d \"$RAZORPAY_DSYM\" ]; then\n    cp -R \"$RAZORPAY_DSYM\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n    echo \"Copied Razorpay.framework.dSYM\"\n  fi\n\n  # Copy Hermes dSYMs — search build products and common locations\n  for DSYM in $(find \"${BUILT_PRODUCTS_DIR}\" -name \"hermesvm.framework.dSYM\" -type d 2>/dev/null); do\n    cp -R \"$DSYM\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n    echo \"Copied $DSYM\"\n  done\n  # Also search the archive dSYMs path\n  if [ \"${ARCHIVE_DSYMS_PATH}\" != \"\" ]; then\n    for DSYM in $(find \"${PODS_ROOT}/hermes-engine\" -name \"*.dSYM\" -type d 2>/dev/null); do\n      cp -R \"$DSYM\" \"${ARCHIVE_DSYMS_PATH}/\"\n      echo \"Copied $DSYM to archive\"\n    done\n  fi\nfi\n";
+			shellScript = "if [ \"${DWARF_DSYM_FOLDER_PATH}\" != \"\" ]; then\n  RAZORPAY_DSYM=\"${PODS_ROOT}/razorpay-core-pod/Pod/core/Razorpay.xcframework/ios-arm64/dSYMs/Razorpay.framework.dSYM\"\n  if [ -d \"$RAZORPAY_DSYM\" ]; then\n    cp -R \"$RAZORPAY_DSYM\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n    echo \"Copied Razorpay.framework.dSYM\"\n  fi\n\n  # Download Hermes release dSYM if needed and copy it\n  HERMES_VERSION=\"0.14.0\"\n  HERMES_DSYM_TAR=\"${PODS_ROOT}/hermes-engine-artifacts/hermes-ios-${HERMES_VERSION}-hermes-framework-dSYM-release.tar.gz\"\n  HERMES_DSYM_URL=\"https://repo1.maven.org/maven2/com/facebook/hermes/hermes-ios/${HERMES_VERSION}/hermes-ios-${HERMES_VERSION}-hermes-framework-dSYM-release.tar.gz\"\n  HERMES_DSYM_DIR=\"${PODS_ROOT}/hermes-engine-artifacts/hermes-dsym\"\n  \n  if [ ! -f \"$HERMES_DSYM_TAR\" ]; then\n    echo \"Downloading Hermes dSYM into $HERMES_DSYM_TAR...\"\n    curl -sSLo \"$HERMES_DSYM_TAR\" \"$HERMES_DSYM_URL\" || true\n  fi\n  \n  if [ ! -d \"$HERMES_DSYM_DIR\" ] && [ -f \"$HERMES_DSYM_TAR\" ]; then\n    mkdir -p \"$HERMES_DSYM_DIR\"\n    echo \"Extracting Hermes dSYM...\"\n    tar -xzf \"$HERMES_DSYM_TAR\" -C \"$HERMES_DSYM_DIR\" || true\n  fi\n  \n  if [ -d \"$HERMES_DSYM_DIR\" ]; then\n    for DSYM in $(find \"$HERMES_DSYM_DIR/iphoneos\" -name \"hermesvm.framework.dSYM\" -type d 2>/dev/null); do\n      cp -R \"$DSYM\" \"${DWARF_DSYM_FOLDER_PATH}/\"\n      echo \"Copied hermesvm.framework.dSYM to DWARF_DSYM_FOLDER_PATH from Maven\"\n    done\n\n    # Also search the archive dSYMs path\n    if [ \"${ARCHIVE_DSYMS_PATH}\" != \"\" ]; then\n      for DSYM in $(find \"$HERMES_DSYM_DIR/iphoneos\" -name \"hermesvm.framework.dSYM\" -type d 2>/dev/null); do\n        cp -R \"$DSYM\" \"${ARCHIVE_DSYMS_PATH}/\"\n        echo \"Copied hermesvm.framework.dSYM to archive\"\n      done\n    fi\n  fi\nfi\n";
 		};
 		CEC086FFF9625157BC6EEA55 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -307,7 +307,7 @@
 				CODE_SIGN_ENTITLEMENTS = frontend/frontend.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 56T7M6558P;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = frontend/Info.plist;
@@ -318,7 +318,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 2.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -342,7 +342,7 @@
 				CODE_SIGN_ENTITLEMENTS = frontend/frontend.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 56T7M6558P;
 				INFOPLIST_FILE = frontend/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CampusOne;
@@ -352,7 +352,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 2.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

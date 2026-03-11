@@ -276,6 +276,7 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  UsernameLogin: undefined;
   OTP: { phone: string; sessionId: string };
   Register: undefined;
 };

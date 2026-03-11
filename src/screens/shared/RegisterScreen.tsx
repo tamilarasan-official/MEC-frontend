@@ -7,6 +7,7 @@ import {
 import { mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { sendOtp, registerWithOtp, clearError } from '../../store/slices/authSlice';
@@ -18,6 +19,7 @@ const OTP_LENGTH = 6;
 const RESEND_COOLDOWN = 30;
 
 export default function RegisterScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -151,9 +153,15 @@ export default function RegisterScreen({ navigation }: Props) {
     <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top + 10, 60) }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
+
+          {/* Back button */}
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack} accessibilityLabel="Go back" accessibilityRole="button">
+            <Icon name="arrow-back" size={20} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.backText}>{step === 2 ? 'Back' : 'Back to Login'}</Text>
+          </TouchableOpacity>
 
           {/* Logo + Brand header */}
           <View style={styles.header}>
@@ -166,12 +174,6 @@ export default function RegisterScreen({ navigation }: Props) {
             <Text style={styles.brandName}>CampusOne</Text>
             <Text style={styles.tagline}>Your campus, one tap away</Text>
           </View>
-
-          {/* Back button */}
-          <TouchableOpacity style={styles.backBtn} onPress={handleBack} accessibilityLabel="Go back" accessibilityRole="button">
-            <Icon name="arrow-back" size={16} color="rgba(255,255,255,0.6)" />
-            <Text style={styles.backText}>{step === 2 ? 'Back' : 'Back to Login'}</Text>
-          </TouchableOpacity>
 
           {/* Title */}
           <Text style={styles.title}>{step === 1 ? 'Create Account' : 'Verify OTP'}</Text>
@@ -334,8 +336,12 @@ const styles = StyleSheet.create({
   logoBox: { width: 72, height: 72, marginBottom: 12 },
   brandName: { fontSize: 26, fontWeight: '800', color: '#fff' },
   tagline: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14 },
-  backText: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 12,
+    marginBottom: 8,
+  },
+  backText: { fontSize: 14, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
   title: { fontSize: 20, fontWeight: '700', color: '#fff', marginBottom: 8 },
   subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.55)', marginBottom: 12 },
 

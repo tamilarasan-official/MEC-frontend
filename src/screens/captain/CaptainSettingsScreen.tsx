@@ -52,172 +52,151 @@ export default function CaptainSettingsScreen() {
     saveSettings(notifications, value);
   };
 
-  const [showLogout, setShowLogout] = useState(false);
-
   const handleLogout = () => {
-    setShowLogout(true);
-  };
-
-  const confirmLogout = () => {
-    setShowLogout(false);
-    dispatch(logout());
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => {
+            setTimeout(() => dispatch(logout()), 50);
+          }
+        },
+      ]
+    );
   };
 
   return (
     <ScreenWrapper>
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Profile Section */}
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{user?.name?.charAt(0)?.toUpperCase()}</Text>
-        </View>
-        <Text style={styles.profileName}>{user?.name}</Text>
-        <Text style={styles.profileRole}>Captain • {user?.shopName || 'Shop'}</Text>
-        <Text style={styles.profileEmail}>{user?.email}</Text>
-      </View>
-
-      {/* Settings */}
-      <Text style={styles.sectionTitle}>PREFERENCES</Text>
-
-      <View style={styles.settingsCard}>
-        <View style={styles.settingRow}>
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.blueBg }]}>
-              <Icon name="notifications-outline" size={18} color={colors.blue[500]} />
-            </View>
-            <Text style={styles.settingLabel}>Push Notifications</Text>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        {/* Profile Section */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{user?.name?.charAt(0)?.toUpperCase()}</Text>
           </View>
-          <Switch
-            value={notifications}
-            onValueChange={handleNotificationsChange}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#fff"
-            accessibilityLabel="Push notifications"
-            accessibilityRole="switch"
-          />
+          <Text style={styles.profileName}>{user?.name}</Text>
+          <Text style={styles.profileRole}>Captain • {user?.shopName || 'Shop'}</Text>
+          <Text style={styles.profileEmail}>{user?.email}</Text>
         </View>
 
-        <View style={styles.divider} />
+        {/* Settings */}
+        <Text style={styles.sectionTitle}>PREFERENCES</Text>
 
-        <View style={styles.settingRow}>
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.orangeBg }]}>
-              <Icon name="volume-high-outline" size={18} color={colors.orange[500]} />
+        <View style={styles.settingsCard}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.blueBg }]}>
+                <Icon name="notifications-outline" size={18} color={colors.blue[500]} />
+              </View>
+              <Text style={styles.settingLabel}>Push Notifications</Text>
             </View>
-            <Text style={styles.settingLabel}>Order Sounds</Text>
+            <Switch
+              value={notifications}
+              onValueChange={handleNotificationsChange}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+              accessibilityLabel="Push notifications"
+              accessibilityRole="switch"
+            />
           </View>
-          <Switch
-            value={sound}
-            onValueChange={handleSoundChange}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#fff"
-            accessibilityLabel="Order sounds"
-            accessibilityRole="switch"
-          />
-        </View>
-      </View>
 
-      <Text style={styles.sectionTitle}>ACCOUNT</Text>
+          <View style={styles.divider} />
 
-      <View style={styles.settingsCard}>
-        <TouchableOpacity style={styles.settingRow} onPress={() => Alert.alert('Coming Soon', 'This feature will be available in a future update.')} accessibilityLabel="Edit profile" accessibilityRole="button">
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.successBg }]}>
-              <Icon name="person-outline" size={18} color={colors.primary} />
+          <View style={styles.settingRow}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.orangeBg }]}>
+                <Icon name="volume-high-outline" size={18} color={colors.orange[500]} />
+              </View>
+              <Text style={styles.settingLabel}>Order Sounds</Text>
             </View>
-            <Text style={styles.settingLabel}>Edit Profile</Text>
-          </View>
-          <Icon name="chevron-forward" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('mailto:campusone@madrascollege.ac.in').catch(() => {})} accessibilityLabel="Contact Support" accessibilityRole="button">
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.warningBg }]}>
-              <Icon name="call-outline" size={18} color={colors.amber[500]} />
-            </View>
-            <Text style={styles.settingLabel}>Contact Support</Text>
-          </View>
-          <Icon name="open-outline" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => {})} accessibilityLabel="Help and support" accessibilityRole="button">
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.blueBg }]}>
-              <Icon name="globe-outline" size={18} color={colors.blue[500]} />
-            </View>
-            <Text style={styles.settingLabel}>Support Portal</Text>
-          </View>
-          <Icon name="open-outline" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.sectionTitle}>LEGAL</Text>
-
-      <View style={styles.settingsCard}>
-        <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => {})} accessibilityLabel="Privacy Policy" accessibilityRole="button">
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.accentBg }]}>
-              <Icon name="shield-checkmark-outline" size={18} color={colors.accent} />
-            </View>
-            <Text style={styles.settingLabel}>Privacy Policy</Text>
-          </View>
-          <Icon name="open-outline" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => {})} accessibilityLabel="Terms of Service" accessibilityRole="button">
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: colors.orangeBg }]}>
-              <Icon name="document-text-outline" size={18} color={colors.orange[500]} />
-            </View>
-            <Text style={styles.settingLabel}>Terms & Conditions</Text>
-          </View>
-          <Icon name="open-outline" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7} accessibilityLabel="Logout" accessibilityRole="button">
-        <Icon name="log-out-outline" size={20} color={colors.destructive} />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.version}>CampusOne</Text>
-      <View style={{ height: 100 }} />
-    </ScrollView>
-
-    {/* Custom Logout Confirmation */}
-    <Modal visible={showLogout} animationType="fade" transparent statusBarTranslucent>
-      <View style={styles.logoutOverlay}>
-        <View style={styles.logoutDialog}>
-          <View style={styles.logoutIconWrap}>
-            <Icon name="log-out-outline" size={28} color={colors.destructive} />
-          </View>
-          <Text style={styles.logoutTitle}>Logout</Text>
-          <Text style={styles.logoutMessage}>Are you sure you want to logout?</Text>
-          <View style={styles.logoutActions}>
-            <TouchableOpacity
-              style={styles.logoutCancelBtn}
-              onPress={() => setShowLogout(false)}
-              activeOpacity={0.7}>
-              <Text style={styles.logoutCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.logoutConfirmBtn}
-              onPress={confirmLogout}
-              activeOpacity={0.7}>
-              <Icon name="log-out-outline" size={16} color="#fff" />
-              <Text style={styles.logoutConfirmText}>Logout</Text>
-            </TouchableOpacity>
+            <Switch
+              value={sound}
+              onValueChange={handleSoundChange}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+              accessibilityLabel="Order sounds"
+              accessibilityRole="switch"
+            />
           </View>
         </View>
-      </View>
-    </Modal>
+
+        <Text style={styles.sectionTitle}>ACCOUNT</Text>
+
+        <View style={styles.settingsCard}>
+          <TouchableOpacity style={styles.settingRow} onPress={() => Alert.alert('Coming Soon', 'This feature will be available in a future update.')} accessibilityLabel="Edit profile" accessibilityRole="button">
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.successBg }]}>
+                <Icon name="person-outline" size={18} color={colors.primary} />
+              </View>
+              <Text style={styles.settingLabel}>Edit Profile</Text>
+            </View>
+            <Icon name="chevron-forward" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('mailto:campusone@madrascollege.ac.in').catch(() => { })} accessibilityLabel="Contact Support" accessibilityRole="button">
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.warningBg }]}>
+                <Icon name="call-outline" size={18} color={colors.amber[500]} />
+              </View>
+              <Text style={styles.settingLabel}>Contact Support</Text>
+            </View>
+            <Icon name="open-outline" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => { })} accessibilityLabel="Help and support" accessibilityRole="button">
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.blueBg }]}>
+                <Icon name="globe-outline" size={18} color={colors.blue[500]} />
+              </View>
+              <Text style={styles.settingLabel}>Support Portal</Text>
+            </View>
+            <Icon name="open-outline" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.sectionTitle}>LEGAL</Text>
+
+        <View style={styles.settingsCard}>
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => { })} accessibilityLabel="Privacy Policy" accessibilityRole="button">
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.accentBg }]}>
+                <Icon name="shield-checkmark-outline" size={18} color={colors.accent} />
+              </View>
+              <Text style={styles.settingLabel}>Privacy Policy</Text>
+            </View>
+            <Icon name="open-outline" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => { })} accessibilityLabel="Terms of Service" accessibilityRole="button">
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: colors.orangeBg }]}>
+                <Icon name="document-text-outline" size={18} color={colors.orange[500]} />
+              </View>
+              <Text style={styles.settingLabel}>Terms & Conditions</Text>
+            </View>
+            <Icon name="open-outline" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Logout */}
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7} accessibilityLabel="Logout" accessibilityRole="button">
+          <Icon name="log-out-outline" size={20} color={colors.destructive} />
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.version}>CampusOne</Text>
+        <View style={{ height: 100 }} />
+      </ScrollView>
+
     </ScreenWrapper>
   );
 }

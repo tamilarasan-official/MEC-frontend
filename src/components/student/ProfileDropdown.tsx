@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Image,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Alert,
 } from 'react-native';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 import Icon from '../common/Icon';
@@ -45,16 +45,23 @@ export default function ProfileDropdown({
     } catch { /* ignore */ }
   };
 
-  const [showSignOut, setShowSignOut] = useState(false);
-
   const handleLogout = () => {
-    setShowSignOut(true);
-  };
-
-  const confirmLogout = () => {
-    setShowSignOut(false);
-    onClose();
-    dispatch(logout());
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => {
+            onClose();
+            // Small delay to let dropdown close before wiping auth state
+            setTimeout(() => dispatch(logout()), 50);
+          }
+        },
+      ]
+    );
   };
 
   return (
@@ -182,33 +189,6 @@ export default function ProfileDropdown({
         </TouchableOpacity>
       </TouchableOpacity>
 
-      {/* Custom Sign Out Confirmation */}
-      <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent>
-        <View style={styles.signOutOverlay}>
-          <View style={styles.signOutDialog}>
-            <View style={styles.signOutIconWrap}>
-              <Icon name="log-out-outline" size={28} color={colors.error} />
-            </View>
-            <Text style={styles.signOutTitle}>Sign Out</Text>
-            <Text style={styles.signOutMessage}>Are you sure you want to sign out?</Text>
-            <View style={styles.signOutActions}>
-              <TouchableOpacity
-                style={styles.signOutCancelBtn}
-                onPress={() => setShowSignOut(false)}
-                activeOpacity={0.7}>
-                <Text style={styles.signOutCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.signOutConfirmBtn}
-                onPress={confirmLogout}
-                activeOpacity={0.7}>
-                <Icon name="log-out-outline" size={16} color="#fff" />
-                <Text style={styles.signOutConfirmText}>Sign Out</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </Modal>
   );
 }

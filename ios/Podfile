@@ -38,17 +38,36 @@ target 'CampusOne' do
           echo "Copied Razorpay.framework.dSYM"
         fi
 
-        # Copy Hermes dSYMs — search build products and common locations
-        for DSYM in $(find "${BUILT_PRODUCTS_DIR}" -name "hermesvm.framework.dSYM" -type d 2>/dev/null); do
-          cp -R "$DSYM" "${DWARF_DSYM_FOLDER_PATH}/"
-          echo "Copied $DSYM"
-        done
-        # Also search the archive dSYMs path
-        if [ "${ARCHIVE_DSYMS_PATH}" != "" ]; then
-          for DSYM in $(find "${PODS_ROOT}/hermes-engine" -name "*.dSYM" -type d 2>/dev/null); do
-            cp -R "$DSYM" "${ARCHIVE_DSYMS_PATH}/"
-            echo "Copied $DSYM to archive"
+        # Download Hermes release dSYM if needed and copy it
+        HERMES_VERSION="0.14.0"
+        HERMES_DSYM_TAR="${PODS_ROOT}/hermes-engine-artifacts/hermes-ios-${HERMES_VERSION}-hermes-framework-dSYM-release.tar.gz"
+        HERMES_DSYM_URL="https://repo1.maven.org/maven2/com/facebook/hermes/hermes-ios/${HERMES_VERSION}/hermes-ios-${HERMES_VERSION}-hermes-framework-dSYM-release.tar.gz"
+        HERMES_DSYM_DIR="${PODS_ROOT}/hermes-engine-artifacts/hermes-dsym"
+        
+        if [ ! -f "$HERMES_DSYM_TAR" ]; then
+          echo "Downloading Hermes dSYM into $HERMES_DSYM_TAR..."
+          curl -sSLo "$HERMES_DSYM_TAR" "$HERMES_DSYM_URL" || true
+        fi
+        
+        if [ ! -d "$HERMES_DSYM_DIR" ] && [ -f "$HERMES_DSYM_TAR" ]; then
+          mkdir -p "$HERMES_DSYM_DIR"
+          echo "Extracting Hermes dSYM..."
+          tar -xzf "$HERMES_DSYM_TAR" -C "$HERMES_DSYM_DIR" || true
+        fi
+        
+        if [ -d "$HERMES_DSYM_DIR" ]; then
+          for DSYM in $(find "$HERMES_DSYM_DIR/iphoneos" -name "hermesvm.framework.dSYM" -type d 2>/dev/null); do
+            cp -R "$DSYM" "${DWARF_DSYM_FOLDER_PATH}/"
+            echo "Copied hermesvm.framework.dSYM to DWARF_DSYM_FOLDER_PATH from Maven"
           done
+
+          # Also search the archive dSYMs path
+          if [ "${ARCHIVE_DSYMS_PATH}" != "" ]; then
+            for DSYM in $(find "$HERMES_DSYM_DIR/iphoneos" -name "hermesvm.framework.dSYM" -type d 2>/dev/null); do
+              cp -R "$DSYM" "${ARCHIVE_DSYMS_PATH}/"
+              echo "Copied hermesvm.framework.dSYM to archive"
+            done
+          fi
         fi
       fi
     SCRIPT

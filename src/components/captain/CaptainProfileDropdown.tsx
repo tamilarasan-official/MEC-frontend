@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Linking,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Linking, Alert,
 } from 'react-native';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -45,16 +45,22 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
     onClose();
   };
 
-  const [showSignOut, setShowSignOut] = useState(false);
-
   const handleLogout = () => {
-    setShowSignOut(true);
-  };
-
-  const confirmLogout = () => {
-    setShowSignOut(false);
-    onClose();
-    dispatch(logout());
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => {
+            onClose();
+            setTimeout(() => dispatch(logout()), 50);
+          }
+        },
+      ]
+    );
   };
 
   return (
@@ -161,7 +167,7 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
           {/* Help & Support */}
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => {})}
+            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => { })}
             activeOpacity={0.7}>
             <Icon name="help-circle-outline" size={18} color={colors.accent} />
             <Text style={styles.menuItemText}>Help & Support</Text>
@@ -170,14 +176,14 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
           {/* Privacy & Terms */}
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => {})}
+            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => { })}
             activeOpacity={0.7}>
             <Icon name="shield-checkmark-outline" size={18} color="#3b82f6" />
             <Text style={styles.menuItemText}>Privacy Policy</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => {})}
+            onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => { })}
             activeOpacity={0.7}>
             <Icon name="document-text-outline" size={18} color="#f97316" />
             <Text style={styles.menuItemText}>Terms & Conditions</Text>
@@ -194,33 +200,6 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
         </TouchableOpacity>
       </TouchableOpacity>
 
-      {/* Custom Sign Out Confirmation */}
-      <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent>
-        <View style={styles.signOutOverlay}>
-          <View style={styles.signOutDialog}>
-            <View style={styles.signOutIconWrap}>
-              <Icon name="log-out-outline" size={28} color={colors.destructive} />
-            </View>
-            <Text style={styles.signOutTitle}>Sign Out</Text>
-            <Text style={styles.signOutMessage}>Are you sure you want to sign out?</Text>
-            <View style={styles.signOutActions}>
-              <TouchableOpacity
-                style={styles.signOutCancelBtn}
-                onPress={() => setShowSignOut(false)}
-                activeOpacity={0.7}>
-                <Text style={styles.signOutCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.signOutConfirmBtn}
-                onPress={confirmLogout}
-                activeOpacity={0.7}>
-                <Icon name="log-out-outline" size={16} color="#fff" />
-                <Text style={styles.signOutConfirmText}>Sign Out</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </Modal>
   );
 }

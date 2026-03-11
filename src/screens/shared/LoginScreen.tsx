@@ -6,6 +6,7 @@ import {
 import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { sendOtp, clearError } from '../../store/slices/authSlice';
@@ -14,6 +15,7 @@ import Icon from '../../components/common/Icon';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [phone, setPhone] = useState('');
   const dispatch = useAppDispatch();
   const { isLoading: loading, error } = useAppSelector(s => s.auth);
@@ -50,9 +52,20 @@ export default function LoginScreen({ navigation }: Props) {
     <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top + 10, 60) }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
+
+          {/* Username/Password login toggle */}
+          <TouchableOpacity
+            style={styles.altLoginBtn}
+            onPress={() => navigation.navigate('UsernameLogin')}
+            activeOpacity={0.7}
+            accessibilityLabel="Login with username and password"
+            accessibilityRole="button">
+            <Icon name="key-outline" size={14} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.altLoginText}>Use Password</Text>
+          </TouchableOpacity>
 
           {/* Brand */}
           <View style={styles.brand}>
@@ -151,6 +164,15 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 28, paddingTop: 60, paddingBottom: 24 },
+
+  // Alt login toggle
+  altLoginBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 12,
+    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8,
+  },
+  altLoginText: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
 
   // Brand
   brand: { alignItems: 'center', marginBottom: 48 },
