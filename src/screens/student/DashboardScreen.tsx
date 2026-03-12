@@ -150,6 +150,15 @@ export default function StudentDashboard({ navigation }: Props) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Auto-refresh active orders every 30 seconds so the home screen stays up to date (#70)
+  useEffect(() => {
+    if (!isStudent) return;
+    const interval = setInterval(() => {
+      dispatch(fetchMyActiveOrders());
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [dispatch, isStudent]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
@@ -212,6 +221,7 @@ export default function StudentDashboard({ navigation }: Props) {
       setPaymentSuccess(true);
       setPendingPayments(prev => prev.filter(p => p.id !== selectedPayment.id));
       dispatch(fetchWalletBalance());
+      dispatch(fetchMyActiveOrders()); // Refresh home screen orders to prevent stale UI (#66)
       paymentTimerRef.current = setTimeout(() => {
         setPaymentSuccess(false);
         setSelectedPayment(null);

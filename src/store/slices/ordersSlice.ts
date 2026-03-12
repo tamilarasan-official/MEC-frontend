@@ -104,7 +104,7 @@ export const fetchMyOrders = createAsyncThunk(
   'orders/fetchMyOrders',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my');
+      const res = await api.get('/orders/my', { params: { limit: 100 } });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch orders');
@@ -116,7 +116,7 @@ export const fetchMyActiveOrders = createAsyncThunk(
   'orders/fetchMyActiveOrders',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 50 } });
+      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready,partially_delivered', limit: 50 } });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch active orders');

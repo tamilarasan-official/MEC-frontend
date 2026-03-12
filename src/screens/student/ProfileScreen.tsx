@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
-  Image, ActivityIndicator, Alert,
+  Image, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -9,7 +9,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
-import { setUser } from '../../store/slices/authSlice';
+import { setUser, logout } from '../../store/slices/authSlice';
+import api from '../../services/api';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
@@ -34,12 +35,27 @@ export default function ProfileScreen({ navigation }: Props) {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarTs, setAvatarTs] = useState(Date.now());
   const [avatarError, setAvatarError] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   useEffect(() => {
     dispatch(fetchWalletBalance());
   }, [dispatch]);
+
+  const handleDeleteAccount = async () => {
+    setDeleteLoading(true);
+    try {
+      await api.delete('/auth/account');
+      setShowDeleteDialog(false);
+      dispatch(logout());
+    } catch (err: any) {
+      setDeleteLoading(false);
+      const msg = err?.response?.data?.error?.message || 'Failed to delete account. Please try again.';
+      Alert.alert('Error', msg);
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -141,26 +157,32 @@ export default function ProfileScreen({ navigation }: Props) {
             </TouchableOpacity>
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{user?.name || 'Student'}</Text>
-              <Text style={styles.profileDept}>{user?.department ? `${user.department} Department` : 'Department'}</Text>
+              {user?.department && (
+                <Text style={styles.profileDept}>{user.department} Department</Text>
+              )}
               <View style={styles.roleBadge}>
-                <Text style={styles.roleBadgeText}>MEC Student</Text>
+                <Text style={styles.roleBadgeText}>
+                  {user?.rollNumber ? 'MEC Student' : 'CampusOne User'}
+                </Text>
               </View>
             </View>
           </LinearGradient>
 
-          {/* Info Cards Row */}
-          <View style={styles.infoRow}>
-            <View style={styles.infoCard}>
-              <Text style={styles.infoIcon}>#</Text>
-              <Text style={styles.infoLabel}>Roll Number</Text>
-              <Text style={styles.infoValue}>{user?.rollNumber || 'N/A'}</Text>
+          {/* Info Cards Row — only for verified MEC students */}
+          {user?.rollNumber && (
+            <View style={styles.infoRow}>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoIcon}>#</Text>
+                <Text style={styles.infoLabel}>Roll Number</Text>
+                <Text style={styles.infoValue}>{user.rollNumber}</Text>
+              </View>
+              <View style={styles.infoCard}>
+                <Icon name="business-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.infoLabel}>Department</Text>
+                <Text style={styles.infoValue}>{user?.department || 'N/A'}</Text>
+              </View>
             </View>
-            <View style={styles.infoCard}>
-              <Icon name="business-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.infoLabel}>Department</Text>
-              <Text style={styles.infoValue}>{user?.department || 'N/A'}</Text>
-            </View>
-          </View>
+          )}
 
           {/* Wallet Balance Card → navigates to WalletScreen */}
           <TouchableOpacity
@@ -241,12 +263,81 @@ export default function ProfileScreen({ navigation }: Props) {
             </TouchableOpacity>
           ))}
 
+          {/* Delete Account */}
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => setShowDeleteDialog(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Delete account"
+            accessibilityRole="button">
+            <Icon name="trash-outline" size={20} color="#ef4444" />
+            <Text style={styles.deleteBtnText}>Delete Account</Text>
+          </TouchableOpacity>
+
           {/* Version */}
           <Text style={styles.versionText}>CampusOne</Text>
 
           <View style={styles.bottomSpacer} />
         </ScrollView>
       </View>
+      {/* Delete Account Modal */}
+      <Modal visible={showDeleteDialog} animationType="fade" transparent statusBarTranslucent onRequestClose={() => !deleteLoading && setShowDeleteDialog(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {walletBalance > 0 ? (
+              /* Blocked — has wallet balance */
+              <>
+                <View style={styles.modalIconWrap}>
+                  <Icon name="wallet-outline" size={28} color="#f59e0b" />
+                </View>
+                <Text style={styles.modalTitle}>Cannot Delete Account</Text>
+                <Text style={styles.modalBalanceAmount}>Rs. {walletBalance}</Text>
+                <Text style={styles.modalBalanceLabel}>remaining in your wallet</Text>
+                <View style={styles.modalWarningBox}>
+                  <Text style={styles.modalWarningText}>
+                    Please spend your wallet balance by buying food in the campus canteen before deleting your account.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.modalGotItBtn}
+                  onPress={() => setShowDeleteDialog(false)}
+                  activeOpacity={0.8}>
+                  <Text style={styles.modalGotItText}>Got it</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* Confirm deletion — wallet is empty */
+              <>
+                <View style={[styles.modalIconWrap, styles.modalIconRed]}>
+                  <Icon name="trash-outline" size={28} color="#ef4444" />
+                </View>
+                <Text style={styles.modalTitle}>Delete Account</Text>
+                <Text style={styles.modalMessage}>
+                  This action is <Text style={styles.modalBold}>permanent and cannot be undone</Text>. Your profile, order history, and all associated data will be permanently deleted.
+                </Text>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setShowDeleteDialog(false)}
+                    disabled={deleteLoading}
+                    activeOpacity={0.7}>
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalDeleteBtn}
+                    onPress={handleDeleteAccount}
+                    disabled={deleteLoading}
+                    activeOpacity={0.8}>
+                    {deleteLoading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <><Icon name="trash-outline" size={16} color="#fff" /><Text style={styles.modalDeleteText}>Delete</Text></>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 }
@@ -352,4 +443,58 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   versionText: { fontSize: 12, color: c.textSecondary, textAlign: 'center', marginTop: 20 },
   bottomSpacer: { height: 40 },
+
+  // Delete account button
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderColor: '#ef4444',
+    marginTop: 8,
+  },
+  deleteBtnText: { fontSize: 15, fontWeight: '600', color: '#ef4444' },
+
+  // Delete account modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 320, backgroundColor: c.card,
+    borderRadius: 24, padding: 24, alignItems: 'center',
+    borderWidth: 1, borderColor: c.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 24, elevation: 16,
+  },
+  modalIconWrap: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 14,
+  },
+  modalIconRed: { backgroundColor: 'rgba(239,68,68,0.12)' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: c.text, marginBottom: 8, textAlign: 'center' },
+  modalBalanceAmount: { fontSize: 28, fontWeight: '800', color: '#f59e0b', marginBottom: 2 },
+  modalBalanceLabel: { fontSize: 13, color: c.textSecondary, marginBottom: 16 },
+  modalWarningBox: {
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 14, padding: 14, marginBottom: 20, width: '100%',
+  },
+  modalWarningText: { fontSize: 13, color: '#b45309', lineHeight: 20, textAlign: 'center' },
+  modalGotItBtn: {
+    width: '100%', paddingVertical: 13, borderRadius: 14,
+    backgroundColor: '#f59e0b', alignItems: 'center',
+  },
+  modalGotItText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  modalMessage: { fontSize: 14, color: c.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 24 },
+  modalBold: { fontWeight: '700', color: c.text },
+  modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalCancelBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 14,
+    backgroundColor: c.muted, alignItems: 'center',
+    borderWidth: 1, borderColor: c.border,
+  },
+  modalCancelText: { fontSize: 14, fontWeight: '600', color: c.text },
+  modalDeleteBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 14,
+    backgroundColor: '#ef4444', alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  modalDeleteText: { fontSize: 14, fontWeight: '600', color: '#fff' },
 });

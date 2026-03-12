@@ -88,21 +88,37 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       setSuccess(true);
       dispatch(fetchWalletBalance());
       successTimerRef.current = setTimeout(() => {
-        setSuccess(false);
-        setAmount('');
-        onClose();
+        // Animate sheet out before closing — prevents the abrupt UI glitch (#63)
+        Animated.parallel([
+          Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
+          Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]).start(() => {
+          Keyboard.dismiss();
+          setSuccess(false);
+          setAmount('');
+          onClose();
+        });
       }, 2000);
     } catch (e: any) {
-      if (e?.code === 'PAYMENT_CANCELLED' || e?.description?.toLowerCase()?.includes('cancelled')) {
+      // Razorpay SDK nests the error under e.error on some versions/platforms
+      const rzpError = e?.error ?? e;
+      const code: string = rzpError?.code ?? '';
+      const reason: string = rzpError?.reason ?? '';
+      const source: string = rzpError?.source ?? '';
+
+      const isCancelled =
+        code === 'PAYMENT_CANCELLED' ||
+        (code === 'BAD_REQUEST_ERROR' && reason === 'payment_error' && source === 'customer') ||
+        rzpError?.description?.toLowerCase()?.includes('cancelled');
+
+      if (isCancelled) {
         setError('Payment cancelled.');
-      } else if (e?.code === 'BAD_REQUEST_ERROR' || e?.description?.toLowerCase()?.includes('gateway')) {
-        setError('Payment gateway is currently unavailable. Please try again later.');
-      } else if (e?.code === 'NETWORK_ERROR' || e?.message?.toLowerCase()?.includes('network')) {
+      } else if (code === 'NETWORK_ERROR' || e?.message?.toLowerCase()?.includes('network')) {
         setError('Network error. Please check your connection and try again.');
       } else if (e?.response?.status >= 500) {
         setError('Server error. Please try again later.');
       } else {
-        setError(e?.response?.data?.message || e?.description || 'Payment failed. Please try again.');
+        setError(e?.response?.data?.message || 'Payment failed. Please try again.');
       }
     }
     setLoading(false);

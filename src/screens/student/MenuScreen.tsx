@@ -32,6 +32,7 @@ export default function MenuScreen({ route, navigation }: Props) {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     dispatch(fetchShopMenu({ shopId }));
@@ -89,8 +90,13 @@ export default function MenuScreen({ route, navigation }: Props) {
           activeOpacity={0.8}
           accessibilityLabel={`Add ${item.name}`}
           accessibilityRole="button">
-          {item.image ? (
-            <Image source={{ uri: resolveImageUrl(item.image) ?? undefined }} style={styles.foodImage} accessibilityLabel={`${item.name} image`} />
+          {item.image && !failedImages.has(item.id) ? (
+            <Image
+              source={{ uri: resolveImageUrl(item.image) ?? undefined }}
+              style={styles.foodImage}
+              accessibilityLabel={`${item.name} image`}
+              onError={() => setFailedImages(prev => new Set(prev).add(item.id))}
+            />
           ) : (
             <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
               <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
@@ -190,8 +196,13 @@ export default function MenuScreen({ route, navigation }: Props) {
                     return (
                       <TouchableOpacity key={item.id} style={styles.offerCard} onPress={() => dispatch(addToCart({ item, shopId, shopName }))} activeOpacity={0.8} accessibilityLabel={`Add ${item.name} offer`} accessibilityRole="button">
                         <View style={styles.offerDiscountBadge}><Text style={styles.offerDiscountText}>{discount}% OFF</Text></View>
-                        {item.image ? (
-                          <Image source={{ uri: resolveImageUrl(item.image) ?? undefined }} style={styles.offerImage} accessibilityLabel={`${item.name} offer image`} />
+                        {item.image && !failedImages.has(`offer-${item.id}`) ? (
+                          <Image
+                            source={{ uri: resolveImageUrl(item.image) ?? undefined }}
+                            style={styles.offerImage}
+                            accessibilityLabel={`${item.name} offer image`}
+                            onError={() => setFailedImages(prev => new Set(prev).add(`offer-${item.id}`))}
+                          />
                         ) : (
                           <View style={[styles.offerImage, styles.foodImagePlaceholder]}>
                             <Icon name="restaurant-outline" size={24} color={colors.textMuted} />

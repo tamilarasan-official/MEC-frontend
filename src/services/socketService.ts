@@ -3,6 +3,7 @@ import { DeviceEventEmitter } from 'react-native';
 import { getAccessToken, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
 import { addNotification } from '../store/slices/userSlice';
+import { fetchMyActiveOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 import {
   isDuplicate,
@@ -128,6 +129,15 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
           createdAt: payload.updatedAt,
           read: false,
         }));
+      }
+
+      // Re-fetch orders so the UI reflects the new status immediately (#69/#70)
+      // Student/eat-mode: refresh active orders on home screen
+      // Captain/owner work-mode: refresh shop order list
+      if (userRole === 'student' || userMode === 'eat') {
+        dispatch(fetchMyActiveOrders());
+      } else {
+        dispatch(fetchActiveShopOrders());
       }
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in order:status_changed handler:', e);

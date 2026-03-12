@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, Linking,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Modal, Alert, Linking, ActivityIndicator,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootState, AppDispatch } from '../../store';
 import { logout } from '../../store/slices/authSlice';
+import api from '../../services/api';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -52,21 +53,30 @@ export default function CaptainSettingsScreen() {
     saveSettings(notifications, value);
   };
 
+  const [showLogout, setShowLogout] = useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: () => {
-            setTimeout(() => dispatch(logout()), 50);
-          }
-        },
-      ]
-    );
+    setShowLogout(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogout(false);
+    dispatch(logout());
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleteLoading(true);
+    try {
+      await api.delete('/auth/account');
+      setShowDeleteAccount(false);
+      dispatch(logout());
+    } catch (err: any) {
+      setDeleteLoading(false);
+      const msg = err?.response?.data?.error?.message || 'Failed to delete account. Please try again.';
+      Alert.alert('Error', msg);
+    }
   };
 
   return (
@@ -138,7 +148,7 @@ export default function CaptainSettingsScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('mailto:campusone@madrascollege.ac.in').catch(() => { })} accessibilityLabel="Contact Support" accessibilityRole="button">
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('mailto:campusone@madrascollege.ac.in').catch(() => {})} accessibilityLabel="Contact Support" accessibilityRole="button">
             <View style={styles.settingLeft}>
               <View style={[styles.settingIcon, { backgroundColor: colors.warningBg }]}>
                 <Icon name="call-outline" size={18} color={colors.amber[500]} />
@@ -150,7 +160,7 @@ export default function CaptainSettingsScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => { })} accessibilityLabel="Help and support" accessibilityRole="button">
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in').catch(() => {})} accessibilityLabel="Help and support" accessibilityRole="button">
             <View style={styles.settingLeft}>
               <View style={[styles.settingIcon, { backgroundColor: colors.blueBg }]}>
                 <Icon name="globe-outline" size={18} color={colors.blue[500]} />
@@ -164,7 +174,7 @@ export default function CaptainSettingsScreen() {
         <Text style={styles.sectionTitle}>LEGAL</Text>
 
         <View style={styles.settingsCard}>
-          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => { })} accessibilityLabel="Privacy Policy" accessibilityRole="button">
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/privacy.html').catch(() => {})} accessibilityLabel="Privacy Policy" accessibilityRole="button">
             <View style={styles.settingLeft}>
               <View style={[styles.settingIcon, { backgroundColor: colors.accentBg }]}>
                 <Icon name="shield-checkmark-outline" size={18} color={colors.accent} />
@@ -176,7 +186,7 @@ export default function CaptainSettingsScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => { })} accessibilityLabel="Terms of Service" accessibilityRole="button">
+          <TouchableOpacity style={styles.settingRow} onPress={() => Linking.openURL('https://campusonesupport.madrascollege.ac.in/terms.html').catch(() => {})} accessibilityLabel="Terms of Service" accessibilityRole="button">
             <View style={styles.settingLeft}>
               <View style={[styles.settingIcon, { backgroundColor: colors.orangeBg }]}>
                 <Icon name="document-text-outline" size={18} color={colors.orange[500]} />
@@ -186,6 +196,12 @@ export default function CaptainSettingsScreen() {
             <Icon name="open-outline" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
+
+        {/* Delete Account */}
+        <TouchableOpacity style={styles.deleteBtn} onPress={() => setShowDeleteAccount(true)} activeOpacity={0.7} accessibilityLabel="Delete account" accessibilityRole="button">
+          <Icon name="trash-outline" size={20} color={colors.destructive} />
+          <Text style={styles.deleteBtnText}>Delete Account</Text>
+        </TouchableOpacity>
 
         {/* Logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7} accessibilityLabel="Logout" accessibilityRole="button">
@@ -197,6 +213,65 @@ export default function CaptainSettingsScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
+      {/* Custom Logout Confirmation */}
+      <Modal visible={showLogout} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.logoutOverlay}>
+          <View style={styles.logoutDialog}>
+            <View style={styles.logoutIconWrap}>
+              <Icon name="log-out-outline" size={28} color={colors.destructive} />
+            </View>
+            <Text style={styles.logoutTitle}>Logout</Text>
+            <Text style={styles.logoutMessage}>Are you sure you want to logout?</Text>
+            <View style={styles.logoutActions}>
+              <TouchableOpacity
+                style={styles.logoutCancelBtn}
+                onPress={() => setShowLogout(false)}
+                activeOpacity={0.7}>
+                <Text style={styles.logoutCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutConfirmBtn}
+                onPress={confirmLogout}
+                activeOpacity={0.7}>
+                <Icon name="log-out-outline" size={16} color="#fff" />
+                <Text style={styles.logoutConfirmText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* Delete Account Confirmation */}
+      <Modal visible={showDeleteAccount} animationType="fade" transparent statusBarTranslucent onRequestClose={() => !deleteLoading && setShowDeleteAccount(false)}>
+        <View style={styles.logoutOverlay}>
+          <View style={styles.logoutDialog}>
+            <View style={[styles.logoutIconWrap, { backgroundColor: 'rgba(239,68,68,0.12)' }]}>
+              <Icon name="trash-outline" size={28} color={colors.destructive} />
+            </View>
+            <Text style={styles.logoutTitle}>Delete Account</Text>
+            <Text style={styles.logoutMessage}>
+              This action is permanent and cannot be undone. Your profile and all associated data will be permanently deleted.
+            </Text>
+            <View style={styles.logoutActions}>
+              <TouchableOpacity
+                style={styles.logoutCancelBtn}
+                onPress={() => setShowDeleteAccount(false)}
+                disabled={deleteLoading}
+                activeOpacity={0.7}>
+                <Text style={styles.logoutCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.logoutConfirmBtn, { backgroundColor: colors.destructive }]}
+                onPress={handleDeleteAccount}
+                disabled={deleteLoading}
+                activeOpacity={0.7}>
+                {deleteLoading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <><Icon name="trash-outline" size={16} color="#fff" /><Text style={styles.logoutConfirmText}>Delete</Text></>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenWrapper>
   );
 }
@@ -234,6 +309,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   settingLabel: { fontSize: 14, fontWeight: '500', color: colors.foreground },
   divider: { height: 1, backgroundColor: colors.border, marginHorizontal: 16 },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderColor: colors.destructive,
+    marginTop: 8,
+  },
+  deleteBtnText: { fontSize: 15, fontWeight: '600', color: colors.destructive },
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 14, borderRadius: 16, borderWidth: 1.5, borderColor: colors.destructive,

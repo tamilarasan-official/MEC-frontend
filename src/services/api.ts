@@ -9,6 +9,7 @@ const BASE_URL = `${API_ORIGIN}/api/v1`;
 
 const KEYCHAIN_TOKEN_SERVICE = 'com.campusone.tokens';
 const KEYCHAIN_ACTIVITY_SERVICE = 'com.campusone.activity';
+const KEYCHAIN_DEVICE_ID_SERVICE = 'com.campusone.deviceid';
 
 // API key for mobile app verification — loaded from .env via react-native-config
 // Hardcoded fallback ensures the app works even if Config fails to inject at build time
@@ -104,11 +105,34 @@ export const isSessionExpired = async (): Promise<boolean> => {
 /** Helper: delay for retry logic */
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+// ── Device ID (stable per-install, for per-device rate limiting) ──────────
+// Sent as X-Device-Id header so the backend can key rate limits per device
+// instead of per IP — prevents MEC WiFi users from sharing one rate-limit bucket.
+async function getOrCreateDeviceId(): Promise<string> {
+  try {
+    const stored = await Keychain.getGenericPassword({ service: KEYCHAIN_DEVICE_ID_SERVICE });
+    if (stored) return stored.password;
+    // Generate a 32-char hex device ID and persist it
+    const id = Array.from({ length: 32 }, () =>
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('');
+    await Keychain.setGenericPassword('device', id, { service: KEYCHAIN_DEVICE_ID_SERVICE });
+    return id;
+  } catch {
+    return '';
+  }
+}
+
 // Request interceptor
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const token = await getAccessToken();
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Attach device ID so the backend rate-limiter keys per device, not per IP
+  const deviceId = await getOrCreateDeviceId();
+  if (deviceId && config.headers) {
+    config.headers['X-Device-Id'] = deviceId;
   }
   return config;
 });

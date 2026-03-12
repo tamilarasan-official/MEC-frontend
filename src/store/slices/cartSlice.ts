@@ -14,7 +14,7 @@ interface CartState {
 }
 
 const MAX_QUANTITY_PER_ITEM = 10;
-const MAX_DISTINCT_ITEMS = 20;
+const MAX_DISTINCT_ITEMS = 10;
 
 const initialState: CartState = {
   items: [],
