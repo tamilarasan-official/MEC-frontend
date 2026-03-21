@@ -8,7 +8,13 @@ const walletService = {
   },
   getTransactions: async (): Promise<Transaction[]> => {
     const res = await api.get('/student/wallet/transactions');
-    return res.data.data || res.data;
+    const raw = res.data.data || res.data;
+    // Normalize: backend lean() queries may return _id instead of id
+    return (Array.isArray(raw) ? raw : []).map((tx: any) => ({
+      ...tx,
+      id: tx.id || tx._id || '',
+      userId: tx.userId || (typeof tx.user === 'object' && tx.user ? tx.user._id || tx.user.id : tx.user) || '',
+    }));
   },
   getProfile: async (): Promise<any> => {
     const res = await api.get('/student/profile');
@@ -72,6 +78,11 @@ const walletService = {
   clearAllNotifications: async (): Promise<void> => {
     await api.delete('/student/notifications');
   },
+  // Transaction detail
+  getTransactionDetail: async (transactionId: string): Promise<any> => {
+    const res = await api.get(`/student/wallet/transactions/${transactionId}`);
+    return res.data.data;
+  },
   // Razorpay
   createRazorpayOrder: async (amount: number): Promise<{ orderId: string; amount: number; currency: string; keyId: string }> => {
     const res = await api.post('/razorpay/create-order', { amount });
@@ -90,6 +101,14 @@ const walletService = {
   verifyRazorpayPayment: async (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }): Promise<any> => {
     const res = await api.post('/razorpay/verify-payment', data);
     return res.data.data;
+  },
+  /** Fire-and-forget: log client-side payment failure to backend for debugging */
+  logPaymentFailure: (details: Record<string, unknown>): void => {
+    try {
+      api.post('/razorpay/client-log', details).catch(() => {});
+    } catch {
+      // Never throw — purely observability
+    }
   },
 };
 

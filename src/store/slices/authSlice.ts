@@ -74,7 +74,7 @@ export const sendOtp = createAsyncThunk(
   'auth/sendOtp',
   async ({ phone, purpose }: { phone: string; purpose?: 'login' | 'register' }, { rejectWithValue }) => {
     try {
-      const response = await api.post<{ success: boolean; data: { sessionId: string } }>('/auth/send-otp', { phone, purpose });
+      const response = await api.post<{ success: boolean; data: { sessionId: string; isExistingUser: boolean; userName?: string } }>('/auth/send-otp', { phone, purpose });
       return response.data.data;
     } catch (error: any) {
       const status = error.response?.status;
@@ -84,8 +84,6 @@ export const sendOtp = createAsyncThunk(
         msg = 'Network error. Please check your connection.';
       } else if (status === 409) {
         msg = serverMsg || 'An account with this phone number already exists. Please login instead.';
-      } else if (status === 404) {
-        msg = serverMsg || 'No account found with this phone number. Please create an account first.';
       } else if (status === 429) {
         msg = 'Too many attempts. Please try again later.';
       } else if (status >= 500) {

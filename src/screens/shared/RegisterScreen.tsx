@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
+import { startOtpListener, removeListener } from 'react-native-otp-verify';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthStackParamList } from '../../types';
@@ -47,12 +48,29 @@ export default function RegisterScreen({ navigation }: Props) {
     return () => clearInterval(interval);
   }, [countdown]);
 
+  // Ref to track if OTP was auto-filled from SMS
+  const autoFilledRef = useRef(false);
+
   // Auto-focus first OTP input when entering step 2
   useEffect(() => {
     if (step === 2) {
       const timer = setTimeout(() => inputRefs.current[0]?.focus(), 300);
       return () => clearTimeout(timer);
     }
+  }, [step]);
+
+  // SMS Retriever: auto-read OTP from SMS (Android only, no permission needed)
+  useEffect(() => {
+    if (Platform.OS !== 'android' || step !== 2) return;
+    startOtpListener((message: string) => {
+      const match = message.match(/(\d{6})/);
+      if (match) {
+        const digits = match[1].split('');
+        setOtp(digits);
+        autoFilledRef.current = true;
+      }
+    }).catch(() => {});
+    return () => removeListener();
   }, [step]);
 
   const handleSendOtp = useCallback(async () => {
@@ -125,6 +143,16 @@ export default function RegisterScreen({ navigation }: Props) {
     }
   }, [dispatch, name, phone, otpString, sessionId, isOtpComplete]);
 
+  // Auto-verify when OTP is fully filled via SMS auto-read
+  useEffect(() => {
+    if (!autoFilledRef.current) return;
+    const code = otp.join('');
+    if (code.length === OTP_LENGTH && !submittingRef.current) {
+      autoFilledRef.current = false;
+      handleCreateAccount();
+    }
+  }, [otp, handleCreateAccount]);
+
   const handleResend = useCallback(async () => {
     if (countdown > 0) return;
     mediumHaptic();
@@ -176,7 +204,7 @@ export default function RegisterScreen({ navigation }: Props) {
           </View>
 
           {/* Title */}
-          <Text style={styles.title}>{step === 1 ? 'Create Account' : 'Verify OTP'}</Text>
+          {step === 2 && <Text style={styles.title}>Verify OTP</Text>}
           {step === 2 && (
             <Text style={styles.subtitle}>Enter the OTP sent to {maskedPhone}</Text>
           )}

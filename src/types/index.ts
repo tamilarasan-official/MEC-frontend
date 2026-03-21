@@ -153,6 +153,30 @@ export interface Transaction {
   createdAt: string;
 }
 
+// ---- Transaction Detail (with Razorpay info) ----
+export interface TransactionDetail {
+  transaction: Transaction & {
+    source?: string;
+    status?: string;
+    processedBy?: { name: string };
+    order?: { orderNumber?: string };
+  };
+  razorpay?: {
+    razorpayOrderId: string;
+    razorpayPaymentId?: string;
+    status: string;
+    receipt: string;
+    walletCredited: boolean;
+    createdAt: string;
+  };
+  order?: {
+    orderNumber?: string;
+    status?: string;
+    total?: number;
+    shopName?: string;
+  };
+}
+
 // ---- Leaderboard ----
 export interface LeaderboardEntry {
   userId: string;
@@ -277,7 +301,7 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
   Login: undefined;
   UsernameLogin: undefined;
-  OTP: { phone: string; sessionId: string };
+  OTP: { phone: string; sessionId: string; isExistingUser: boolean; userName?: string };
   Register: undefined;
 };
 
@@ -294,6 +318,7 @@ export type StudentHomeStackParamList = {
   Offers: undefined;
   Cart: undefined;
   OrderHistory: undefined;
+  TransactionDetail: { transactionId: string };
   Leaderboard: undefined;
   Profile: undefined;
   Wallet: undefined;
@@ -301,6 +326,7 @@ export type StudentHomeStackParamList = {
   NotificationSettings: undefined;
   PrivacySecurity: undefined;
   HelpSupport: undefined;
+  ChangePassword: undefined;
 };
 
 export type CaptainTabParamList = {
@@ -309,6 +335,9 @@ export type CaptainTabParamList = {
   History: undefined;
   EatFood: undefined;
   EatOrders: undefined;
+  EatScanner: undefined;
+  Wallet: undefined;
+  TransactionDetail: { transactionId: string };
 };
 
 export type OwnerTabParamList = {
@@ -320,6 +349,8 @@ export type OwnerTabParamList = {
   StationeryDashboard: undefined;
   EatFood: undefined;
   EatOrders: undefined;
+  Wallet: undefined;
+  TransactionDetail: { transactionId: string };
 };
 
 

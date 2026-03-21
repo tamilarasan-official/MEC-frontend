@@ -5,11 +5,11 @@ import {
 } from 'react-native';
 import { mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
-import { getHash } from 'react-native-otp-verify';
+import { startOtpListener, removeListener } from 'react-native-otp-verify';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { loginWithOtp, sendOtp, clearError } from '../../store/slices/authSlice';
+import { loginWithOtp, registerWithOtp, sendOtp, clearError } from '../../store/slices/authSlice';
 import Icon from '../../components/common/Icon';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OTP'>;
@@ -18,22 +18,30 @@ const OTP_LENGTH = 6;
 const RESEND_COOLDOWN = 30;
 
 export default function OTPScreen({ navigation, route }: Props) {
-  const { phone, sessionId: initialSessionId } = route.params;
+  const { phone, sessionId: initialSessionId, isExistingUser, userName } = route.params;
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [countdown, setCountdown] = useState(RESEND_COOLDOWN);
+  const [name, setName] = useState('');
   const inputRefs = useRef<(TextInput | null)[]>([]);
+  const nameRef = useRef<TextInput | null>(null);
   const dispatch = useAppDispatch();
   const { isLoading: loading, error } = useAppSelector(s => s.auth);
   const submittingRef = useRef(false);
 
   const maskedPhone = '******' + phone.slice(-4);
 
-  // Auto-focus first input
+  // Auto-focus: name input for new users, first OTP box for existing
   useEffect(() => {
-    const timer = setTimeout(() => inputRefs.current[0]?.focus(), 300);
+    const timer = setTimeout(() => {
+      if (isExistingUser) {
+        inputRefs.current[0]?.focus();
+      } else {
+        nameRef.current?.focus();
+      }
+    }, 300);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isExistingUser]);
 
   // Countdown timer
   useEffect(() => {
@@ -50,18 +58,26 @@ export default function OTPScreen({ navigation, route }: Props) {
   // Clear error on mount
   useEffect(() => { dispatch(clearError()); }, [dispatch]);
 
-  // Log app hash in dev (useful if SMS Retriever is configured later)
+  // Ref to track if OTP was auto-filled from SMS
+  const autoFilledRef = useRef(false);
+
+  // SMS Retriever: auto-read OTP from SMS (Android only, no permission needed)
   useEffect(() => {
-    if (Platform.OS !== 'android' || !__DEV__) return;
-    getHash()
-      .then((hashes: string[]) => console.log('[OTP] App hash:', hashes))
-      .catch(() => {});
+    if (Platform.OS !== 'android') return;
+    startOtpListener((message: string) => {
+      const match = message.match(/(\d{6})/);
+      if (match) {
+        const digits = match[1].split('');
+        setOtp(digits);
+        autoFilledRef.current = true;
+      }
+    }).catch(() => {});
+    return () => removeListener();
   }, []);
 
   const handleOtpChange = useCallback((text: string, index: number) => {
     const digit = text.replace(/\D/g, '');
     if (digit.length > 1) {
-      // Handle paste
       const digits = digit.split('').slice(0, OTP_LENGTH);
       const newOtp = [...otp];
       digits.forEach((d, i) => {
@@ -91,20 +107,42 @@ export default function OTPScreen({ navigation, route }: Props) {
 
   const otpString = otp.join('');
   const isOtpComplete = otpString.length === OTP_LENGTH;
+  const canSubmit = isExistingUser
+    ? isOtpComplete
+    : isOtpComplete && name.trim().length >= 2;
 
   const handleVerify = useCallback(async () => {
-    if (submittingRef.current || !isOtpComplete) return;
+    if (submittingRef.current || !canSubmit) return;
     submittingRef.current = true;
     try {
       mediumHaptic();
-      const result = await dispatch(loginWithOtp({ phone, otp: otpString, sessionId }));
-      if (loginWithOtp.fulfilled.match(result)) {
-        successHaptic();
+      let result;
+      if (isExistingUser) {
+        result = await dispatch(loginWithOtp({ phone, otp: otpString, sessionId }));
+        if (loginWithOtp.fulfilled.match(result)) successHaptic();
+      } else {
+        result = await dispatch(registerWithOtp({ name: name.trim(), phone, otp: otpString, sessionId }));
+        if (registerWithOtp.fulfilled.match(result)) successHaptic();
       }
     } finally {
       submittingRef.current = false;
     }
-  }, [dispatch, phone, otpString, sessionId, isOtpComplete]);
+  }, [dispatch, phone, otpString, sessionId, canSubmit, isExistingUser, name]);
+
+  // Auto-verify when OTP is fully filled via SMS auto-read
+  useEffect(() => {
+    if (!autoFilledRef.current) return;
+    const code = otp.join('');
+    if (code.length === OTP_LENGTH && !submittingRef.current) {
+      // For new users, only auto-verify if name is already entered
+      if (!isExistingUser && name.trim().length < 2) {
+        autoFilledRef.current = false;
+        return;
+      }
+      autoFilledRef.current = false;
+      handleVerify();
+    }
+  }, [otp, handleVerify, isExistingUser, name]);
 
   const handleResend = useCallback(async () => {
     if (countdown > 0) return;
@@ -127,34 +165,61 @@ export default function OTPScreen({ navigation, route }: Props) {
     <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, isExistingUser && styles.scrollContentCentered]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
 
-          {/* Brand */}
-          <View style={styles.brand}>
-            <Image
-              source={require('../../assets/icons/appicon.png')}
-              style={styles.logo}
-              resizeMode="contain"
-              accessibilityLabel="CampusOne logo"
-            />
-            <Text style={styles.brandName}>CampusOne</Text>
-            <Text style={styles.brandTagline}>Your campus, one tap away</Text>
-          </View>
+          {isExistingUser ? (
+            /* ── Existing user: clean left-aligned welcome, vertically centered ── */
+            <>
+              <View style={styles.spacer} />
+              <View style={styles.welcomeBlock}>
+                <Text style={styles.welcomeLabel}>Welcome back,</Text>
+                <Text style={styles.welcomeName}>{userName || 'User'}!</Text>
+                <Text style={styles.welcomeSub}>OTP sent to {maskedPhone}</Text>
+              </View>
+            </>
+          ) : (
+            /* ── New user: brand + centered layout ── */
+            <>
+              <View style={styles.brand}>
+                <Image
+                  source={require('../../assets/icons/appicon.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                  accessibilityLabel="CampusOne logo"
+                />
+                <Text style={styles.brandName}>CampusOne</Text>
+                <Text style={styles.brandTagline}>Your campus, one tap away</Text>
+              </View>
 
-          {/* Shield Icon */}
-          <View style={styles.shieldContainer}>
-            <View style={styles.shieldCircle}>
-              <Icon name="shield-checkmark" size={32} color="#a78bfa" />
+              <View style={styles.shieldContainer}>
+                <View style={styles.shieldCircle}>
+                  <Icon name="person-add" size={32} color="#a78bfa" />
+                </View>
+              </View>
+
+              <Text style={styles.subheading}>OTP sent to {maskedPhone}</Text>
+            </>
+          )}
+
+          {/* Name input for new users */}
+          {!isExistingUser && (
+            <View style={styles.nameGroup}>
+              <Text style={styles.nameLabel}>Your Name</Text>
+              <TextInput
+                ref={nameRef}
+                style={styles.nameInput}
+                value={name}
+                onChangeText={setName}
+                placeholder="Enter your full name"
+                placeholderTextColor="rgba(255,255,255,0.35)"
+                autoCapitalize="words"
+                returnKeyType="next"
+                onSubmitEditing={() => inputRefs.current[0]?.focus()}
+              />
             </View>
-          </View>
-
-          {/* Heading */}
-          <Text style={styles.heading}>Verify OTP</Text>
-          <Text style={styles.subheading}>
-            Enter the OTP sent to {maskedPhone}
-          </Text>
+          )}
 
           {/* OTP Input Boxes */}
           <View style={styles.otpRow}>
@@ -187,11 +252,11 @@ export default function OTPScreen({ navigation, route }: Props) {
 
           {/* Verify Button */}
           <TouchableOpacity
-            style={[styles.verifyBtn, (!isOtpComplete || loading) && styles.btnDisabled]}
+            style={[styles.verifyBtn, (!canSubmit || loading) && styles.btnDisabled]}
             onPress={handleVerify}
-            disabled={!isOtpComplete || loading}
+            disabled={!canSubmit || loading}
             activeOpacity={0.85}
-            accessibilityLabel="Verify and login"
+            accessibilityLabel={isExistingUser ? 'Verify and login' : 'Verify and create account'}
             accessibilityRole="button">
             <View style={styles.verifyInner}>
               <LinearGradient
@@ -203,11 +268,15 @@ export default function OTPScreen({ navigation, route }: Props) {
               {loading ? (
                 <>
                   <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.verifyText}>Verifying...</Text>
+                  <Text style={styles.verifyText}>
+                    {isExistingUser ? 'Verifying...' : 'Creating Account...'}
+                  </Text>
                 </>
               ) : (
                 <>
-                  <Text style={styles.verifyText}>Verify & Login</Text>
+                  <Text style={styles.verifyText}>
+                    {isExistingUser ? 'Verify & Login' : 'Verify & Create Account'}
+                  </Text>
                   <Icon name="arrow-forward" size={16} color="#fff" />
                 </>
               )}
@@ -228,17 +297,7 @@ export default function OTPScreen({ navigation, route }: Props) {
             )}
           </View>
 
-          {/* Create Account */}
-          <View style={styles.createSection}>
-            <TouchableOpacity
-              style={styles.createBtn}
-              onPress={() => navigation.navigate('Register')}
-              activeOpacity={0.8}
-              accessibilityLabel="Create an account"
-              accessibilityRole="button">
-              <Text style={styles.createBtnText}>Create an Account</Text>
-            </TouchableOpacity>
-          </View>
+          {isExistingUser && <View style={styles.spacer} />}
         </ScrollView>
 
         {/* Footer */}
@@ -254,6 +313,8 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 28, paddingTop: 60, paddingBottom: 24 },
+  scrollContentCentered: { paddingTop: 0 },
+  spacer: { flex: 1 },
 
   // Brand
   brand: { alignItems: 'center', marginBottom: 32 },
@@ -269,9 +330,24 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Headings
-  heading: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 8 },
-  subheading: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginBottom: 28 },
+  // Welcome block (existing user — left aligned, no brand)
+  welcomeBlock: { marginBottom: 36 },
+  welcomeLabel: { fontSize: 20, fontWeight: '500', color: 'rgba(255,255,255,0.55)' },
+  welcomeName: { fontSize: 38, fontWeight: '900', color: '#fff', marginTop: 4, marginBottom: 12 },
+  welcomeSub: { fontSize: 15, color: 'rgba(255,255,255,0.4)' },
+
+  // Headings (new user — centered)
+  subheading: { fontSize: 14, color: 'rgba(255,255,255,0.55)', textAlign: 'center', marginBottom: 24 },
+
+  // Name input (new users)
+  nameGroup: { marginBottom: 20 },
+  nameLabel: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginBottom: 8 },
+  nameInput: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 16, color: '#fff', fontWeight: '500',
+  },
 
   // OTP boxes
   otpRow: {
@@ -312,15 +388,6 @@ const styles = StyleSheet.create({
   changeNumberText: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
   resendCountdown: { fontSize: 14, color: 'rgba(255,255,255,0.4)' },
   resendActiveText: { fontSize: 14, color: '#a78bfa', fontWeight: '600' },
-
-  // Create Account
-  createSection: { marginTop: 40 },
-  createBtn: {
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 14,
-    paddingVertical: 18, alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  createBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 
   // Footer
   footer: { alignItems: 'center', paddingBottom: 20, paddingTop: 12 },

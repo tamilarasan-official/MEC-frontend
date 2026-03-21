@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, ScrollView,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -11,6 +11,32 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
+
+type Period = 'today' | 'week' | 'month' | 'all'
+
+const PERIODS: { label: string; value: Period }[] = [
+  { label: 'Today', value: 'today' },
+  { label: 'This Week', value: 'week' },
+  { label: 'This Month', value: 'month' },
+  { label: 'All Time', value: 'all' },
+]
+
+function getPeriodDates(period: Period): { startDate?: string; endDate?: string } {
+  const now = new Date()
+  if (period === 'all') return {}
+  if (period === 'today') {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    return { startDate: start.toISOString() }
+  }
+  if (period === 'week') {
+    const start = new Date(now)
+    start.setDate(now.getDate() - 6)
+    start.setHours(0, 0, 0, 0)
+    return { startDate: start.toISOString() }
+  }
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  return { startDate: start.toISOString() }
+}
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Wallet'>;
 
@@ -28,27 +54,33 @@ export default function WalletScreen({ navigation }: Props) {
   const { balance, transactions } = useAppSelector(s => s.user);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState<Period>('all');
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        await Promise.all([dispatch(fetchWalletBalance()), dispatch(fetchTransactions())]);
-        setError(null);
-      } catch {
-        setError('Something went wrong. Pull down to retry.');
-      }
-    };
-    load();
-  }, [dispatch]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
+  const loadTransactions = useCallback(async (p: Period) => {
     try {
-      await Promise.all([dispatch(fetchWalletBalance()), dispatch(fetchTransactions())]);
+      await Promise.all([
+        dispatch(fetchWalletBalance()),
+        dispatch(fetchTransactions(getPeriodDates(p))),
+      ]);
       setError(null);
     } catch {
       setError('Something went wrong. Pull down to retry.');
     }
+  }, [dispatch]);
+
+  useEffect(() => {
+    loadTransactions(period);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch]);
+
+  const handlePeriodChange = (p: Period) => {
+    setPeriod(p);
+    loadTransactions(p);
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadTransactions(period);
     setRefreshing(false);
   };
 
@@ -84,6 +116,21 @@ export default function WalletScreen({ navigation }: Props) {
                 <Text style={styles.balanceHint}>Visit the accountant office to add money</Text>
               </LinearGradient>
 
+              {/* Period Filter */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.periodRow} contentContainerStyle={styles.periodContent}>
+                {PERIODS.map(p => (
+                  <TouchableOpacity
+                    key={p.value}
+                    style={[styles.periodPill, period === p.value && styles.periodPillActive]}
+                    onPress={() => handlePeriodChange(p.value)}
+                    activeOpacity={0.7}
+                    accessibilityLabel={p.label}
+                    accessibilityRole="button">
+                    <Text style={[styles.periodPillText, period === p.value && styles.periodPillTextActive]}>{p.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
               {/* Transaction History header */}
               {transactions.length > 0 && (
                 <Text style={styles.sectionTitle}>Transaction History</Text>
@@ -106,7 +153,12 @@ export default function WalletScreen({ navigation }: Props) {
           renderItem={({ item: tx }) => {
             const credit = isCredit(tx.type);
             return (
-              <View style={styles.txRow}>
+              <TouchableOpacity
+                style={styles.txRow}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('TransactionDetail', { transactionId: tx.id })}
+                accessibilityLabel={`${tx.description}, Rs ${tx.amount}`}
+                accessibilityRole="button">
                 <View style={[styles.txIconWrap, credit ? styles.txIconCredit : styles.txIconDebit]}>
                   <Icon
                     name={credit ? 'arrow-down' : 'arrow-up'}
@@ -118,10 +170,13 @@ export default function WalletScreen({ navigation }: Props) {
                   <Text style={styles.txDesc} numberOfLines={1}>{tx.description}</Text>
                   <Text style={styles.txDate}>{formatDate(tx.createdAt)}</Text>
                 </View>
-                <Text style={[styles.txAmount, credit ? styles.txCredit : styles.txDebit]}>
-                  {credit ? '+' : '-'}Rs.{tx.amount}
-                </Text>
-              </View>
+                <View style={styles.txRight}>
+                  <Text style={[styles.txAmount, credit ? styles.txCredit : styles.txDebit]}>
+                    {credit ? '+' : '-'}Rs.{tx.amount}
+                  </Text>
+                  <Icon name="chevron-forward" size={14} color={colors.textSecondary} />
+                </View>
+              </TouchableOpacity>
             );
           }}
         />
@@ -154,6 +209,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 15, fontWeight: '700', color: c.text, marginBottom: 12,
   },
 
+  // Period filter
+  periodRow: { marginBottom: 20 },
+  periodContent: { gap: 8, paddingRight: 4 },
+  periodPill: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: c.card, borderWidth: 1, borderColor: c.border,
+  },
+  periodPillActive: { backgroundColor: c.primary, borderColor: c.primary },
+  periodPillText: { fontSize: 12, fontWeight: '600', color: c.textSecondary },
+  periodPillTextActive: { color: '#fff' },
+
   // Transaction row
   txRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -169,6 +235,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   txInfo: { flex: 1 },
   txDesc: { fontSize: 13, fontWeight: '500', color: c.text },
   txDate: { fontSize: 11, color: c.textSecondary, marginTop: 2 },
+  txRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   txAmount: { fontSize: 14, fontWeight: '700' },
   txDebit: { color: '#ef4444' },
   txCredit: { color: '#10b981' },

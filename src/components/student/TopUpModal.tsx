@@ -1,15 +1,17 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform, Animated, ScrollView, Keyboard,
+  ActivityIndicator, KeyboardAvoidingView, Animated, ScrollView, Keyboard,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
+import PaymentResultModal from '../common/PaymentResultModal';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
 import walletService from '../../services/walletService';
+import { resolveAvatarUrl } from '../../utils/imageUrl';
 
 interface TopUpModalProps {
   visible: boolean;
@@ -26,16 +28,21 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => { return () => { if (successTimerRef.current !== null) clearTimeout(successTimerRef.current); }; }, []);
+  const [verificationFailed, setVerificationFailed] = useState(false);
+  const [paymentResult, setPaymentResult] = useState<{ type: 'success' | 'failed'; amount: number } | null>(null);
+  const pendingPaymentRef = useRef<{ razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string } | null>(null);
+  const isClosingRef = useRef(false);
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
     if (visible) {
+      // Reset closing guard and clear any leftover payment result
+      isClosingRef.current = false;
+      setPaymentResult(null);
+      // Dismiss keyboard BEFORE starting open animation to prevent KAV layout fights
+      Keyboard.dismiss();
       slideAnim.setValue(600);
       backdropAnim.setValue(0);
       Animated.parallel([
@@ -45,12 +52,17 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
     }
   }, [visible, slideAnim, backdropAnim]);
 
-  // Reset state when modal closes (avoids state updates during animation)
+  // Reset state when modal closes — use a small delay so it doesn't interfere with the exit animation
   useEffect(() => {
     if (!visible) {
-      setAmount('');
-      setError('');
-      setSuccess(false);
+      const resetTimer = setTimeout(() => {
+        setAmount('');
+        setError('');
+        setVerificationFailed(false);
+        pendingPaymentRef.current = null;
+        isClosingRef.current = false;
+      }, 300);
+      return () => clearTimeout(resetTimer);
     }
   }, [visible]);
 
@@ -67,10 +79,10 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       const orderData = await walletService.createRazorpayOrder(numericAmount);
       const options = {
         key: orderData.keyId,
-        amount: numericAmount * 100,
+        amount: orderData.amount * 100, // Use server amount, not local — prevents mismatch
         currency: orderData.currency || 'INR',
         name: 'CampusOne',
-        description: `Wallet Top-up Rs. ${numericAmount}`,
+        description: `Wallet Top-up Rs. ${orderData.amount}`,
         order_id: orderData.orderId,
         prefill: {
           name: user?.name || '',
@@ -78,27 +90,31 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           contact: user?.phone || '',
         },
         theme: { color: '#10b981' },
+        retry: { enabled: true, max_count: 3 },
+        timeout: 300, // 5 minutes max for payment completion
       };
       const paymentResponse = await RazorpayCheckout.open(options);
-      await walletService.verifyRazorpayPayment({
+      // Store payment response for potential retry
+      pendingPaymentRef.current = {
         razorpay_order_id: paymentResponse.razorpay_order_id,
         razorpay_payment_id: paymentResponse.razorpay_payment_id,
         razorpay_signature: paymentResponse.razorpay_signature,
-      });
-      setSuccess(true);
+      };
+      await walletService.verifyRazorpayPayment(pendingPaymentRef.current);
+      pendingPaymentRef.current = null;
+      setVerificationFailed(false);
+      const paidAmount = numericAmount;
       dispatch(fetchWalletBalance());
-      successTimerRef.current = setTimeout(() => {
-        // Animate sheet out before closing — prevents the abrupt UI glitch (#63)
-        Animated.parallel([
-          Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
-          Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-        ]).start(() => {
-          Keyboard.dismiss();
-          setSuccess(false);
-          setAmount('');
-          onClose();
-        });
-      }, 2000);
+
+      // Close TopUpModal, then show success result screen
+      isClosingRef.current = true;
+      Keyboard.dismiss();
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
+        Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      ]).start(() => { setAmount(''); onClose(); });
+
+      setPaymentResult({ type: 'success', amount: paidAmount });
     } catch (e: any) {
       // Razorpay SDK nests the error under e.error on some versions/platforms
       const rzpError = e?.error ?? e;
@@ -106,46 +122,100 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       const reason: string = rzpError?.reason ?? '';
       const source: string = rzpError?.source ?? '';
 
+      // Fire-and-forget: log failure details to backend for debugging
+      walletService.logPaymentFailure({
+        errorCode: code,
+        errorReason: reason,
+        errorSource: source,
+        errorDescription: rzpError?.description ?? e?.message ?? '',
+        amount: numericAmount,
+        orderId: rzpError?.metadata?.order_id ?? '',
+        method: rzpError?.metadata?.payment_method ?? '',
+        phone: user?.phone ?? '',
+      });
+
       const isCancelled =
         code === 'PAYMENT_CANCELLED' ||
         (code === 'BAD_REQUEST_ERROR' && reason === 'payment_error' && source === 'customer') ||
         rzpError?.description?.toLowerCase()?.includes('cancelled');
 
+      const isRateLimited =
+        e?.response?.status === 429 ||
+        e?.response?.data?.error?.code === 'RATE_LIMIT_EXCEEDED';
+
       if (isCancelled) {
+        pendingPaymentRef.current = null;
+        setVerificationFailed(false);
         setError('Payment cancelled.');
-      } else if (code === 'NETWORK_ERROR' || e?.message?.toLowerCase()?.includes('network')) {
-        setError('Network error. Please check your connection and try again.');
-      } else if (e?.response?.status >= 500) {
-        setError('Server error. Please try again later.');
+      } else if (isRateLimited) {
+        pendingPaymentRef.current = null;
+        setVerificationFailed(false);
+        setError('Too many payment attempts. Please wait a minute before trying again.');
+      } else if (pendingPaymentRef.current) {
+        // Payment succeeded at Razorpay but verification failed
+        setVerificationFailed(true);
+        setError('Payment was successful but verification failed. Tap "Retry Verification" to try again.');
       } else {
-        setError(e?.response?.data?.message || 'Payment failed. Please try again.');
+        // Hard failure — show full-screen failure result
+        setPaymentResult({ type: 'failed', amount: numericAmount });
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const handleRetryVerification = async () => {
+    if (!pendingPaymentRef.current) return;
+    setLoading(true);
+    setError('');
+    try {
+      await walletService.verifyRazorpayPayment(pendingPaymentRef.current);
+      pendingPaymentRef.current = null;
+      setVerificationFailed(false);
+      const paidAmount = numericAmount;
+      dispatch(fetchWalletBalance());
+
+      isClosingRef.current = true;
+      Keyboard.dismiss();
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
+        Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+      ]).start(() => { setAmount(''); onClose(); });
+
+      setPaymentResult({ type: 'success', amount: paidAmount });
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Verification still failing. Please contact support if this persists.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
-    // Animate sheet down + fade backdrop simultaneously
-    // Keyboard dismiss happens AFTER animation to prevent KAV layout reflow glitch
+    // Guard: prevent multiple concurrent close animations (back button / swipe spam)
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+
+    Keyboard.dismiss();
+
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
       Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
     ]).start(() => {
-      Keyboard.dismiss();
       onClose();
     });
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
       {/* Animated backdrop */}
       <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={loading ? undefined : handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
       </Animated.View>
 
       <KeyboardAvoidingView
         style={styles.kvWrapper}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         keyboardVerticalOffset={0}>
         <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
@@ -209,13 +279,22 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           {/* Error */}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          {/* Success */}
-          {success ? (
-            <View style={styles.successBanner}>
-              <Icon name="checkmark-circle" size={18} color={colors.primary} />
-              <Text style={styles.successText}>Payment initiated!</Text>
-            </View>
-          ) : null}
+          {/* Retry Verification Button */}
+          {verificationFailed && pendingPaymentRef.current && (
+            <TouchableOpacity
+              style={[styles.submitBtn, { backgroundColor: '#dc2626', marginBottom: 8 }, loading && styles.submitBtnDisabled]}
+              onPress={handleRetryVerification}
+              disabled={loading}
+              activeOpacity={0.85}
+              accessibilityLabel="Retry payment verification"
+              accessibilityRole="button">
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.submitText}>Retry Verification</Text>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Submit */}
           <TouchableOpacity
@@ -239,6 +318,22 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
+
+    {/* Payment Result (Success / Failed) */}
+    <PaymentResultModal
+      visible={!!paymentResult}
+      type={paymentResult?.type || 'success'}
+      amount={paymentResult?.amount || 0}
+      userName={user?.name}
+      userPhone={user?.phone}
+      userAvatar={resolveAvatarUrl(user?.avatarUrl)}
+      onContinue={() => setPaymentResult(null)}
+      onRetry={() => {
+        setPaymentResult(null);
+        setError('');
+      }}
+    />
+    </>
   );
 }
 
@@ -302,11 +397,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   quickBtnTextActive: { color: colors.primary },
 
   errorText: { fontSize: 12, color: colors.error, marginBottom: 10, textAlign: 'center' },
-  successBanner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 10, backgroundColor: 'rgba(16,185,129,0.1)', marginBottom: 12,
-  },
-  successText: { fontSize: 13, fontWeight: '600', color: colors.primary },
 
   submitBtn: {
     paddingVertical: 16, borderRadius: 16, backgroundColor: '#1e3a5f', alignItems: 'center',

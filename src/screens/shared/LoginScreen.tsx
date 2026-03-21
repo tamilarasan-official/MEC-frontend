@@ -40,8 +40,8 @@ export default function LoginScreen({ navigation }: Props) {
       mediumHaptic();
       const result = await dispatch(sendOtp({ phone }));
       if (sendOtp.fulfilled.match(result)) {
-        const { sessionId } = result.payload;
-        navigation.navigate('OTP', { phone, sessionId });
+        const { sessionId, isExistingUser, userName } = result.payload;
+        navigation.navigate('OTP', { phone, sessionId, isExistingUser, userName });
       }
     } finally {
       submittingRef.current = false;
@@ -55,17 +55,6 @@ export default function LoginScreen({ navigation }: Props) {
           contentContainerStyle={[styles.scrollContent, { paddingTop: Math.max(insets.top + 10, 60) }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-
-          {/* Username/Password login toggle */}
-          <TouchableOpacity
-            style={styles.altLoginBtn}
-            onPress={() => navigation.navigate('UsernameLogin')}
-            activeOpacity={0.7}
-            accessibilityLabel="Login with username and password"
-            accessibilityRole="button">
-            <Icon name="key-outline" size={14} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.altLoginText}>Use Password</Text>
-          </TouchableOpacity>
 
           {/* Brand */}
           <View style={styles.brand}>
@@ -138,15 +127,29 @@ export default function LoginScreen({ navigation }: Props) {
             </TouchableOpacity>
           </View>
 
-          {/* Create Account */}
-          <View style={styles.createSection}>
+          {/* Or divider */}
+          <View style={styles.orRow}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>or</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          {/* Text links */}
+          <View style={styles.linksSection}>
             <TouchableOpacity
-              style={styles.createBtn}
+              onPress={() => navigation.navigate('UsernameLogin')}
+              activeOpacity={0.7}
+              accessibilityLabel="Login with username and password"
+              accessibilityRole="button">
+              <Text style={styles.linkText}>Use Password to Login</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               onPress={() => navigation.navigate('Register')}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
               accessibilityLabel="Create an account"
               accessibilityRole="button">
-              <Text style={styles.createBtnText}>Create an Account</Text>
+              <Text style={styles.linkText}>Create an Account</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -164,15 +167,6 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 28, paddingTop: 60, paddingBottom: 24 },
-
-  // Alt login toggle
-  altLoginBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 12,
-    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8,
-  },
-  altLoginText: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '600' },
 
   // Brand
   brand: { alignItems: 'center', marginBottom: 48 },
@@ -215,14 +209,16 @@ const styles = StyleSheet.create({
   },
   signInText: { fontSize: 16, fontWeight: '700', color: '#fff' },
 
-  // Create Account
-  createSection: { marginTop: 40 },
-  createBtn: {
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 14,
-    paddingVertical: 18, alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  // Or divider
+  orRow: {
+    flexDirection: 'row', alignItems: 'center', marginTop: 24, marginBottom: 4,
   },
-  createBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  orLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.15)' },
+  orText: { fontSize: 13, color: 'rgba(255,255,255,0.4)', paddingHorizontal: 16, fontWeight: '500' },
+
+  // Text links
+  linksSection: { alignItems: 'center', gap: 18, marginTop: 8 },
+  linkText: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
 
   // Footer
   footer: { alignItems: 'center', paddingBottom: 20, paddingTop: 12 },

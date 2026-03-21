@@ -14,6 +14,8 @@ import NotificationSettingsScreen from '../../screens/student/NotificationSettin
 import PrivacySecurityScreen from '../../screens/student/PrivacySecurityScreen';
 import HelpSupportScreen from '../../screens/student/HelpSupportScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
+import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
+import ChangePasswordScreen from '../../screens/shared/ChangePasswordScreen';
 
 const Stack = createNativeStackNavigator<StudentHomeStackParamList>();
 
@@ -31,6 +33,7 @@ export default function StudentHomeStack() {
       <Stack.Screen name="Offers" component={OffersScreen} />
       <Stack.Screen name="Cart" component={CartScreen} />
       <Stack.Screen name="OrderHistory" component={OrderHistoryScreen} />
+      <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
@@ -38,6 +41,7 @@ export default function StudentHomeStack() {
       <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
       <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
     </Stack.Navigator>
   );
 }

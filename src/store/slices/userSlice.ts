@@ -47,12 +47,21 @@ export const fetchWalletBalance = createAsyncThunk('user/fetchWallet', async (_,
   } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
-export const fetchTransactions = createAsyncThunk('user/fetchTransactions', async (_, { rejectWithValue }) => {
-  try {
-    const res = await api.get('/student/wallet/transactions');
-    return (res.data.data || res.data) as Transaction[];
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
-});
+export const fetchTransactions = createAsyncThunk(
+  'user/fetchTransactions',
+  async (params: { startDate?: string; endDate?: string } | undefined, { rejectWithValue }) => {
+    try {
+      const res = await api.get('/student/wallet/transactions', { params });
+      const raw = res.data.data?.transactions ?? res.data.data ?? res.data;
+      // Normalize: backend lean() queries may return _id instead of id
+      return (Array.isArray(raw) ? raw : []).map((tx: any) => ({
+        ...tx,
+        id: tx.id || tx._id || '',
+        userId: tx.userId || (typeof tx.user === 'object' && tx.user ? tx.user._id || tx.user.id : tx.user) || '',
+      })) as Transaction[];
+    } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  }
+);
 
 export const fetchDashboardStats = createAsyncThunk('user/fetchDashboardStats', async (_, { rejectWithValue }) => {
   try {
