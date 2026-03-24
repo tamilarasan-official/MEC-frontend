@@ -2,8 +2,9 @@ import { io, Socket } from 'socket.io-client';
 import { DeviceEventEmitter } from 'react-native';
 import { getAccessToken, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
-import { addNotification } from '../store/slices/userSlice';
+import { addNotification, fetchWalletBalance, fetchQRPayments } from '../store/slices/userSlice';
 import { fetchMyActiveOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
+import { updateShopStatus } from '../store/slices/menuSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 import {
   isDuplicate,
@@ -28,7 +29,17 @@ export interface OrderUpdatePayload {
 }
 
 export const connectSocket = async (userId: string, role: string, shopId?: string) => {
+  // If already connected to the server, reuse the existing socket
   if (socket?.connected) return socket;
+
+  // Clean up any existing socket (disconnected, reconnecting, or stale)
+  // to prevent zombie connections from piling up on the server
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+  }
+
   const token = await getAccessToken();
   if (!token) return null;
 
@@ -36,8 +47,8 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
     auth: { token },
     transports: ['websocket'],
     reconnection: true,
-    reconnectionAttempts: 15,
-    reconnectionDelay: 2000,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 3000,
     reconnectionDelayMax: 30000,
     timeout: 15000,
   });
@@ -70,7 +81,7 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
 
 export const disconnectSocket = () => {
   if (socket) {
-    socket.auth = {};
+    socket.removeAllListeners();
     socket.disconnect();
     socket = null;
   }
@@ -86,17 +97,24 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   socket.removeAllListeners('wallet:updated');
   socket.removeAllListeners('announcement');
   socket.removeAllListeners('notification');
+  socket.removeAllListeners('shop:status_changed');
+  socket.removeAllListeners('payment:received');
 
   // Order status changed
+  // NOTE: Captain/owner sockets are in BOTH user:userId AND shop:shopId rooms,
+  // so the backend emits this event to both rooms — causing this handler to fire
+  // twice for the same status change. The dedup guard prevents double popup,
+  // double Redux notification, and double order refetch.
   socket.on('order:status_changed', (payload: OrderUpdatePayload) => {
     try {
       const status = payload.status as 'preparing' | 'ready' | 'completed' | 'cancelled';
 
-      // Check AND mark dedup key — skip if FCM already handled this event
+      // Dedup: skip entirely if this orderId+status was already processed
+      // (from the other room delivery, or from FCM arriving first)
       const dedupKey = `${payload.orderId}:${status}`;
-      const alreadySeen = isDuplicate(dedupKey);
+      if (isDuplicate(dedupKey)) return;
 
-      // Always show popup (important visual feedback even if FCM was first)
+      // Show popup for students and eat-mode users (captain/owner ordering food)
       const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
       if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
         if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
@@ -106,34 +124,30 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         });
       }
 
-      // Only add to Redux if not already handled by FCM
-      if (!alreadySeen) {
-        const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
-        const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
-        const statusLabels: Record<string, string> = {
-          preparing: `Your order is being prepared${itemsSuffix}`,
-          ready: `Your order is ready for pickup!${itemsSuffix}`,
-          completed: `Your order has been completed${itemsSuffix}`,
-          cancelled: `Your order has been cancelled${itemsSuffix}`,
-        };
-        const orderNum = payload.orderNumber || payload.orderId.slice(-6);
-        const title = payload.notification?.title || `Order #${orderNum}`;
-        const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
+      // Add to Redux notification list
+      const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
+      const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
+      const statusLabels: Record<string, string> = {
+        preparing: `Your order is being prepared${itemsSuffix}`,
+        ready: `Your order is ready for pickup!${itemsSuffix}`,
+        completed: `Your order has been completed${itemsSuffix}`,
+        cancelled: `Your order has been cancelled${itemsSuffix}`,
+      };
+      const orderNum = payload.orderNumber || payload.orderId.slice(-6);
+      const title = payload.notification?.title || `Order #${orderNum}`;
+      const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
 
-        dispatch(addNotification({
-          id: `notif-${Date.now()}`,
-          type: 'order',
-          title,
-          message,
-          data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
-          createdAt: payload.updatedAt,
-          read: false,
-        }));
-      }
+      dispatch(addNotification({
+        id: `notif-${Date.now()}`,
+        type: 'order',
+        title,
+        message,
+        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
+        createdAt: payload.updatedAt,
+        read: false,
+      }));
 
-      // Re-fetch orders so the UI reflects the new status immediately (#69/#70)
-      // Student/eat-mode: refresh active orders on home screen
-      // Captain/owner work-mode: refresh shop order list
+      // Re-fetch orders so the UI reflects the new status immediately
       if (userRole === 'student' || userMode === 'eat') {
         dispatch(fetchMyActiveOrders());
       } else {
@@ -162,7 +176,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         read: false,
       }));
 
-      displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES);
+      displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES, `new-order-${payload.orderId}`);
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in order:new handler:', e);
     }
@@ -174,6 +188,16 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       const titleMap: Record<string, string> = { credit: 'Money Added', debit: 'Money Deducted', refund: 'Refund Received' };
       const title = titleMap[payload.type] || 'Wallet Updated';
       const msg = payload.message || `Rs. ${payload.amount} updated`;
+
+      // Dedup: use the same key format as FCM handler (60-second window)
+      // so socket and FCM don't both show a notification for the same event
+      const dedupKey = `wallet:credit:${payload.amount}:${Math.floor(Date.now() / 60000)}`;
+      if (isDuplicate(dedupKey)) {
+        // Still refresh balance even if notification is deduped
+        dispatch(fetchWalletBalance());
+        return;
+      }
+
       dispatch(addNotification({
         id: `notif-${Date.now()}`,
         type: 'wallet',
@@ -183,9 +207,14 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         read: false,
       }));
 
+      // Auto-refresh balance immediately
+      dispatch(fetchWalletBalance());
+
       // Only show system notification for credits/refunds (user is in-app for debits)
+      // Use a fixed Notifee notification ID so duplicate wallet notifications
+      // replace each other in the tray instead of stacking
       if (payload.type !== 'debit') {
-        displayLocalNotification(title, msg, { type: payload.type }, CHANNEL_WALLET);
+        displayLocalNotification(title, msg, { type: payload.type }, CHANNEL_WALLET, `wallet-${payload.type}`);
       }
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in wallet:updated handler:', e);
@@ -195,6 +224,10 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // Announcements
   socket.on('announcement', (payload: { title: string; message: string }) => {
     try {
+      // Dedup announcements by content (prevents duplicate on socket reconnect)
+      const dedupKey = `announce:${payload.title}:${Math.floor(Date.now() / 60000)}`;
+      if (isDuplicate(dedupKey)) return;
+
       dispatch(addNotification({
         id: `notif-${Date.now()}`,
         type: 'announcement',
@@ -204,7 +237,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         read: false,
       }));
 
-      displayLocalNotification(payload.title, payload.message, {}, CHANNEL_GENERAL);
+      displayLocalNotification(payload.title, payload.message, {}, CHANNEL_GENERAL, `announce-${Date.now()}`);
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in announcement handler:', e);
     }
@@ -230,6 +263,51 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       createdAt: payload.createdAt || new Date().toISOString(),
       read: false,
     }));
+  });
+
+  // Shop status changes — update shop isActive in Redux so UI reflects closed shops
+  socket.on('shop:status_changed', (payload: { shopId: string; isActive: boolean }) => {
+    try {
+      if (!payload?.shopId || typeof payload.isActive !== 'boolean') return;
+      if (__DEV__) console.log('[Socket] Shop status changed:', payload.shopId, payload.isActive);
+      dispatch(updateShopStatus({ shopId: payload.shopId, isActive: payload.isActive }));
+    } catch (e) {
+      if (__DEV__) console.warn('[Socket] Error in shop:status_changed handler:', e);
+    }
+  });
+
+  // Payment received — refresh QR payments on stationery dashboard + show notification
+  socket.on('payment:received', (payload: {
+    paymentRequestId: string;
+    title: string;
+    amount: number;
+    studentName: string;
+    totalCollected: number;
+    paidCount: number;
+  }) => {
+    try {
+      if (__DEV__) console.log('[Socket] Payment received:', payload);
+
+      const title = 'Payment Received';
+      const msg = `Rs. ${payload.amount} collected for "${payload.title}" from ${payload.studentName}`;
+
+      dispatch(addNotification({
+        id: `notif-${Date.now()}`,
+        type: 'wallet',
+        title,
+        message: msg,
+        createdAt: new Date().toISOString(),
+        read: false,
+      }));
+
+      // Refresh QR payments so dashboard shows updated collected amount
+      dispatch(fetchQRPayments());
+
+      // Show local notification for shop staff
+      displayLocalNotification(title, msg, { paymentRequestId: payload.paymentRequestId }, CHANNEL_WALLET, `payment-${payload.paymentRequestId}`);
+    } catch (e) {
+      if (__DEV__) console.warn('[Socket] Error in payment:received handler:', e);
+    }
   });
 };
 

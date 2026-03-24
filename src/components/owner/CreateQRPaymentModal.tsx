@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -24,21 +24,36 @@ export default function CreateQRPaymentModal({ visible, onClose }: CreateQRPayme
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const slideAnim = useMemo(() => new Animated.Value(600), []);
+  const backdropAnim = useMemo(() => new Animated.Value(0), []);
+  const isClosingRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
+      isClosingRef.current = false;
+      Keyboard.dismiss();
       setTitle('');
       setDescription('');
       setAmount('');
       slideAnim.setValue(600);
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 50,
-        useNativeDriver: true,
-      }).start();
+      backdropAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
+        Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, backdropAnim]);
+
+  const handleClose = () => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Keyboard.dismiss();
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      onClose();
+    });
+  };
 
   const handleSubmit = async () => {
     if (title.trim().length < 3) {
@@ -62,7 +77,7 @@ export default function CreateQRPaymentModal({ visible, onClose }: CreateQRPayme
         description: description.trim(),
         amount: amountNum,
       })).unwrap();
-      onClose();
+      handleClose();
     } catch (err: any) {
       Alert.alert('Error', typeof err === 'string' ? err : 'Failed to create QR payment');
     } finally {
@@ -71,17 +86,19 @@ export default function CreateQRPaymentModal({ visible, onClose }: CreateQRPayme
   };
 
   return (
-    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={isSubmitting ? undefined : handleClose} />
+      </Animated.View>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         style={styles.sheetWrapper}
       >
         <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Create QR Payment</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
               <Icon name="close" size={20} color={colors.foreground} />
             </TouchableOpacity>
           </View>

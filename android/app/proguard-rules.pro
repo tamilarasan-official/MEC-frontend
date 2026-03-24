@@ -30,6 +30,12 @@
 -keep class com.mrousavy.camera.** { *; }
 -dontwarn com.mrousavy.camera.**
 
+# Worklets (used by Vision Camera for frame processing)
+-keep class com.worklets.** { *; }
+-dontwarn com.worklets.**
+-keep class com.swmansion.worklets.** { *; }
+-dontwarn com.swmansion.worklets.**
+
 # React Native Reanimated
 -keep class com.swmansion.reanimated.** { *; }
 -dontwarn com.swmansion.reanimated.**

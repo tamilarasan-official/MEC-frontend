@@ -88,6 +88,7 @@ export default function CaptainEatOrdersScreen() {
 
       <ScrollView
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}>
         {displayOrders.length === 0 ? (
           <View style={styles.empty}>

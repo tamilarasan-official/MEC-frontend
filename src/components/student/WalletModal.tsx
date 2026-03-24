@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, FlatList,
   ActivityIndicator, Animated,
@@ -27,15 +27,36 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
   const [loading, setLoading] = useState(true);
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
+  const backdropAnim = useMemo(() => new Animated.Value(0), []);
+  const isClosingRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
+      isClosingRef.current = false;
       slideAnim.setValue(600);
-      Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }).start();
+      backdropAnim.setValue(0);
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
+        Animated.timing(backdropAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
       loadData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  const handleAnimateClose = useCallback((callback?: () => void) => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => {
+      onClose();
+      callback?.();
+    });
+  }, [slideAnim, backdropAnim, onClose]);
+
+  const handleClose = useCallback(() => handleAnimateClose(), [handleAnimateClose]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -48,10 +69,11 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
     setLoading(false);
   }, [dispatch]);
 
-  const displayBalance = user?.balance ?? balance ?? 0;
+  const displayBalance = balance ?? user?.balance ?? 0;
 
   const handleTopUp = () => {
-    onTopUp();
+    // Close the wallet modal first, then open top-up to avoid stacking modals
+    handleAnimateClose(() => onTopUp());
   };
 
   const formatDate = (dateStr: string) => {
@@ -66,7 +88,7 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const isCredit = item.type === 'credit' || item.type === 'refund';
     return (
-      <TouchableOpacity style={styles.txCard} activeOpacity={0.7} onPress={() => onTransactionPress?.(item)}>
+      <TouchableOpacity style={styles.txCard} activeOpacity={0.7} onPress={onTransactionPress ? () => handleAnimateClose(() => onTransactionPress(item)) : undefined}>
         <View style={[styles.txIcon, { backgroundColor: isCredit ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }]}>
           <Icon
             name={isCredit ? 'arrow-down-outline' : 'arrow-up-outline'}
@@ -89,8 +111,10 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
   };
 
   return (
-    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]} pointerEvents="box-none">
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+      </Animated.View>
 
       <View style={styles.kvWrapper}>
         <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
@@ -105,7 +129,7 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
               <Text style={styles.title}>Wallet</Text>
               <Text style={styles.subtitle}>Balance & transactions</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
               <Icon name="close" size={18} color={colors.foreground} />
             </TouchableOpacity>
           </View>

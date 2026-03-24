@@ -181,6 +181,7 @@ export default function MenuScreen({ route, navigation }: Props) {
           keyExtractor={keyExtractor}
           renderItem={renderFoodCard}
           contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
           initialNumToRender={8}
           maxToRenderPerBatch={6}
           windowSize={5}

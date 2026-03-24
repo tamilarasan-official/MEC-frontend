@@ -13,17 +13,23 @@ import CaptainHistoryScreen from '../../screens/captain/CaptainHistoryScreen';
 import CaptainEatScreen from '../../screens/captain/CaptainEatScreen';
 import CaptainEatOrdersScreen from '../../screens/captain/CaptainEatOrdersScreen';
 import CaptainScannerScreen from '../../screens/captain/CaptainScannerScreen';
+import ScannerScreen from '../../screens/student/ScannerScreen';
+import WalletScreen from '../../screens/student/WalletScreen';
+import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<CaptainTabParamList>();
 
 // Pill indicator matching StudentTabs style
-const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => (
-  <View style={[styles.pill, focused && styles.pillActive]}>
-    {children}
-  </View>
-);
+const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => {
+  const { colors: c } = useTheme();
+  return (
+    <View style={[styles.pill, focused && { backgroundColor: c.accent + '26' }]}>
+      {children}
+    </View>
+  );
+};
 
 const HomeIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
@@ -55,14 +61,18 @@ const EatOrdersIcon = ({ focused, color }: { focused: boolean; color: string }) 
   </TabPill>
 );
 
+const EatScannerIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+  <TabPill focused={focused}>
+    <Icon name={focused ? 'scan' : 'scan-outline'} size={22} color={color} />
+  </TabPill>
+);
+
 const styles = StyleSheet.create({
   pill: {
     width: 56, height: 32, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
   },
-  pillActive: {
-    backgroundColor: 'rgba(59,130,246,0.15)',
-  },
+  // pillActive color is now applied inline via theme
   wrapper: {
     flex: 1,
   },
@@ -73,7 +83,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   scanFab: {
-    shadowColor: '#10b981',
+    shadowColor: '#10b981', // primary emerald — kept static for consistent shadow
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.45,
     shadowRadius: 14,
@@ -109,7 +119,7 @@ export default function CaptainTabs() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#3b82f6',
+          tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
           tabBarStyle: {
             backgroundColor: colors.card,
@@ -141,6 +151,24 @@ export default function CaptainTabs() {
             tabBarIcon: EatOrdersIcon,
           }}
         />
+        <Tab.Screen
+          name="EatScanner"
+          component={ScannerScreen}
+          options={{
+            tabBarLabel: 'Scanner',
+            tabBarIcon: EatScannerIcon,
+          }}
+        />
+        <Tab.Screen
+          name="Wallet"
+          component={WalletScreen}
+          options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
+        />
+        <Tab.Screen
+          name="TransactionDetail"
+          component={TransactionDetailScreen}
+          options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
+        />
       </Tab.Navigator>
     );
   }
@@ -150,7 +178,7 @@ export default function CaptainTabs() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#3b82f6',
+          tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
           tabBarStyle: {
             backgroundColor: colors.card,

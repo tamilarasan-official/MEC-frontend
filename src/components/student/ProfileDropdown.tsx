@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Alert,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Animated,
 } from 'react-native';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 import Icon from '../common/Icon';
@@ -37,6 +37,8 @@ export default function ProfileDropdown({
   const { dietFilter } = useAppSelector(s => s.user);
   const cartItems = useAppSelector(s => s.cart.items);
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const [showSignOut, setShowSignOut] = useState(false);
+  const signOutScale = useMemo(() => new Animated.Value(0), []);
 
   const handleDietChange = async (value: DietFilter) => {
     dispatch(setDietFilter(value));
@@ -46,22 +48,15 @@ export default function ProfileDropdown({
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: () => {
-            onClose();
-            // Small delay to let dropdown close before wiping auth state
-            setTimeout(() => dispatch(logout()), 50);
-          }
-        },
-      ]
-    );
+    setShowSignOut(true);
+    signOutScale.setValue(0);
+    Animated.spring(signOutScale, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start();
+  };
+
+  const confirmSignOut = () => {
+    setShowSignOut(false);
+    onClose();
+    setTimeout(() => dispatch(logout()), 50);
   };
 
   return (
@@ -82,7 +77,7 @@ export default function ProfileDropdown({
               <Text style={styles.userName}>{user?.name || 'Student'}</Text>
               <View style={styles.roleBadge}>
                 <Text style={styles.roleText}>
-                  {(user?.role || 'student').charAt(0).toUpperCase() + (user?.role || 'student').slice(1)}
+                  {user?.rollNumber ? 'MEC Student' : 'CampusOne User'}
                 </Text>
               </View>
             </View>
@@ -189,6 +184,39 @@ export default function ProfileDropdown({
         </TouchableOpacity>
       </TouchableOpacity>
 
+      {/* Sign Out Confirmation Modal */}
+      <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent>
+        <TouchableOpacity style={styles.signOutOverlay} activeOpacity={1} onPress={() => setShowSignOut(false)}>
+          <Animated.View style={[styles.signOutDialog, { transform: [{ scale: signOutScale }] }]}>
+            <View style={styles.signOutIconWrap}>
+              <Icon name="log-out-outline" size={28} color={colors.error} />
+            </View>
+            <Text style={styles.signOutTitle}>Sign Out</Text>
+            <Text style={styles.signOutMessage}>
+              Are you sure you want to sign out? You'll need to log in again to access your account.
+            </Text>
+            <View style={styles.signOutActions}>
+              <TouchableOpacity
+                style={styles.signOutCancelBtn}
+                onPress={() => setShowSignOut(false)}
+                activeOpacity={0.7}
+                accessibilityLabel="Cancel sign out"
+                accessibilityRole="button">
+                <Text style={styles.signOutCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.signOutConfirmBtn}
+                onPress={confirmSignOut}
+                activeOpacity={0.7}
+                accessibilityLabel="Confirm sign out"
+                accessibilityRole="button">
+                <Icon name="log-out-outline" size={16} color="#fff" />
+                <Text style={styles.signOutConfirmText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
+      </Modal>
     </Modal>
   );
 }

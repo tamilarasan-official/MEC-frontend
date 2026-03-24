@@ -11,12 +11,15 @@ import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<StudentTabParamList>();
 
-// Reusable pill wrapper — active tabs get a blue capsule background
-const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => (
-  <View style={[styles.pill, focused && styles.pillActive]}>
-    {children}
-  </View>
-);
+// Reusable pill wrapper — active tabs get a themed capsule background
+const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => {
+  const { colors: c } = useTheme();
+  return (
+    <View style={[styles.pill, focused && { backgroundColor: c.accent + '26' }]}>
+      {children}
+    </View>
+  );
+};
 
 const HomeIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
@@ -41,9 +44,7 @@ const styles = StyleSheet.create({
     width: 56, height: 32, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
   },
-  pillActive: {
-    backgroundColor: 'rgba(59,130,246,0.15)',
-  },
+  // pillActive color is now applied inline via theme
 });
 
 export default function StudentTabs() {
@@ -55,7 +56,7 @@ export default function StudentTabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#3b82f6',
+        tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.mutedForeground,
         tabBarStyle: {
           backgroundColor: colors.card,

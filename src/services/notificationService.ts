@@ -16,7 +16,7 @@ import { Platform, DeviceEventEmitter } from 'react-native';
 import api from './api';
 import { getDeviceId } from '../store/slices/authSlice';
 import { AppDispatch } from '../store';
-import { addNotification } from '../store/slices/userSlice';
+import { addNotification, fetchWalletBalance } from '../store/slices/userSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 
 // ── Deduplication ───────────────────────────────────────────────
@@ -124,13 +124,17 @@ export async function displayOrderStatusFullScreen(
 }
 
 // ── Display: standard local notification ────────────────────────
+// Pass an optional `id` to collapse/replace duplicate notifications
+// (Notifee reuses the same tray slot when IDs match).
 export async function displayLocalNotification(
   title: string,
   body: string,
   data: Record<string, string>,
   channelId: string = CHANNEL_GENERAL,
+  notificationId?: string,
 ): Promise<void> {
   await notifee.displayNotification({
+    ...(notificationId ? { id: notificationId } : {}),
     title,
     body,
     data,
@@ -154,11 +158,31 @@ export function handleForegroundMessage(
   const status = data?.status as string;
   const orderNumber = data?.orderNumber as string;
 
-  // Dedup: skip if already shown (e.g. socket delivered first)
+  // Dedup: skip if already shown (e.g. socket delivered first, or duplicate FCM tokens)
+  // Use content-based key so duplicate FCM messages (from stale tokens) are caught
   if (orderId && status) {
     if (isDuplicate(`${orderId}:${status}`)) return;
-  } else if (remoteMessage.messageId) {
-    if (isDuplicate(remoteMessage.messageId)) return;
+  } else if (type === 'wallet_credit' || type === 'wallet') {
+    // Use a stable key without time-bucket: amount + 60-second window
+    // so ALL duplicate FCM messages for the same wallet event are caught
+    const amount = data?.amount as string || '';
+    const walletDedupKey = `wallet:credit:${amount}:${Math.floor(Date.now() / 60000)}`;
+    if (isDuplicate(walletDedupKey)) {
+      // Still refresh wallet balance even if notification is deduped
+      // (matches socket handler behavior in socketService.ts)
+      dispatch(fetchWalletBalance());
+      return;
+    }
+  } else {
+    // Content-based dedup for all other notifications (prevents duplicates from stale FCM tokens)
+    const contentKey = `${type}:${title}:${body}:${Math.floor(Date.now() / 30000)}`;
+    if (isDuplicate(contentKey)) return;
+  }
+
+  // Auto-refresh wallet balance when receiving wallet notifications via FCM
+  // (covers cases where the socket missed the wallet:updated event)
+  if (type === 'wallet_credit' || type === 'wallet') {
+    dispatch(fetchWalletBalance());
   }
 
   // Determine channel and display strategy
@@ -174,7 +198,12 @@ export function handleForegroundMessage(
       type === 'order' ? CHANNEL_ORDER_UPDATES :
       type === 'wallet' ? CHANNEL_WALLET :
       CHANNEL_GENERAL;
-    displayLocalNotification(title, body, (data as Record<string, string>) || {}, channelId);
+    // Use a stable notification ID so Notifee replaces instead of stacking
+    // if both socket and FCM slip through dedup
+    const notifId = orderId ? `order-${orderId}` :
+      (type === 'wallet_credit' || type === 'wallet') ? `wallet-${data?.amount || ''}` :
+      undefined;
+    displayLocalNotification(title, body, (data as Record<string, string>) || {}, channelId, notifId);
   }
 
   // Dispatch to Redux for in-app notification list
@@ -194,16 +223,33 @@ export async function handleBackgroundMessage(
   remoteMessage: FirebaseMessagingTypes.RemoteMessage,
 ): Promise<void> {
   const { data, notification } = remoteMessage;
-  const title = notification?.title || (data?.title as string) || 'Notification';
+
+  // On Android, when a FCM message has a `notification` field and the app is
+  // backgrounded, the OS auto-displays the notification. If we also create a
+  // Notifee notification here, the user sees a duplicate (often with empty
+  // content because the OS strips the `notification` property before passing
+  // the message to the background handler). Skip Notifee display in this case.
+  if (Platform.OS === 'android' && notification?.title) {
+    return;
+  }
+
+  const title = notification?.title || (data?.title as string) || '';
   const body = notification?.body || (data?.body as string) || '';
   const type = (data?.type as string) || 'system';
   const orderId = data?.orderId as string;
   const status = data?.status as string;
   const orderNumber = data?.orderNumber as string;
 
-  // Dedup
+  // Skip if there's no meaningful content to display
+  if (!title && !body) return;
+
+  // Dedup — same logic as foreground handler
   if (orderId && status) {
     if (isDuplicate(`${orderId}:${status}`)) return;
+  } else if (type === 'wallet_credit' || type === 'wallet') {
+    const amount = data?.amount as string || '';
+    const walletDedupKey = `wallet:credit:${amount}:${Math.floor(Date.now() / 60000)}`;
+    if (isDuplicate(walletDedupKey)) return;
   } else if (remoteMessage.messageId) {
     if (isDuplicate(remoteMessage.messageId)) return;
   }
@@ -250,6 +296,13 @@ export async function unregisterToken(): Promise<void> {
       if (__DEV__) console.log('[Notifications] FCM token unregistered');
     }
   } catch (error) {
+    // Fallback: try to unregister by deviceId so the token doesn't linger
+    try {
+      const deviceId = await getDeviceId();
+      if (deviceId) {
+        await api.delete('/auth/fcm-token', { data: { deviceId } });
+      }
+    } catch { /* ignore fallback failure */ }
     if (__DEV__) console.warn('[Notifications] Failed to unregister FCM token:', error);
   }
 }

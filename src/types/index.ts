@@ -32,6 +32,8 @@ export interface User {
   canCreateAdhoc?: boolean;
   canteenName?: string;
   institution?: string;
+  userTag?: 'Student' | 'Staff' | 'Faculty' | 'MEC ADMIN' | 'Owner' | 'Accountant' | 'Officials';
+  staffId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -73,9 +75,12 @@ export interface FoodItem {
 }
 
 // ---- Cart ----
+export type ItemStatus = 'preparing' | 'ready' | 'delivered';
+
 export interface CartItem extends FoodItem {
   quantity: number;
   delivered?: boolean;
+  itemStatus?: ItemStatus;
 }
 
 // ---- Order ----

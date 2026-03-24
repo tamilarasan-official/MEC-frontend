@@ -239,6 +239,7 @@ export default function ProfileScreen({ navigation }: Props) {
           {/* Menu Items */}
           {[
             { icon: 'time-outline', label: 'Order History', subtitle: 'View past completed orders', onPress: () => navigation.navigate('OrderHistory') },
+            { icon: 'lock-closed-outline', label: 'Change Password', subtitle: 'Update your account password', onPress: () => navigation.navigate('ChangePassword') },
             { icon: 'notifications-outline', label: 'Notifications', subtitle: 'Manage your notifications', onPress: () => navigation.navigate('NotificationSettings') },
             { icon: 'shield-checkmark-outline', label: 'Privacy & Security', subtitle: 'Account security settings', onPress: () => navigation.navigate('PrivacySecurity') },
             { icon: 'help-circle-outline', label: 'Help & Support', subtitle: 'Get help with your orders', onPress: () => navigation.navigate('HelpSupport') },

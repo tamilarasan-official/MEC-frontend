@@ -11,6 +11,7 @@ import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
+import ChangePasswordScreen from '../shared/ChangePasswordScreen';
 
 const SETTINGS_KEY = '@campusone_captain_settings';
 
@@ -56,6 +57,7 @@ export default function CaptainSettingsScreen() {
   const [showLogout, setShowLogout] = useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const handleLogout = () => {
     setShowLogout(true);
@@ -142,6 +144,18 @@ export default function CaptainSettingsScreen() {
                 <Icon name="person-outline" size={18} color={colors.primary} />
               </View>
               <Text style={styles.settingLabel}>Edit Profile</Text>
+            </View>
+            <Icon name="chevron-forward" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => setShowChangePassword(true)} accessibilityLabel="Change password" accessibilityRole="button">
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
+                <Icon name="lock-closed-outline" size={18} color="#8b5cf6" />
+              </View>
+              <Text style={styles.settingLabel}>Change Password</Text>
             </View>
             <Icon name="chevron-forward" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
@@ -271,6 +285,10 @@ export default function CaptainSettingsScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+      {/* Change Password Modal */}
+      <Modal visible={showChangePassword} animationType="slide" statusBarTranslucent onRequestClose={() => setShowChangePassword(false)}>
+        <ChangePasswordScreen onClose={() => setShowChangePassword(false)} />
       </Modal>
     </ScreenWrapper>
   );

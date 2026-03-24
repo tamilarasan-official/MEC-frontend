@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Animated,
 } from 'react-native';
@@ -29,6 +29,14 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const slideAnim = useState(new Animated.Value(400))[0];
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: 0, friction: 8, useNativeDriver: true }).start();
@@ -63,22 +71,29 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
     return () => { cancelled = true; };
   }, [orderId]);
 
-  const handleAction = async (status: OrderStatus) => {
+  const handleAction = useCallback(async (status: OrderStatus) => {
     if (!order) return;
     setActionLoading(true);
     setError(null);
     try {
-      await orderService.updateOrderStatus(order.id, status);
-      setOrder({ ...order, status });
+      const updatedOrder = await orderService.updateOrderStatus(order.id, status);
+      // Update local state with the server response, not optimistic data
+      if (updatedOrder) {
+        setOrder(updatedOrder);
+      } else {
+        setOrder({ ...order, status });
+      }
       onActionComplete();
       if (status === 'completed' || status === 'cancelled') {
-        setTimeout(onClose, 600);
+        // Use ref-tracked timer to prevent memory leak
+        closeTimerRef.current = setTimeout(onClose, 600);
       }
     } catch {
+      // Do NOT update local state on failure — keep the original status
       setError('Failed to update order');
     }
     setActionLoading(false);
-  };
+  }, [order, onActionComplete, onClose]);
 
   const sc = order ? (statusConfig[order.status] || statusConfig.pending) : statusConfig.pending;
 
@@ -143,25 +158,67 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                 </View>
               </View>
 
-              {/* Items */}
-              <Text style={styles.sectionTitle}>Food Items</Text>
-              <View style={styles.itemsContainer}>
-                {order.items.map((item, idx) => (
-                  <View key={idx} style={styles.itemRow}>
-                    <View style={styles.itemImg}>
-                      <Icon name="restaurant-outline" size={16} color={colors.mutedForeground} />
+              {/* Items / Service Details */}
+              {order.serviceType === 'stationery' && order.serviceDetails?.stationery ? (
+                <>
+                  <Text style={styles.sectionTitle}>Stationery Details</Text>
+                  <View style={styles.itemsContainer}>
+                    <View style={styles.serviceDetailRow}>
+                      <Icon name="document-text-outline" size={16} color={colors.mutedForeground} />
+                      <Text style={styles.serviceDetailLabel}>Pages</Text>
+                      <Text style={styles.serviceDetailValue}>{order.serviceDetails.stationery.pageCount}</Text>
                     </View>
-                    <View style={styles.flex1}>
-                      <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                      <Text style={styles.itemQty}>
-                        <Text style={styles.itemQtyHighlight}>{item.quantity}x</Text>
-                        {' '}@ Rs.{item.offerPrice || item.price}
-                      </Text>
+                    <View style={styles.serviceDetailRow}>
+                      <Icon name="copy-outline" size={16} color={colors.mutedForeground} />
+                      <Text style={styles.serviceDetailLabel}>Copies</Text>
+                      <Text style={styles.serviceDetailValue}>{order.serviceDetails.stationery.copies}</Text>
                     </View>
-                    <Text style={styles.itemTotal}>Rs.{(item.offerPrice || item.price) * item.quantity}</Text>
+                    <View style={styles.serviceDetailRow}>
+                      <Icon name="color-palette-outline" size={16} color={colors.mutedForeground} />
+                      <Text style={styles.serviceDetailLabel}>Type</Text>
+                      <Text style={styles.serviceDetailValue}>{order.serviceDetails.stationery.colorType === 'bw' ? 'Black & White' : 'Color'}</Text>
+                    </View>
+                    <View style={styles.serviceDetailRow}>
+                      <Icon name="resize-outline" size={16} color={colors.mutedForeground} />
+                      <Text style={styles.serviceDetailLabel}>Paper Size</Text>
+                      <Text style={styles.serviceDetailValue}>{order.serviceDetails.stationery.paperSize?.toUpperCase() || 'A4'}</Text>
+                    </View>
+                    <View style={styles.serviceDetailRow}>
+                      <Icon name="albums-outline" size={16} color={colors.mutedForeground} />
+                      <Text style={styles.serviceDetailLabel}>Double-sided</Text>
+                      <Text style={styles.serviceDetailValue}>{order.serviceDetails.stationery.doubleSided ? 'Yes' : 'No'}</Text>
+                    </View>
+                    {order.serviceDetails.stationery.specialInstructions ? (
+                      <View style={[styles.serviceDetailRow, { borderBottomWidth: 0 }]}>
+                        <Icon name="chatbubble-outline" size={16} color={colors.mutedForeground} />
+                        <Text style={styles.serviceDetailLabel}>Instructions</Text>
+                        <Text style={[styles.serviceDetailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>{order.serviceDetails.stationery.specialInstructions}</Text>
+                      </View>
+                    ) : null}
                   </View>
-                ))}
-              </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.sectionTitle}>Food Items</Text>
+                  <View style={styles.itemsContainer}>
+                    {order.items.map((item, idx) => (
+                      <View key={idx} style={styles.itemRow}>
+                        <View style={styles.itemImg}>
+                          <Icon name="restaurant-outline" size={16} color={colors.mutedForeground} />
+                        </View>
+                        <View style={styles.flex1}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          <Text style={styles.itemQty}>
+                            <Text style={styles.itemQtyHighlight}>{item.quantity}x</Text>
+                            {' '}@ Rs.{item.offerPrice || item.price}
+                          </Text>
+                        </View>
+                        <Text style={styles.itemTotal}>Rs.{(item.offerPrice || item.price) * item.quantity}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
 
               {/* Total */}
               <View style={styles.totalRow}>
@@ -225,7 +282,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                 )}
               </TouchableOpacity>
             )}
-            {order.status === 'ready' && (
+            {(order.status === 'ready' || order.status === 'partially_delivered') && (
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: colors.primary }]}
                 onPress={() => handleAction('completed')}
@@ -236,7 +293,9 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                 ) : (
                   <>
                     <Icon name="checkmark-done" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, styles.actionBtnTextComplete]}>Quick Complete</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextComplete]}>
+                      {order.status === 'partially_delivered' ? 'Complete Order' : 'Quick Complete'}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -331,6 +390,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   tokenDateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   flex1: { flex: 1 },
   itemQtyHighlight: { color: colors.primary, fontWeight: '600' },
+  serviceDetailRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  serviceDetailLabel: { fontSize: 13, color: colors.mutedForeground, flex: 1 },
+  serviceDetailValue: { fontSize: 13, fontWeight: '600', color: colors.foreground },
   pendingActionRow: { flexDirection: 'row', gap: 12 },
   prepareBtn: { backgroundColor: colors.blue[500], flex: 1 },
   actionBtnTextWhite: { color: '#fff' },

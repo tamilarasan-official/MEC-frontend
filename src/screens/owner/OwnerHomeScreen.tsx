@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Alert, Image, AppState,
+  RefreshControl, Alert, Image, AppState, Modal,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { RootState } from '../../store';
 import { fetchActiveShopOrders, updateOrderStatus, markItemDelivered } from '../../store/slices/ordersSlice';
-import { fetchDashboardStats, fetchShopDetails } from '../../store/slices/userSlice';
+import { fetchDashboardStats, fetchShopDetails, fetchWalletBalance } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -46,12 +46,23 @@ export default function OwnerHomeScreen() {
   const [showWallet, setShowWallet] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Item confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    visible: boolean;
+    type: 'ready' | 'deliver';
+    itemName: string;
+    orderId: string;
+    itemIndex: number;
+  }>({ visible: false, type: 'ready', itemName: '', orderId: '', itemIndex: 0 });
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
   const fetchData = useCallback(async () => {
     try {
       await Promise.all([
         dispatch(fetchActiveShopOrders()),
         dispatch(fetchDashboardStats()),
         dispatch(fetchShopDetails()),
+        dispatch(fetchWalletBalance()),
       ]);
     } finally {
       setLoading(false);
@@ -63,13 +74,25 @@ export default function OwnerHomeScreen() {
   // Auto-refresh every 5 seconds, pause when app is backgrounded
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
-    const startPolling = () => { interval = setInterval(() => dispatch(fetchActiveShopOrders()), 5000); };
+    const startPolling = () => { interval = setInterval(() => dispatch(fetchActiveShopOrders()), 30000); };
     const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
     startPolling();
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') startPolling(); else stopPolling();
     });
     return () => { stopPolling(); sub.remove(); };
+  }, [dispatch]);
+
+  // Auto-refresh wallet balance every 30 seconds (backup for socket events)
+  useEffect(() => {
+    let walletInterval: ReturnType<typeof setInterval> | null = null;
+    const stopWalletPolling = () => { if (walletInterval) { clearInterval(walletInterval); walletInterval = null; } };
+    const startWalletPolling = () => { stopWalletPolling(); walletInterval = setInterval(() => dispatch(fetchWalletBalance()), 30000); };
+    startWalletPolling();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') startWalletPolling(); else stopWalletPolling();
+    });
+    return () => { stopWalletPolling(); sub.remove(); };
   }, [dispatch]);
 
   const onRefresh = async () => {
@@ -133,12 +156,39 @@ export default function OwnerHomeScreen() {
     setUpdatingId(null);
   };
 
-  const handleItemDelivered = async (orderId: string, itemIndex: number) => {
+  const handleMarkItemReady = (orderId: string, itemIndex: number, itemName: string) => {
+    mediumHaptic();
+    setConfirmModal({ visible: true, type: 'ready', itemName, orderId, itemIndex });
+  };
+
+  const handleDeliverItem = (orderId: string, itemIndex: number, itemName: string) => {
+    mediumHaptic();
+    setConfirmModal({ visible: true, type: 'deliver', itemName, orderId, itemIndex });
+  };
+
+  const handleConfirmAction = async () => {
+    const { orderId, itemIndex, type } = confirmModal;
+    setConfirmLoading(true);
     try {
-      await dispatch(markItemDelivered({ orderId, itemIndex })).unwrap();
+      await dispatch(markItemDelivered({ orderId, itemIndex, itemStatus: type === 'ready' ? 'ready' : 'delivered' })).unwrap();
     } catch {
-      Alert.alert('Error', 'Failed to mark item delivered');
+      Alert.alert('Error', 'Failed to update item');
     }
+    setConfirmLoading(false);
+    setConfirmModal(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleDismissConfirm = () => {
+    if (!confirmLoading) setConfirmModal(prev => ({ ...prev, visible: false }));
+  };
+
+  const handleItemDelivered = (orderId: string, itemIndex: number) => {
+    const order = shopOrders.find(o => o.id === orderId);
+    const item = order?.items[itemIndex];
+    if (!item) return;
+    const status = item.itemStatus || 'preparing';
+    if (status === 'preparing') handleMarkItemReady(orderId, itemIndex, item.name);
+    else if (status === 'ready') handleDeliverItem(orderId, itemIndex, item.name);
   };
 
   const handleToggleSearch = () => {
@@ -173,6 +223,7 @@ export default function OwnerHomeScreen() {
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
@@ -271,6 +322,49 @@ export default function OwnerHomeScreen() {
         visible={showWallet}
         onClose={() => setShowWallet(false)}
       />
+
+      {/* Item Confirmation Modal */}
+      <Modal visible={confirmModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={handleDismissConfirm}>
+        <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={handleDismissConfirm}>
+          <TouchableOpacity activeOpacity={1} style={styles.confirmDialog}>
+            <View style={[styles.confirmIconWrap, { backgroundColor: confirmModal.type === 'ready' ? 'rgba(59,130,246,0.15)' : 'rgba(34,197,94,0.15)' }]}>
+              <Icon
+                name={confirmModal.type === 'ready' ? 'checkmark-circle' : 'bag-check-outline'}
+                size={28}
+                color={confirmModal.type === 'ready' ? '#3b82f6' : '#22c55e'}
+              />
+            </View>
+            <Text style={styles.confirmTitle}>
+              {confirmModal.type === 'ready' ? 'Mark Item Ready' : 'Deliver Item'}
+            </Text>
+            <Text style={styles.confirmMessage}>
+              {confirmModal.type === 'ready'
+                ? `Mark "${confirmModal.itemName}" as ready for pickup?`
+                : `Hand over "${confirmModal.itemName}" to the student?`}
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancelBtn} onPress={handleDismissConfirm} disabled={confirmLoading} activeOpacity={0.7}>
+                <Text style={styles.confirmCancelText}>CANCEL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmActionBtn, { backgroundColor: confirmModal.type === 'ready' ? '#3b82f6' : '#22c55e' }]}
+                onPress={handleConfirmAction}
+                disabled={confirmLoading}
+                activeOpacity={0.7}
+              >
+                {confirmLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmActionText}>
+                    {confirmModal.type === 'ready' ? 'CONFIRM' : 'DELIVER'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </ScreenWrapper>
   );
 }
@@ -310,7 +404,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
   };
   const headerStyle = getHeaderStyle();
 
-  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'partially_delivered');
+  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'ready' || order.status === 'partially_delivered');
 
   const getBadgeLabel = () => {
     if (order.isReadyServe) return 'Ready to Serve';
@@ -351,22 +445,29 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
         {/* Items */}
         <View style={styles.itemsList}>
           {order.items?.map((item, idx) => {
-            const isDelivered = item.delivered ?? false;
+            const iStatus = item.itemStatus || 'preparing';
+            const isReady = iStatus === 'ready';
+            const isItemDelivered = iStatus === 'delivered';
+            const iconName = isItemDelivered ? 'checkmark-done-circle' : isReady ? 'checkbox' : 'square-outline';
+            const iconColor = isItemDelivered ? '#22c55e' : isReady ? '#3b82f6' : colors.mutedForeground;
             return (
               <View key={idx} style={styles.itemRow}>
                 {canCheckDeliver && (
                   <TouchableOpacity
-                    onPress={() => !isDelivered && onItemDelivered(order.id, idx)}
+                    onPress={() => {
+                      if (iStatus === 'preparing') onItemDelivered(order.id, idx);
+                      else if (iStatus === 'ready') onItemDelivered(order.id, idx);
+                    }}
                     style={styles.checkboxBtn}
-                    disabled={isDelivered}
-                    accessibilityLabel={isDelivered ? `${item.name} delivered` : `Mark ${item.name} delivered`}
+                    disabled={isItemDelivered}
+                    accessibilityLabel={
+                      isItemDelivered ? `${item.name} delivered` :
+                      isReady ? `Deliver ${item.name}` :
+                      `Mark ${item.name} ready`
+                    }
                     accessibilityRole="button"
                   >
-                    <Icon
-                      name={isDelivered ? 'checkbox' : 'square-outline'}
-                      size={20}
-                      color={isDelivered ? colors.accent : colors.mutedForeground}
-                    />
+                    <Icon name={iconName} size={20} color={iconColor} />
                   </TouchableOpacity>
                 )}
                 {resolveImageUrl(item.image) ? (
@@ -379,14 +480,18 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
                 <View style={{ flex: 1 }}>
                   <Text style={[
                     styles.itemName,
-                    isDelivered && { textDecorationLine: 'line-through', color: colors.mutedForeground },
+                    isItemDelivered && { textDecorationLine: 'line-through', color: colors.mutedForeground },
                   ]}>
                     {item.name}
                   </Text>
-                  <Text style={styles.itemMeta}>
-                    <Text style={{ color: colors.accent, fontWeight: '600' }}>{item.quantity}x</Text>
-                    {' '}@ Rs. {item.offerPrice || item.price}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.itemMeta}>
+                      <Text style={{ color: colors.accent, fontWeight: '600' }}>{item.quantity}x</Text>
+                      {' '}@ Rs. {item.offerPrice || item.price}
+                    </Text>
+                    {isReady && <Text style={{ fontSize: 10, fontWeight: '700', color: '#3b82f6' }}>READY</Text>}
+                    {isItemDelivered && <Text style={{ fontSize: 10, fontWeight: '700', color: '#22c55e' }}>DELIVERED</Text>}
+                  </View>
                 </View>
                 <Text style={styles.itemTotal}>Rs. {(item.offerPrice || item.price) * item.quantity}</Text>
               </View>
@@ -431,23 +536,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
               </TouchableOpacity>
             </>
           )}
-          {order.status === 'preparing' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 1 }]}
-              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'ready'); }}
-              disabled={isUpdating}
-              activeOpacity={0.7}
-              accessibilityLabel="Mark ready"
-              accessibilityRole="button"
-            >
-              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
-                <>
-                  <Icon name="checkmark-circle" size={16} color="#fff" />
-                  <Text style={[styles.actionText, { color: '#fff' }]}>Mark Ready</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          {/* No "Mark Ready" button in preparing — items auto-move the order when all checked ready */}
           {(order.status === 'ready' || order.isReadyServe) && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: order.isReadyServe ? '#f97316' : colors.accent, flex: 1 }]}
@@ -592,4 +681,46 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 60, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.foreground },
   emptySubtitle: { fontSize: 13, color: colors.mutedForeground },
+
+  // Confirm modal
+  confirmOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  confirmDialog: {
+    width: '100%', maxWidth: 320, backgroundColor: colors.card,
+    borderRadius: 20, padding: 24, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 24,
+    elevation: 16,
+  },
+  confirmIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 16,
+  },
+  confirmTitle: {
+    fontSize: 18, fontWeight: '700', color: colors.foreground, marginBottom: 8, textAlign: 'center',
+  },
+  confirmMessage: {
+    fontSize: 14, color: colors.mutedForeground, textAlign: 'center',
+    lineHeight: 20, marginBottom: 24,
+  },
+  confirmActions: {
+    flexDirection: 'row', gap: 12, width: '100%',
+  },
+  confirmCancelBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 14,
+    backgroundColor: colors.muted, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  confirmCancelText: {
+    fontSize: 14, fontWeight: '700', color: colors.foreground, letterSpacing: 0.5,
+  },
+  confirmActionBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  confirmActionText: {
+    fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: 0.5,
+  },
 });

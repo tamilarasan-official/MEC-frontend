@@ -26,6 +26,10 @@ export default function QRPaymentConfirmModal({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Preserve last non-null paymentData so content stays visible during fade-out animation
+  const lastPaymentData = useRef(paymentData);
+  if (paymentData) lastPaymentData.current = paymentData;
+  const data = lastPaymentData.current;
 
   useEffect(() => {
     return () => { if (successTimerRef.current !== null) clearTimeout(successTimerRef.current); };
@@ -39,17 +43,17 @@ export default function QRPaymentConfirmModal({
     }
   }, [visible]);
 
-  if (!paymentData) return null;
+  if (!data) return null;
 
-  const insufficientBalance = balance < paymentData.amount;
-  const balanceAfter = balance - paymentData.amount;
+  const insufficientBalance = balance < data.amount;
+  const balanceAfter = balance - data.amount;
 
   const handlePay = async () => {
     if (paying || insufficientBalance) return;
     setPaying(true);
     setError(null);
     try {
-      await walletService.payAdhocPayment(paymentData.paymentId);
+      await walletService.payAdhocPayment(data.paymentId);
       setSuccess(true);
       successTimerRef.current = setTimeout(() => {
         onSuccess();
@@ -75,7 +79,7 @@ export default function QRPaymentConfirmModal({
                 <Icon name="checkmark" size={40} color="#fff" />
               </View>
               <Text style={styles.successTitle}>Payment Successful!</Text>
-              <Text style={styles.successAmount}>Rs. {paymentData.amount}</Text>
+              <Text style={styles.successAmount}>Rs. {data.amount}</Text>
               <Text style={styles.successHint}>Paid from your wallet</Text>
             </View>
           ) : (
@@ -86,16 +90,16 @@ export default function QRPaymentConfirmModal({
               {/* Payment Info Card */}
               <View style={styles.paymentInfoCard}>
                 <Text style={styles.paymentForLabel}>Payment for</Text>
-                <Text style={styles.paymentTitle}>{paymentData.title || 'Payment'}</Text>
-                {paymentData.shopName ? (
-                  <Text style={styles.paymentFrom}>From: {paymentData.shopName}</Text>
+                <Text style={styles.paymentTitle}>{data.title || 'Payment'}</Text>
+                {data.shopName ? (
+                  <Text style={styles.paymentFrom}>From: {data.shopName}</Text>
                 ) : null}
               </View>
 
               {/* Amount Row */}
               <View style={styles.row}>
                 <Text style={styles.rowLabel}>Amount</Text>
-                <Text style={styles.rowAmountValue}>Rs. {paymentData.amount}</Text>
+                <Text style={styles.rowAmountValue}>Rs. {data.amount}</Text>
               </View>
 
               {/* Your Balance Row */}

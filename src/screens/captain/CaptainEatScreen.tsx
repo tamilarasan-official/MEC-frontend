@@ -270,6 +270,7 @@ export default function CaptainEatScreen() {
         keyExtractor={i => i.id}
         renderItem={renderFoodCard}
         contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         ListHeaderComponent={
           <>
@@ -380,10 +381,7 @@ export default function CaptainEatScreen() {
         visible={showWallet}
         onClose={() => setShowWallet(false)}
         onTopUp={() => setShowTopUp(true)}
-        onTransactionPress={() => {
-          setShowWallet(false);
-          navigation.navigate('EatOrders');
-        }}
+        onTransactionPress={() => navigation.navigate('Wallet' as any)}
       />
       <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
       <CaptainProfileDropdown

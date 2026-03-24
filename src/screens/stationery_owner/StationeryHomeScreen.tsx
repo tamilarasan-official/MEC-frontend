@@ -4,7 +4,7 @@ import {
   ActivityIndicator, RefreshControl, Image, TextInput,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import {
   fetchShopDetails, fetchQRPayments, fetchWalletBalance,
@@ -145,6 +145,13 @@ export default function StationeryHomeScreen() {
   }, [dispatch]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-refresh wallet balance every time this tab gains focus
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchWalletBalance());
+    }, [dispatch])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

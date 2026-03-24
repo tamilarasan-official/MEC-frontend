@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Linking, ActivityIndicator,
-  Platform, Vibration, Animated, Modal,
+  Platform, Vibration, Animated, Modal, AppState,
 } from 'react-native';
 import { Camera, useCameraDevice, useCodeScanner, CameraPermissionStatus } from 'react-native-vision-camera';
 import Icon from '../../components/common/Icon';
@@ -23,6 +23,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
   const [scannedOrderId, setScannedOrderId] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
+  const [torch, setTorch] = useState(false);
   const scanCooldown = useRef(false);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineAnim = useRef(new Animated.Value(0)).current;
@@ -32,14 +33,33 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
   useEffect(() => {
     if (visible) {
       (async () => {
-        const status = await Camera.requestCameraPermission();
-        setPermission(status);
+        // Check cached permission first (instant) — only prompt if not yet determined
+        const cached = Camera.getCameraPermissionStatus();
+        if (cached === 'granted' || cached === 'denied') {
+          setPermission(cached);
+        } else {
+          const status = await Camera.requestCameraPermission();
+          setPermission(status);
+        }
       })();
       setIsActive(true);
+      setTorch(false);
       setScannedOrderId(null);
       setScanError(null);
       scanCooldown.current = false;
     }
+  }, [visible]);
+
+  // Re-check permission when returning from Settings
+  useEffect(() => {
+    if (!visible) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        const status = Camera.getCameraPermissionStatus();
+        setPermission(status);
+      }
+    });
+    return () => sub.remove();
   }, [visible]);
 
   // Scanning line animation
@@ -136,7 +156,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
           </Text>
           <TouchableOpacity
             style={styles.settingsBtn}
-            onPress={() => Linking.openSettings()}
+            onPress={() => { setIsActive(false); Linking.openSettings(); }}
             activeOpacity={0.8}
             accessibilityLabel="Open settings"
             accessibilityRole="button">
@@ -165,6 +185,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
           device={device}
           isActive={isActive && visible}
           codeScanner={codeScanner}
+          torch={torch ? 'on' : 'off'}
         />
 
         {/* Overlay */}
@@ -215,7 +236,15 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
             <Icon name="close" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.titleText}>Scan Order QR</Text>
-          <View style={styles.backBtn} />
+          <TouchableOpacity
+            style={[styles.backBtn, torch && { backgroundColor: 'rgba(255,255,255,0.25)' }]}
+            onPress={() => setTorch(t => !t)}
+            activeOpacity={0.7}
+            accessibilityLabel={torch ? 'Turn off flashlight' : 'Turn on flashlight'}
+            accessibilityRole="button"
+          >
+            <Icon name={torch ? 'flash' : 'flash-off-outline'} size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
 
         {/* Scanned Order Modal */}

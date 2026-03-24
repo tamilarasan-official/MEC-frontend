@@ -16,14 +16,19 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'UsernameLogin'>;
 
 export default function UsernameLoginScreen({ navigation }: Props) {
     const insets = useSafeAreaInsets();
-    const [username, setUsername] = useState('');
+    const [phone, setPhone] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const dispatch = useAppDispatch();
     const { isLoading: loading, error } = useAppSelector(s => s.auth);
-    const isFormValid = username.trim().length >= 3 && password.length >= 4;
+    const isPhoneValid = /^[6-9]\d{9}$/.test(phone);
+    const isFormValid = isPhoneValid && password.length >= 4;
     const submittingRef = useRef(false);
     const passwordRef = useRef<TextInput>(null);
+
+    const handlePhoneChange = useCallback((val: string) => {
+        setPhone(val.replace(/\D/g, '').slice(0, 10));
+    }, []);
 
     useEffect(() => {
         const unsubscribe = navigation.addListener('focus', () => {
@@ -37,13 +42,13 @@ export default function UsernameLoginScreen({ navigation }: Props) {
         submittingRef.current = true;
         try {
             mediumHaptic();
-            await dispatch(login({ username: username.trim(), password })).unwrap();
+            await dispatch(login({ username: phone, password })).unwrap();
         } catch {
             // error handled by redux
         } finally {
             submittingRef.current = false;
         }
-    }, [dispatch, username, password]);
+    }, [dispatch, phone, password]);
 
     return (
         <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>
@@ -53,15 +58,15 @@ export default function UsernameLoginScreen({ navigation }: Props) {
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}>
 
-                    {/* Back to Phone Login */}
+                    {/* Back to OTP Login */}
                     <TouchableOpacity
                         style={styles.backBtn}
                         onPress={() => navigation.goBack()}
                         activeOpacity={0.7}
-                        accessibilityLabel="Back to phone login"
+                        accessibilityLabel="Back to OTP login"
                         accessibilityRole="button">
                         <Icon name="arrow-back" size={20} color="rgba(255,255,255,0.7)" />
-                        <Text style={styles.backBtnText}>Phone Login</Text>
+                        <Text style={styles.backBtnText}>OTP Login</Text>
                     </TouchableOpacity>
 
                     {/* Brand */}
@@ -73,7 +78,7 @@ export default function UsernameLoginScreen({ navigation }: Props) {
                             accessibilityLabel="CampusOne logo"
                         />
                         <Text style={styles.brandName}>CampusOne</Text>
-                        <Text style={styles.brandTagline}>Sign in with your credentials</Text>
+                        <Text style={styles.brandTagline}>Sign in with your phone & password</Text>
                     </View>
 
                     {/* Form */}
@@ -84,22 +89,23 @@ export default function UsernameLoginScreen({ navigation }: Props) {
                             </View>
                         )}
 
-                        {/* Username */}
+                        {/* Phone Number */}
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Username</Text>
-                            <View style={styles.inputRow}>
-                                <Icon name="person-outline" size={18} color="rgba(255,255,255,0.5)" />
+                            <Text style={styles.label}>Phone Number</Text>
+                            <View style={styles.phoneRow}>
+                                <Text style={styles.phonePrefix}>+91</Text>
+                                <View style={styles.phoneDivider} />
                                 <TextInput
-                                    style={styles.textInput}
-                                    value={username}
-                                    onChangeText={setUsername}
-                                    placeholder="Enter your username"
+                                    style={styles.phoneInput}
+                                    value={phone}
+                                    onChangeText={handlePhoneChange}
+                                    placeholder="Enter 10-digit number"
                                     placeholderTextColor="rgba(255,255,255,0.4)"
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
+                                    keyboardType="phone-pad"
+                                    maxLength={10}
                                     returnKeyType="next"
                                     onSubmitEditing={() => passwordRef.current?.focus()}
-                                    accessibilityLabel="Username"
+                                    accessibilityLabel="Phone number"
                                 />
                             </View>
                         </View>
@@ -216,6 +222,21 @@ const styles = StyleSheet.create({
 
     inputGroup: { gap: 10 },
     label: { fontSize: 14, fontWeight: '700', color: '#fff' },
+    phoneRow: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 14, overflow: 'hidden',
+    },
+    phonePrefix: {
+        paddingLeft: 16, paddingRight: 12,
+        fontSize: 15, color: 'rgba(255,255,255,0.6)', fontWeight: '600',
+    },
+    phoneDivider: { width: 1, height: 22, backgroundColor: 'rgba(255,255,255,0.2)' },
+    phoneInput: {
+        flex: 1, paddingLeft: 12, paddingRight: 16,
+        paddingVertical: 16, fontSize: 15, color: '#fff',
+    },
     inputRow: {
         flexDirection: 'row', alignItems: 'center', gap: 10,
         backgroundColor: 'rgba(255,255,255,0.08)',

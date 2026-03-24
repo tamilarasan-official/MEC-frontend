@@ -83,6 +83,9 @@ def enableProguardInReleaseBuilds = true
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// Help react-native-keychain find react-native without calling 'node' (Windows fix)
+project.ext.REACT_NATIVE_NODE_MODULES_DIR = file("../../node_modules/react-native")
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -93,7 +96,7 @@ android {
         applicationId "com.mec.campusone"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6   // Manually increment before each Play Store upload: 1 → 2 → 3 → 4 → 5 → 6
+        versionCode 14   // Manually increment before each Play Store upload: 1 → 2 → 3 → ... → 13 → 14
         versionName appVersionName  // Auto-read from package.json
         manifestPlaceholders = [usesCleartextTraffic: "false"]
     }

@@ -17,17 +17,22 @@ import CaptainEatScreen from '../../screens/captain/CaptainEatScreen';
 import CaptainEatOrdersScreen from '../../screens/captain/CaptainEatOrdersScreen';
 import CaptainScannerScreen from '../../screens/captain/CaptainScannerScreen';
 import StationeryHomeScreen from '../../screens/stationery_owner/StationeryHomeScreen';
+import WalletScreen from '../../screens/student/WalletScreen';
+import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<OwnerTabParamList>();
 
 // Pill indicator matching captain/student tabs style
-const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => (
-  <View style={[styles.pill, focused && styles.pillActive]}>
-    {children}
-  </View>
-);
+const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => {
+  const { colors: c } = useTheme();
+  return (
+    <View style={[styles.pill, focused && { backgroundColor: c.accent + '26' }]}>
+      {children}
+    </View>
+  );
+};
 
 const HomeIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
@@ -70,9 +75,7 @@ const styles = StyleSheet.create({
     width: 56, height: 32, borderRadius: 16,
     justifyContent: 'center', alignItems: 'center',
   },
-  pillActive: {
-    backgroundColor: 'rgba(59,130,246,0.15)',
-  },
+  // pillActive color is now applied inline via theme
   wrapper: {
     flex: 1,
   },
@@ -132,7 +135,7 @@ export default function OwnerTabs() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#3b82f6',
+          tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
           tabBarStyle: {
             backgroundColor: colors.card,
@@ -164,6 +167,16 @@ export default function OwnerTabs() {
             tabBarIcon: EatOrdersIcon,
           }}
         />
+        <Tab.Screen
+          name="Wallet"
+          component={WalletScreen}
+          options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
+        />
+        <Tab.Screen
+          name="TransactionDetail"
+          component={TransactionDetailScreen}
+          options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
+        />
       </Tab.Navigator>
     );
   }
@@ -174,7 +187,7 @@ export default function OwnerTabs() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#3b82f6',
+          tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
           tabBarStyle: {
             backgroundColor: colors.card,
@@ -199,22 +212,26 @@ export default function OwnerTabs() {
             tabBarIcon: HomeIcon,
           }}
         />
-        <Tab.Screen
-          name="PrepList"
-          component={CaptainPrepListScreen}
-          options={{
-            tabBarLabel: 'Prep List',
-            tabBarIcon: PrepListIcon,
-          }}
-        />
-        <Tab.Screen
-          name="Menu"
-          component={OwnerMenuScreen}
-          options={{
-            tabBarLabel: 'Items',
-            tabBarIcon: MenuIcon,
-          }}
-        />
+        {!isNonFoodShop && (
+          <Tab.Screen
+            name="PrepList"
+            component={CaptainPrepListScreen}
+            options={{
+              tabBarLabel: 'Prep List',
+              tabBarIcon: PrepListIcon,
+            }}
+          />
+        )}
+        {!isNonFoodShop && (
+          <Tab.Screen
+            name="Menu"
+            component={OwnerMenuScreen}
+            options={{
+              tabBarLabel: 'Items',
+              tabBarIcon: MenuIcon,
+            }}
+          />
+        )}
         <Tab.Screen
           name="History"
           component={OwnerHistoryScreen}
@@ -233,30 +250,33 @@ export default function OwnerTabs() {
         />
       </Tab.Navigator>
 
-      {/* QR Scanner FAB */}
-      <View style={styles.scanFabRow} pointerEvents="box-none">
-        <TouchableOpacity
-          style={styles.scanFab}
-          onPress={() => setShowScanner(true)}
-          activeOpacity={0.85}
-        >
-          <LinearGradient
-            colors={['#10b981', '#06d6a0']}
-            start={{ x: 0.2, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
-            style={styles.scanFabGradient}
-          >
-            <Icon name="scan-outline" size={30} color="#fff" />
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+      {/* QR Scanner FAB — food shops only (stationery uses QR payments, not order scanning) */}
+      {!isNonFoodShop && (
+        <>
+          <View style={styles.scanFabRow} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.scanFab}
+              onPress={() => setShowScanner(true)}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#10b981', '#06d6a0']}
+                start={{ x: 0.2, y: 0 }}
+                end={{ x: 0.8, y: 1 }}
+                style={styles.scanFabGradient}
+              >
+                <Icon name="scan-outline" size={30} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
 
-      {/* QR Scanner Modal */}
-      <CaptainScannerScreen
-        visible={showScanner}
-        onClose={() => setShowScanner(false)}
-        onOrderUpdated={handleScanOrderUpdated}
-      />
+          <CaptainScannerScreen
+            visible={showScanner}
+            onClose={() => setShowScanner(false)}
+            onOrderUpdated={handleScanOrderUpdated}
+          />
+        </>
+      )}
     </View>
   );
 }

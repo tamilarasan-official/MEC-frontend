@@ -16,6 +16,7 @@ const mapOrderItem = (item: any): CartItem => ({
   offerPrice: item.foodItem?.isOfferActive ? item.foodItem?.offerPrice : undefined,
   quantity: item.quantity ?? 1,
   delivered: item.delivered ?? false,
+  itemStatus: item.itemStatus || 'preparing',
 });
 
 const mapOrder = (raw: any): Order => ({
@@ -165,9 +166,9 @@ export const updateOrderStatus = createAsyncThunk(
 
 export const markItemDelivered = createAsyncThunk(
   'orders/markItemDelivered',
-  async ({ orderId, itemIndex, delivered = true }: { orderId: string; itemIndex: number; delivered?: boolean }, { rejectWithValue }) => {
+  async ({ orderId, itemIndex, delivered = true, itemStatus }: { orderId: string; itemIndex: number; delivered?: boolean; itemStatus?: 'preparing' | 'ready' | 'delivered' }, { rejectWithValue }) => {
     try {
-      const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`, { delivered });
+      const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`, { delivered, itemStatus });
       return mapOrder(res.data.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to mark item');
@@ -253,16 +254,28 @@ const ordersSlice = createSlice({
     builder
       .addCase(updateOrderStatus.pending, (s) => { s.error = null; })
       .addCase(updateOrderStatus.fulfilled, (s, a) => {
-        const idx = s.shopOrders.findIndex(o => o.id === a.payload.id);
-        if (idx >= 0) s.shopOrders[idx] = a.payload;
+        const o = a.payload;
+        const si = s.shopOrders.findIndex(x => x.id === o.id);
+        if (si >= 0) s.shopOrders[si] = o;
+        const ai = s.activeOrders.findIndex(x => x.id === o.id);
+        if (ai >= 0) s.activeOrders[ai] = o;
+        const ui = s.orders.findIndex(x => x.id === o.id);
+        if (ui >= 0) s.orders[ui] = o;
+        if (s.currentOrder?.id === o.id) s.currentOrder = o;
       })
       .addCase(updateOrderStatus.rejected, (s, a) => { s.error = a.payload as string; });
     // Mark item delivered
     builder
       .addCase(markItemDelivered.pending, (s) => { s.error = null; })
       .addCase(markItemDelivered.fulfilled, (s, a) => {
-        const idx = s.shopOrders.findIndex(o => o.id === a.payload.id);
-        if (idx >= 0) s.shopOrders[idx] = a.payload;
+        const o = a.payload;
+        const si = s.shopOrders.findIndex(x => x.id === o.id);
+        if (si >= 0) s.shopOrders[si] = o;
+        const ai = s.activeOrders.findIndex(x => x.id === o.id);
+        if (ai >= 0) s.activeOrders[ai] = o;
+        const ui = s.orders.findIndex(x => x.id === o.id);
+        if (ui >= 0) s.orders[ui] = o;
+        if (s.currentOrder?.id === o.id) s.currentOrder = o;
       })
       .addCase(markItemDelivered.rejected, (s, a) => { s.error = a.payload as string; });
     // Verify QR

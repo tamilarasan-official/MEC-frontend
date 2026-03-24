@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { StudentHomeStackParamList, TransactionDetail } from '../../types';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -23,7 +24,8 @@ function sourceLabel(source?: string): string {
     case 'adjustment': return 'Adjustment';
     case 'adhoc_payment': return 'Adhoc Payment';
     case 'shop_qr_payment': return 'QR Payment';
-    default: return source || 'Unknown';
+    case 'order_payment': return 'Order Payment';
+    default: return source || 'Wallet';
   }
 }
 
@@ -57,15 +59,20 @@ export default function TransactionDetailScreen({ route, navigation }: Props) {
     }
   };
 
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await fetchDetail();
-      setLoading(false);
-    };
-    init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactionId]);
+  // Auto-refresh transaction detail every time the screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const load = async () => {
+        setLoading(true);
+        await fetchDetail();
+        if (active) setLoading(false);
+      };
+      load();
+      return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transactionId])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

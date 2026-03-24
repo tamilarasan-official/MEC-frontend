@@ -1,22 +1,19 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView,
-  Image, RefreshControl, ActivityIndicator, TextInput, Switch,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  RefreshControl, ActivityIndicator, TextInput, Switch,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList, FoodItem, Order } from '../../types';
+import { StudentHomeStackParamList, Order } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
-import menuService from '../../services/menuService';
 import orderService from '../../services/orderService';
-import { resolveImageUrl } from '../../utils/imageUrl';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Stationery'>;
 
@@ -28,7 +25,6 @@ const PAPER_SIZES = [
 ] as const;
 
 type PaperSize = typeof PAPER_SIZES[number]['id'];
-type ActiveTab = 'items' | 'print';
 
 export default function StationeryScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
@@ -40,15 +36,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
     return null;
   }
   const dispatch = useAppDispatch();
-  const { items: cartItems } = useAppSelector(s => s.cart);
   const user = useAppSelector(s => s.auth.user);
 
-  // Tab
-  const [activeTab, setActiveTab] = useState<ActiveTab>('items');
-
-  // Items tab
-  const [menuItems, setMenuItems] = useState<FoodItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,34 +54,10 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
   const submittingRef = useRef(false);
 
-  const loadMenu = useCallback(async () => {
-    try {
-      const items = await menuService.getShopMenu(shopId);
-      setMenuItems(Array.isArray(items) ? items.filter(i => i.isAvailable) : []);
-      setError(null);
-    } catch {
-      setError('Something went wrong. Pull down to retry.');
-    }
-  }, [shopId]);
-
-  useEffect(() => {
-    const init = async () => {
-      setIsLoading(true);
-      await loadMenu();
-      setIsLoading(false);
-    };
-    init();
-  }, [loadMenu]);
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadMenu();
     setRefreshing(false);
   };
-
-  const getCartQty = (id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0;
-  const totalItems = cartItems.reduce((sum, c) => sum + c.quantity, 0);
-  const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
 
   const calculateTotal = () => {
     const basePrice = colorType === 'bw' ? 1 : 5;
@@ -137,71 +103,6 @@ export default function StationeryScreen({ route, navigation }: Props) {
     }
   };
 
-  const renderItemCard = ({ item }: { item: FoodItem }) => {
-    const qty = getCartQty(item.id);
-    const displayPrice = item.isOffer && item.offerPrice ? item.offerPrice : item.price;
-    return (
-      <View style={[styles.foodCard, qty > 0 && styles.foodCardActive]}>
-        <View style={styles.foodImageWrap}>
-          {item.image ? (
-            <Image source={{ uri: resolveImageUrl(item.image) || undefined }} style={styles.foodImage} accessibilityLabel={`${item.name} image`} />
-          ) : (
-            <View style={[styles.foodImage, styles.foodImagePlaceholder]}>
-              <Icon name="document-outline" size={22} color={colors.textMuted} />
-            </View>
-          )}
-          {item.isOffer && (
-            <View style={styles.offerBadge}>
-              <Text style={styles.offerBadgeText}>OFFER</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.foodInfo}>
-          <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
-          {item.description ? (
-            <Text style={styles.foodDesc} numberOfLines={1}>{item.description}</Text>
-          ) : null}
-          <View style={styles.foodBottom}>
-            <View style={styles.priceRow}>
-              <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
-              {item.isOffer && item.offerPrice ? (
-                <Text style={styles.originalPrice}>Rs.{item.price}</Text>
-              ) : null}
-            </View>
-            {qty === 0 ? (
-              <TouchableOpacity
-                style={styles.addBtn}
-                onPress={() => dispatch(addToCart({ item, shopId, shopName }))}
-                activeOpacity={0.7}
-                accessibilityLabel={`Add ${item.name} to cart`}
-                accessibilityRole="button">
-                <Icon name="add" size={16} color="#fff" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.qtyControl}>
-                <TouchableOpacity
-                  onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 }))}
-                  style={styles.qtyBtn}
-                  accessibilityLabel={`Decrease ${item.name} quantity`}
-                  accessibilityRole="button">
-                  <Icon name="remove" size={14} color={colors.orange500} />
-                </TouchableOpacity>
-                <Text style={styles.qtyText}>{qty}</Text>
-                <TouchableOpacity
-                  onPress={() => dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }))}
-                  style={styles.qtyBtn}
-                  accessibilityLabel={`Increase ${item.name} quantity`}
-                  accessibilityRole="button">
-                  <Icon name="add" size={14} color={colors.orange500} />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-    );
-  };
-
   return (
     <ScreenWrapper>
       <View style={styles.container}>
@@ -216,79 +117,11 @@ export default function StationeryScreen({ route, navigation }: Props) {
             </View>
             <Text style={styles.headerTitle}>{shopName}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.cartBtn}
-            onPress={() => navigation.navigate('Cart')}
-            activeOpacity={0.7}
-            accessibilityLabel="View cart"
-            accessibilityRole="button">
-            <Icon name="cart-outline" size={20} color={colors.text} />
-            {totalItems > 0 && (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{totalItems > 9 ? '9+' : totalItems}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={styles.backBtn} />
         </View>
 
-        {/* Tab switcher */}
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'items' && styles.tabActive]}
-            onPress={() => setActiveTab('items')}
-            activeOpacity={0.7}
-            accessibilityLabel="Shop Items tab"
-            accessibilityRole="button">
-            <Icon name="storefront-outline" size={15} color={activeTab === 'items' ? '#fff' : colors.textMuted} />
-            <Text style={[styles.tabText, activeTab === 'items' && styles.tabTextActive]}>Shop Items</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'print' && styles.tabActive]}
-            onPress={() => setActiveTab('print')}
-            activeOpacity={0.7}
-            accessibilityLabel="Print and Xerox tab"
-            accessibilityRole="button">
-            <Icon name="print-outline" size={15} color={activeTab === 'print' ? '#fff' : colors.textMuted} />
-            <Text style={[styles.tabText, activeTab === 'print' && styles.tabTextActive]}>Print & Xerox</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Items Tab ── */}
-        {activeTab === 'items' && (
-          isLoading ? (
-            <View style={styles.center}>
-              <ActivityIndicator size="large" color={colors.orange500} />
-            </View>
-          ) : (
-            <FlatList
-              data={menuItems}
-              keyExtractor={i => i.id}
-              renderItem={renderItemCard}
-              contentContainerStyle={styles.list}
-              refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.orange500} />
-              }
-              ListEmptyComponent={
-                error ? (
-                  <View style={styles.empty}>
-                    <Icon name="alert-circle-outline" size={44} color={colors.textMuted} />
-                    <Text style={styles.emptyTitle}>{error}</Text>
-                  </View>
-                ) : (
-                  <View style={styles.empty}>
-                    <Icon name="document-outline" size={44} color={colors.textMuted} />
-                    <Text style={styles.emptyTitle}>No items available</Text>
-                    <Text style={styles.emptySubtitle}>Check back later for stationery items</Text>
-                  </View>
-                )
-              }
-              ListFooterComponent={totalItems > 0 ? <View style={styles.listFooter} /> : null}
-            />
-          )
-        )}
-
-        {/* ── Print & Xerox Tab ── */}
-        {activeTab === 'print' && (
+        {/* ── Print & Xerox ── */}
+        {(
           <KeyboardAvoidingView
             style={styles.flex}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -525,32 +358,6 @@ export default function StationeryScreen({ route, navigation }: Props) {
           </KeyboardAvoidingView>
         )}
 
-        {/* Floating Cart Bar (items tab only) */}
-        {activeTab === 'items' && totalItems > 0 && (
-          <TouchableOpacity
-            style={styles.floatingBar}
-            onPress={() => navigation.navigate('Cart')}
-            activeOpacity={0.9}
-            accessibilityLabel="View cart"
-            accessibilityRole="button">
-            <View style={styles.floatingBarLeft}>
-              <View style={styles.floatingBarIcon}>
-                <Icon name="bag-handle" size={22} color="#fff" />
-                <View style={styles.floatingBarBadge}>
-                  <Text style={styles.floatingBarBadgeText}>{totalItems}</Text>
-                </View>
-              </View>
-              <View>
-                <Text style={styles.floatingBarSub}>{totalItems} item{totalItems > 1 ? 's' : ''}</Text>
-                <Text style={styles.floatingBarTotal}>Rs. {cartTotal}</Text>
-              </View>
-            </View>
-            <View style={styles.floatingBarRight}>
-              <Text style={styles.floatingBarAction}>View Cart</Text>
-              <Icon name="arrow-forward" size={18} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Order QR Modal after successful print order */}

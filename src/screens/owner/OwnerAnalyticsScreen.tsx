@@ -332,8 +332,13 @@ export default function OwnerAnalyticsScreen() {
         { label: 'W4', value: Math.round(thisMonthRevenue * 0.25), color: '#3b82f6' },
       ];
 
+  // Top items — filtered by search query when active
+  const filteredTopItems = searchQuery.trim()
+    ? topItems.filter(item => item.name.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : topItems;
+
   // Top items chart data
-  const topItemsBarData = topItems.slice(0, 5).map(item => ({
+  const topItemsBarData = filteredTopItems.slice(0, 5).map(item => ({
     name: item.name, value: item.quantity,
   }));
 
@@ -547,9 +552,18 @@ export default function OwnerAnalyticsScreen() {
 
         {/* ── Top Selling Items ── */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Top Selling Items</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.sectionTitle}>Top Selling Items</Text>
+            {searchQuery.trim() ? (
+              <Text style={styles.searchResultLabel}>
+                {filteredTopItems.length} result{filteredTopItems.length !== 1 ? 's' : ''} for "{searchQuery.trim()}"
+              </Text>
+            ) : null}
+          </View>
           {topItems.length === 0 ? (
             <Text style={styles.emptyText}>No sales data yet</Text>
+          ) : filteredTopItems.length === 0 ? (
+            <Text style={styles.emptyText}>No items match "{searchQuery.trim()}"</Text>
           ) : (
             <>
               {/* Horizontal bar chart */}
@@ -557,7 +571,7 @@ export default function OwnerAnalyticsScreen() {
 
               {/* Ranked list */}
               <View style={styles.topListDivider} />
-              {topItems.slice(0, 5).map((item, index) => {
+              {filteredTopItems.slice(0, 5).map((item, index) => {
                 const medal = getMedalColor(index);
                 return (
                   <View key={item.id || index} style={styles.topItemRow}>
@@ -798,6 +812,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   topItemSold: { fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
   topItemRevenue: { fontSize: 14, fontWeight: '700', color: colors.foreground },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 16 },
+  searchResultLabel: { fontSize: 11, color: colors.mutedForeground, fontStyle: 'italic' },
 
   // Refresh
   refreshRow: {

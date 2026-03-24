@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
 import { refreshUserData } from '../store/slices/authSlice';
+import { fetchWalletBalance } from '../store/slices/userSlice';
 import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
@@ -24,6 +25,7 @@ import {
 } from '../services/notificationService';
 import { checkForUpdate, UpdateInfo } from '../services/versionService';
 import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
+import { PermissionDrawer } from '../components/common/PermissionDrawer';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -37,9 +39,13 @@ export default function RootNavigator() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useDispatch<AppDispatch>();
   const { user, isAuthenticated } = useSelector((s: RootState) => s.auth);
+  const userMode = useSelector((s: RootState) => s.user.userMode);
+  const userModeRef = useRef(userMode);
+  useEffect(() => { userModeRef.current = userMode; }, [userMode]);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [popup, setPopup] = useState<PopupData | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [permissionsHandled, setPermissionsHandled] = useState(false);
 
   // Listen for order status popup events (from socket + FCM)
   useEffect(() => {
@@ -96,7 +102,7 @@ export default function RootNavigator() {
     if (isAuthenticated && user) {
       try {
         connectSocket(user.id, user.role, user.shopId);
-        setupSocketListeners(dispatch, user.role, 'work');
+        setupSocketListeners(dispatch, user.role, userModeRef.current);
       } catch {
         // Socket connection failed — app continues without real-time updates
       }
@@ -105,6 +111,13 @@ export default function RootNavigator() {
     }
     return () => { disconnectSocket(); };
   }, [isAuthenticated, user, dispatch]);
+
+  // Re-setup socket listeners when eat/work mode changes (no reconnect needed)
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      setupSocketListeners(dispatch, user.role, userMode);
+    }
+  }, [userMode, isAuthenticated, user, dispatch]);
 
   // Disconnect socket when app is backgrounded to save battery (Bug #59)
   const appStateRef = useRef(AppState.currentState);
@@ -115,7 +128,10 @@ export default function RootNavigator() {
         disconnectSocket();
       } else if (appStateRef.current.match(/background|inactive/) && nextAppState === 'active') {
         connectSocket(user.id, user.role, user.shopId);
-        setupSocketListeners(dispatch, user.role, 'work');
+        setupSocketListeners(dispatch, user.role, userModeRef.current);
+        // Refresh wallet balance on app resume — socket was disconnected in
+        // background so any wallet:updated events (e.g. accountant credit) were missed
+        dispatch(fetchWalletBalance());
       }
       appStateRef.current = nextAppState;
     });
@@ -204,6 +220,11 @@ export default function RootNavigator() {
             }
           }}
         />
+      )}
+
+      {/* Permission drawer — shown once on first launch after login */}
+      {isAuthenticated && !permissionsHandled && (
+        <PermissionDrawer onComplete={() => setPermissionsHandled(true)} />
       )}
     </>
   );

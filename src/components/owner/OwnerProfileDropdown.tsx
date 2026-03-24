@@ -3,8 +3,14 @@ import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Image, Switch, Alert, Linking,
 } from 'react-native';
 import Icon from '../common/Icon';
-import { useTheme } from '../../theme/ThemeContext';
+import { useTheme, ThemeMode } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
+
+const THEME_OPTIONS: { label: string; icon: string; value: ThemeMode }[] = [
+  { label: 'Light', icon: 'sunny-outline', value: 'light' },
+  { label: 'Dark', icon: 'moon', value: 'dark' },
+  { label: 'System', icon: 'desktop-outline', value: 'system' },
+];
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setUserMode, setDietFilter, toggleShopStatus } from '../../store/slices/userSlice';
 import { logout } from '../../store/slices/authSlice';
@@ -25,7 +31,7 @@ interface OwnerProfileDropdownProps {
 }
 
 export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotifications, onOpenWallet }: OwnerProfileDropdownProps) {
-  const { colors } = useTheme();
+  const { colors, mode, setMode } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
@@ -243,6 +249,31 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
 
           <View style={styles.divider} />
 
+          {/* Appearance / Theme Toggle */}
+          <View style={styles.themeSection}>
+            <View style={styles.themeLabelRow}>
+              <Icon name="moon" size={14} color={colors.accent} />
+              <Text style={styles.themeLabel}>Appearance</Text>
+            </View>
+            <View style={styles.themeToggle}>
+              {THEME_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.themeBtn, mode === opt.value && styles.themeBtnActive]}
+                  onPress={() => setMode(opt.value)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`${opt.label} theme`}
+                  accessibilityRole="button"
+                >
+                  <Icon name={opt.icon} size={13} color={mode === opt.value ? '#fff' : colors.mutedForeground} />
+                  <Text style={[styles.themeBtnText, mode === opt.value && styles.themeBtnTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
           {/* Sign Out */}
           <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout} activeOpacity={0.7}>
             <Icon name="log-out-outline" size={18} color={colors.destructive} />
@@ -337,6 +368,25 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   walletLabel: { fontSize: 13, fontWeight: '500', color: colors.mutedForeground },
   walletBalance: { fontSize: 15, fontWeight: '700', color: '#3b82f6', marginTop: 1 },
+  // Theme toggle
+  themeSection: { marginVertical: 2 },
+  themeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  themeLabel: { fontSize: 13, fontWeight: '600', color: colors.foreground },
+  themeToggle: {
+    flexDirection: 'row', backgroundColor: colors.muted,
+    borderRadius: 12, padding: 3, gap: 3,
+  },
+  themeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 7, borderRadius: 10,
+  },
+  themeBtnActive: {
+    backgroundColor: colors.accent,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
+    elevation: 3,
+  },
+  themeBtnText: { fontSize: 11, fontWeight: '600', color: colors.mutedForeground },
+  themeBtnTextActive: { color: '#fff' },
   // Sign out
   signOutBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   signOutText: { fontSize: 14, fontWeight: '500', color: colors.destructive },

@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyOrders } from '../../store/slices/ordersSlice';
 import { useTheme } from '../../theme/ThemeContext';
@@ -46,7 +46,12 @@ export default function OrdersScreen() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
-  useEffect(() => { dispatch(fetchMyOrders()); }, [dispatch]);
+  // Auto-refresh orders every time this screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchMyOrders());
+    }, [dispatch])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

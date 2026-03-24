@@ -260,6 +260,22 @@ const menuSlice = createSlice({
       const i = s.ownerMenuItems.findIndex(x => x.id === a.payload.itemId);
       if (i >= 0) s.ownerMenuItems[i] = { ...s.ownerMenuItems[i], isAvailable: a.payload.isAvailable };
     },
+    /** Update a shop's isActive status (from shop:status_changed socket event).
+     *  When a shop is closed, also clear its menu items. */
+    updateShopStatus: (s, a: PayloadAction<{ shopId: string; isActive: boolean }>) => {
+      const shop = s.shops.find(x => x.id === a.payload.shopId);
+      if (shop) {
+        shop.isActive = a.payload.isActive;
+      }
+      // If the shop was deactivated and it's the current canteen shop, clear menu
+      if (!a.payload.isActive) {
+        const closedShopMenu = s.menuItems.filter(item => item.shopId === a.payload.shopId);
+        if (closedShopMenu.length > 0) {
+          s.menuItems = [];
+          s.categories = [];
+        }
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -310,5 +326,5 @@ const menuSlice = createSlice({
   },
 });
 
-export const { clearError, setSelectedCategory, setSearchQuery, setCurrentShop, clearMenu, optimisticToggle } = menuSlice.actions;
+export const { clearError, setSelectedCategory, setSearchQuery, setCurrentShop, clearMenu, optimisticToggle, updateShopStatus } = menuSlice.actions;
 export default menuSlice.reducer;

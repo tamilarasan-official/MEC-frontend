@@ -1,6 +1,6 @@
 import React, { useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Linking, ActivityIndicator, Platform, Vibration, Animated,
+  View, Text, StyleSheet, TouchableOpacity, Linking, ActivityIndicator, Platform, Vibration, Animated, AppState,
 } from 'react-native';
 import { Camera, useCameraDevice, useCodeScanner, CameraPermissionStatus } from 'react-native-vision-camera';
 import Icon from '../../components/common/Icon';
@@ -22,6 +22,7 @@ export default function ScannerScreen() {
   const [scannedPayment, setScannedPayment] = useState<QRPaymentData | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
+  const [torch, setTorch] = useState(false);
   const scanCooldown = useRef(false);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineAnim = useRef(new Animated.Value(0)).current;
@@ -30,9 +31,25 @@ export default function ScannerScreen() {
 
   useEffect(() => {
     (async () => {
+      const cached = Camera.getCameraPermissionStatus();
+      if (cached === 'granted' || cached === 'denied') {
+        setPermission(cached);
+        return;
+      }
       const status = await Camera.requestCameraPermission();
       setPermission(status);
     })();
+  }, []);
+
+  // Re-check permission when returning from Settings (issue 5)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        const status = Camera.getCameraPermissionStatus();
+        setPermission(status);
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   // Scanning line animation
@@ -135,7 +152,7 @@ export default function ScannerScreen() {
         </Text>
         <TouchableOpacity
           style={styles.settingsBtn}
-          onPress={() => Linking.openSettings()}
+          onPress={() => { setIsActive(false); Linking.openSettings(); }}
           activeOpacity={0.8}
           accessibilityLabel="Open Settings"
           accessibilityRole="button">
@@ -169,6 +186,7 @@ export default function ScannerScreen() {
         device={device}
         isActive={isActive}
         codeScanner={codeScanner}
+        torch={torch ? 'on' : 'off'}
       />
 
       {/* Overlay */}
@@ -216,6 +234,15 @@ export default function ScannerScreen() {
       {/* Title bar */}
       <View style={styles.titleBar}>
         <Text style={styles.titleText}>Scan QR Code</Text>
+        <TouchableOpacity
+          style={[styles.torchBtn, torch && { backgroundColor: 'rgba(255,255,255,0.25)' }]}
+          onPress={() => setTorch(t => !t)}
+          activeOpacity={0.7}
+          accessibilityLabel={torch ? 'Turn off flashlight' : 'Turn on flashlight'}
+          accessibilityRole="button"
+        >
+          <Icon name={torch ? 'flash' : 'flash-off-outline'} size={22} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Scanned Order Modal */}
@@ -396,6 +423,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     right: 0,
     paddingTop: Platform.OS === 'ios' ? 56 : 44,
     paddingBottom: 16,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
@@ -403,5 +433,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#fff',
+  },
+  torchBtn: {
+    position: 'absolute',
+    right: 16,
+    top: Platform.OS === 'ios' ? 56 : 44,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

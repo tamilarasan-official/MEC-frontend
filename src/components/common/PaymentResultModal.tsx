@@ -138,17 +138,28 @@ export default function PaymentResultModal({
   useEffect(() => {
     if (!visible) return;
 
-    // Reset all
+    // Reset all — start fully transparent for smooth fade-in
+    // (animationType="none" so we control the entrance ourselves)
     iconScale.setValue(0);
     contentOp.setValue(0);
     confettiAnim.setValue(0);
-    dissolveOp.setValue(1);
-    dissolveScale.setValue(1);
+    dissolveOp.setValue(0);
+    dissolveScale.setValue(0.92);
     isDismissingRef.current = false;
+
+    // Fade the entire modal in (replaces animationType="fade")
+    Animated.parallel([
+      Animated.timing(dissolveOp, {
+        toValue: 1, duration: 300, useNativeDriver: true,
+      }),
+      Animated.spring(dissolveScale, {
+        toValue: 1, friction: 8, tension: 60, useNativeDriver: true,
+      }),
+    ]).start();
 
     // Icon bounce in
     Animated.spring(iconScale, {
-      toValue: 1, friction: 4, tension: 80, useNativeDriver: true,
+      toValue: 1, friction: 4, tension: 80, delay: 100, useNativeDriver: true,
     }).start();
 
     // Content fade in
@@ -175,7 +186,7 @@ export default function PaymentResultModal({
   if (!visible) return null;
 
   return (
-    <Modal visible animationType="fade" statusBarTranslucent onRequestClose={animateDismiss}>
+    <Modal visible animationType="none" statusBarTranslucent onRequestClose={animateDismiss}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <Animated.View style={[s.root, { opacity: dissolveOp, transform: [{ scale: dissolveScale }] }]}>
 

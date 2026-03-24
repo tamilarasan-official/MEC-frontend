@@ -88,8 +88,8 @@ const orderService = {
     const res = await api.put(`/orders/${orderId}/status`, body);
     return mapOrder(res.data.data);
   },
-  markItemDelivered: async (orderId: string, itemIndex: number): Promise<Order> => {
-    const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`);
+  markItemDelivered: async (orderId: string, itemIndex: number, delivered: boolean = true): Promise<Order> => {
+    const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`, { delivered });
     return mapOrder(res.data.data);
   },
   verifyQRCode: async (qrData: string): Promise<{ order: Order; valid: boolean }> => {

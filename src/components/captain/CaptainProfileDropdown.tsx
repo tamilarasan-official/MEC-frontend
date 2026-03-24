@@ -3,14 +3,21 @@ import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Image, Linking, Alert,
 } from 'react-native';
 import Icon from '../common/Icon';
-import { useTheme } from '../../theme/ThemeContext';
+import { useTheme, ThemeMode } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
+
+const THEME_OPTIONS: { label: string; icon: string; value: ThemeMode }[] = [
+  { label: 'Light', icon: 'sunny-outline', value: 'light' },
+  { label: 'Dark', icon: 'moon', value: 'dark' },
+  { label: 'System', icon: 'desktop-outline', value: 'system' },
+];
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setUserMode, setDietFilter } from '../../store/slices/userSlice';
 import { logout } from '../../store/slices/authSlice';
 import walletService from '../../services/walletService';
 import { DietFilter } from '../../types';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
+import ChangePasswordScreen from '../../screens/shared/ChangePasswordScreen';
 
 const DIET_OPTIONS: { label: string; value: DietFilter }[] = [
   { label: 'All', value: 'all' },
@@ -24,7 +31,7 @@ interface CaptainProfileDropdownProps {
 }
 
 export default function CaptainProfileDropdown({ visible, onClose, onNavigateNotifications }: CaptainProfileDropdownProps) {
-  const { colors } = useTheme();
+  const { colors, mode, setMode } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
@@ -32,6 +39,7 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
   const { dietFilter } = useAppSelector(s => s.user);
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
   const roleLabel = (user?.role || 'captain').charAt(0).toUpperCase() + (user?.role || 'captain').slice(1);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const handleDietChange = async (value: DietFilter) => {
     dispatch(setDietFilter(value));
@@ -64,6 +72,7 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} style={styles.dropdown}>
@@ -164,6 +173,15 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
             <Text style={styles.menuItemText}>Notifications</Text>
           </TouchableOpacity>
 
+          {/* Change Password */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => { onClose(); setTimeout(() => setShowChangePassword(true), 100); }}
+            activeOpacity={0.7}>
+            <Icon name="lock-closed-outline" size={18} color="#8b5cf6" />
+            <Text style={styles.menuItemText}>Change Password</Text>
+          </TouchableOpacity>
+
           {/* Help & Support */}
           <TouchableOpacity
             style={styles.menuItem}
@@ -191,6 +209,31 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
 
           <View style={styles.divider} />
 
+          {/* Appearance / Theme Toggle */}
+          <View style={styles.themeSection}>
+            <View style={styles.themeLabelRow}>
+              <Icon name="moon" size={14} color={colors.accent} />
+              <Text style={styles.themeLabel}>Appearance</Text>
+            </View>
+            <View style={styles.themeToggle}>
+              {THEME_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.themeBtn, mode === opt.value && styles.themeBtnActive]}
+                  onPress={() => setMode(opt.value)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`${opt.label} theme`}
+                  accessibilityRole="button"
+                >
+                  <Icon name={opt.icon} size={13} color={mode === opt.value ? '#fff' : colors.mutedForeground} />
+                  <Text style={[styles.themeBtnText, mode === opt.value && styles.themeBtnTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
           {/* Sign Out */}
           <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout} activeOpacity={0.7}>
             <Icon name="log-out-outline" size={18} color={colors.destructive} />
@@ -201,6 +244,12 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
       </TouchableOpacity>
 
     </Modal>
+
+    {/* Change Password Modal */}
+    <Modal visible={showChangePassword} animationType="slide" statusBarTranslucent onRequestClose={() => setShowChangePassword(false)}>
+      <ChangePasswordScreen onClose={() => setShowChangePassword(false)} />
+    </Modal>
+    </>
   );
 }
 
@@ -268,6 +317,25 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // Menu items
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11 },
   menuItemText: { fontSize: 14, fontWeight: '500', color: colors.foreground },
+  // Theme toggle
+  themeSection: { marginVertical: 2 },
+  themeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  themeLabel: { fontSize: 13, fontWeight: '600', color: colors.foreground },
+  themeToggle: {
+    flexDirection: 'row', backgroundColor: colors.muted,
+    borderRadius: 12, padding: 3, gap: 3,
+  },
+  themeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 4, paddingVertical: 7, borderRadius: 10,
+  },
+  themeBtnActive: {
+    backgroundColor: colors.accent,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4,
+    elevation: 3,
+  },
+  themeBtnText: { fontSize: 11, fontWeight: '600', color: colors.mutedForeground },
+  themeBtnTextActive: { color: '#fff' },
   // Sign out
   signOutBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   signOutText: { fontSize: 14, fontWeight: '500', color: colors.destructive },

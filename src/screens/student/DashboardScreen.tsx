@@ -124,6 +124,7 @@ export default function StudentDashboard({ navigation }: Props) {
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const canteenShop = shops.find(s => s.category === 'canteen');
+  const isShopOpen = canteenShop?.isActive !== false; // closed if explicitly false
   const isStudent = user?.role === 'student';
 
   const loadData = useCallback(async () => {
@@ -142,11 +143,11 @@ export default function StudentDashboard({ navigation }: Props) {
   }, [dispatch, isStudent]);
 
   useEffect(() => {
-    if (canteenShop?.id) {
+    if (canteenShop?.id && isShopOpen) {
       dispatch(fetchShopMenu({ shopId: canteenShop.id }));
       dispatch(fetchShopCategories(canteenShop.id));
     }
-  }, [dispatch, canteenShop?.id]);
+  }, [dispatch, canteenShop?.id, isShopOpen]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -260,12 +261,14 @@ export default function StudentDashboard({ navigation }: Props) {
   }, [allCategories]);
 
   const filteredItems = useMemo(() => {
+    // Don't show any items when the shop is closed
+    if (!canteenShop || !isShopOpen) return [];
     return shopMenu.filter((item: FoodItem) => {
       const matchesCat = !selectedCategory || item.category === selectedCategory;
       const matchesDiet = dietFilter === 'all' || (dietFilter === 'veg' && item.isVeg) || (dietFilter === 'nonveg' && !item.isVeg);
       return matchesCat && item.isAvailable && matchesDiet;
     });
-  }, [shopMenu, selectedCategory, dietFilter]);
+  }, [shopMenu, selectedCategory, dietFilter, canteenShop, isShopOpen]);
 
   const keyExtractor = useCallback((i: FoodItem) => i.id, []);
   const getCartQty = useCallback((id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0, [cartItems]);
@@ -418,6 +421,7 @@ export default function StudentDashboard({ navigation }: Props) {
         keyExtractor={keyExtractor}
         renderItem={renderFoodCard}
         contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
         initialNumToRender={8}
         maxToRenderPerBatch={6}
         windowSize={5}
@@ -511,7 +515,21 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Category Pills */}
+            {/* Shop Closed Banner */}
+            {(!canteenShop || !isShopOpen) && !menuLoading && (
+              <View style={styles.shopClosedBanner}>
+                <View style={styles.shopClosedIcon}>
+                  <Icon name="storefront-outline" size={28} color="#ef4444" />
+                </View>
+                <Text style={styles.shopClosedTitle}>Shop is Closed</Text>
+                <Text style={styles.shopClosedSubtitle}>
+                  The canteen is currently closed. Please check back later.
+                </Text>
+              </View>
+            )}
+
+            {/* Category Pills — only show when shop is open */}
+            {isShopOpen && canteenShop && (
             <View style={styles.cats}>
               <View style={styles.catsContent}>
                 {allCategories.map(cat => (
@@ -532,6 +550,7 @@ export default function StudentDashboard({ navigation }: Props) {
                 ))}
               </View>
             </View>
+            )}
 
             {menuLoading && !refreshing && (
               <View style={styles.loadingWrap}>
@@ -541,7 +560,7 @@ export default function StudentDashboard({ navigation }: Props) {
           </>
         }
         ListEmptyComponent={
-          !menuLoading ? (
+          !menuLoading && isShopOpen && canteenShop ? (
             <View style={styles.empty}>
               <Icon name="search" size={40} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No items found</Text>
@@ -564,19 +583,19 @@ export default function StudentDashboard({ navigation }: Props) {
           accessibilityLabel="View cart"
           accessibilityRole="button">
           <LinearGradient
-            colors={['#3b82f6', '#06d6a0']}
+            colors={isShopOpen ? ['#3b82f6', '#06d6a0'] : ['#6b7280', '#6b7280']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.floatingBar}>
             <View style={styles.floatingBarLeft}>
               <View style={styles.floatingBarIcon}>
-                <Icon name="bag-handle" size={22} color="#fff" />
+                <Icon name={isShopOpen ? 'bag-handle' : 'storefront-outline'} size={22} color="#fff" />
                 <View style={styles.floatingBarBadge}>
                   <Text style={styles.floatingBarBadgeText}>{totalItems}</Text>
                 </View>
               </View>
               <View>
-                <Text style={styles.floatingBarSub}>{totalItems} item{totalItems > 1 ? 's' : ''}</Text>
+                <Text style={styles.floatingBarSub}>{isShopOpen ? `${totalItems} item${totalItems > 1 ? 's' : ''}` : 'Shop Closed'}</Text>
                 <Text style={styles.floatingBarTotal}>Rs. {cartTotal}</Text>
               </View>
             </View>
@@ -594,9 +613,9 @@ export default function StudentDashboard({ navigation }: Props) {
         visible={showWallet}
         onClose={() => setShowWallet(false)}
         onTopUp={() => setShowTopUp(true)}
-        onTransactionPress={() => {
+        onTransactionPress={(tx) => {
           setShowWallet(false);
-          navigation.navigate('OrderHistory');
+          navigation.navigate('TransactionDetail', { transactionId: tx.id });
         }}
       />
       <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
@@ -618,28 +637,29 @@ export default function StudentDashboard({ navigation }: Props) {
         visible={showCart}
         onClose={() => setShowCart(false)}
         onOrderSuccess={(result: CreateOrderResult) => {
-          setShowCart(false);
           dispatch(fetchMyActiveOrders());
 
+          // Show success animation FIRST, then hide cart after a short delay
+          // to prevent white flicker between cart closing and animation appearing
           if (result.wasSplit && result.orders && result.orders.length > 1) {
-            // Split order: show single screen with both tokens
             setSplitOrders(result.orders);
             setSuccessOrder(result.order);
             setSuccessOrderType('split');
             setShowSuccessAnim(true);
           } else {
-            // Single order
             const order = result.order;
             setSplitOrders(null);
             setSuccessOrder(order);
             setSuccessOrderType(order.isReadyServe ? 'instant' : 'regular');
             setShowSuccessAnim(true);
           }
+          // Delay cart close so OrderAnimation's fade-in covers the transition
+          setTimeout(() => setShowCart(false), 150);
         }}
         onOrderFailure={(errorMessage) => {
-          setShowCart(false);
           setFailError(errorMessage || '');
           setShowFailAnim(true);
+          setTimeout(() => setShowCart(false), 150);
         }}
       />
 
@@ -923,6 +943,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   qtyBtn: { padding: 5 },
   qtyText: { fontSize: 13, fontWeight: '700', color: colors.text, width: 22, textAlign: 'center' },
+
+  // ── Shop Closed Banner ──
+  shopClosedBanner: {
+    alignItems: 'center', paddingVertical: 48, paddingHorizontal: 24, gap: 10,
+    marginHorizontal: 16, marginTop: 12, marginBottom: 16,
+    borderRadius: 20, backgroundColor: 'rgba(239,68,68,0.08)',
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+  },
+  shopClosedIcon: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    justifyContent: 'center' as const, alignItems: 'center' as const, marginBottom: 4,
+  },
+  shopClosedTitle: { fontSize: 18, fontWeight: '700', color: '#ef4444' },
+  shopClosedSubtitle: { fontSize: 13, color: colors.textMuted, textAlign: 'center' as const },
 
   // ── Loading / Empty ──
   loadingWrap: { paddingVertical: 40, alignItems: 'center' },

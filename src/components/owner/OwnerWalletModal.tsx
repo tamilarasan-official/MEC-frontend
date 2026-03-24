@@ -8,7 +8,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import {
-  fetchWalletBalance, fetchTransactions, fetchDashboardStats,
+  fetchWalletBalance, fetchTransactions, fetchDashboardStats, fetchQRPayments,
 } from '../../store/slices/userSlice';
 import { Transaction } from '../../types';
 import TopUpModal from '../student/TopUpModal';
@@ -20,9 +20,10 @@ interface OwnerWalletModalProps {
   visible: boolean;
   onClose: () => void;
   initialTab?: WalletTab;
+  onTransactionPress?: (transaction: Transaction) => void;
 }
 
-export default function OwnerWalletModal({ visible, onClose, initialTab = 'work' }: OwnerWalletModalProps) {
+export default function OwnerWalletModal({ visible, onClose, initialTab = 'work', onTransactionPress }: OwnerWalletModalProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
@@ -30,6 +31,13 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
   const user = useAppSelector(s => s.auth.user);
   const transactions = useAppSelector(s => s.user.transactions);
   const dashboardStats = useAppSelector(s => s.user.dashboardStats);
+  const shopDetails = useAppSelector(s => s.user.shopDetails);
+  const qrPayments = useAppSelector(s => s.user.qrPayments);
+
+  const NON_FOOD_CATEGORIES = ['stationery', 'laundry', 'other'];
+  const isNonFoodShop = shopDetails?.category
+    ? NON_FOOD_CATEGORIES.includes(shopDetails.category)
+    : false;
 
   const [activeTab, setActiveTab] = useState<WalletTab>(initialTab);
   const [txnLoading, setTxnLoading] = useState(true);
@@ -65,6 +73,7 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
         dispatch(fetchWalletBalance()),
         dispatch(fetchTransactions()),
         dispatch(fetchDashboardStats()),
+        dispatch(fetchQRPayments()),
       ]);
     } catch { /* ignore */ }
     setTxnLoading(false);
@@ -76,7 +85,7 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
       .finally(() => { if (mountedRef.current) setPayablesLoading(false); });
   }, [dispatch]);
 
-  const displayBalance = user?.balance ?? balance ?? 0;
+  const displayBalance = balance ?? user?.balance ?? 0;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -91,10 +100,16 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
     ? Math.round(((dashboardStats.totalRevenue - (dashboardStats.totalRevenue * 0.6)) / dashboardStats.totalRevenue) * 100)
     : 0;
 
+  const handleTransactionPress = (item: Transaction) => {
+    if (!onTransactionPress) return;
+    onClose();
+    setTimeout(() => onTransactionPress(item), 300);
+  };
+
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const isCredit = item.type === 'credit' || item.type === 'refund';
     return (
-      <View style={styles.txCard}>
+      <TouchableOpacity style={styles.txCard} activeOpacity={onTransactionPress ? 0.7 : 1} onPress={onTransactionPress ? () => handleTransactionPress(item) : undefined}>
         <View style={[styles.txIcon, { backgroundColor: isCredit ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }]}>
           <Icon
             name={isCredit ? 'arrow-down-outline' : 'arrow-up-outline'}
@@ -109,7 +124,7 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
         <Text style={[styles.txAmount, { color: isCredit ? '#22c55e' : '#ef4444' }]}>
           {isCredit ? '+' : '-'}Rs. {item.amount}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -162,7 +177,94 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
     return new Date(y, m - 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
   };
 
-  const renderWorkTab = () => (
+  // QR Payment stats for stationery/non-food shops
+  const qrTotalCollected = qrPayments.reduce((sum, p) => sum + (p.totalCollected || 0), 0);
+  const qrTotalPayments = qrPayments.reduce((sum, p) => sum + (p.paidCount || 0), 0);
+  const qrActiveCount = qrPayments.filter(p => p.status === 'active').length;
+
+  const renderWorkTab = () => {
+    // Stationery/non-food shops: show QR payment collection stats
+    if (isNonFoodShop) {
+      return (
+        <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+          {statsLoading ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : (
+            <>
+              {/* QR Collection Cards */}
+              <View style={styles.revenueRow}>
+                <View style={styles.revenueCardOrange}>
+                  <Text style={styles.revenueCardLabel}>Total Collected</Text>
+                  <Text style={styles.revenueCardValueOrange}>
+                    Rs. {Math.round(qrTotalCollected)}
+                  </Text>
+                  <Text style={styles.revenueCardSub}>
+                    {qrTotalPayments} payments
+                  </Text>
+                </View>
+                <View style={styles.revenueCardBlue}>
+                  <Text style={styles.revenueCardLabel}>QR Payments</Text>
+                  <Text style={styles.revenueCardValueBlue}>
+                    {qrPayments.length}
+                  </Text>
+                  <Text style={styles.revenueCardSub}>
+                    {qrActiveCount} active
+                  </Text>
+                </View>
+              </View>
+
+              {/* Payables */}
+              {payablesLoading ? (
+                <View style={styles.loadingWrap}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                </View>
+              ) : payablesData && (
+                <View style={styles.payablesSection}>
+                  <Text style={styles.sectionTitle}>Payables</Text>
+                  <View style={styles.payableCard}>
+                    <View style={styles.payableHeader}>
+                      <View>
+                        <Text style={styles.payableLabel}>
+                          {formatPayablePeriod(payablesData.currentMonth.period)}
+                        </Text>
+                        <Text style={styles.payableAmount}>
+                          Rs. {payablesData.currentMonth.payableAmount}
+                        </Text>
+                      </View>
+                      <View style={[
+                        styles.payableStatusBadge,
+                        { backgroundColor: payablesData.currentMonth.transferStatus === 'completed'
+                          ? 'rgba(16,185,129,0.12)' : 'rgba(249,115,22,0.12)' },
+                      ]}>
+                        <Icon
+                          name={payablesData.currentMonth.transferStatus === 'completed'
+                            ? 'checkmark-circle' : 'time-outline'}
+                          size={14}
+                          color={payablesData.currentMonth.transferStatus === 'completed'
+                            ? '#10b981' : '#f97316'}
+                        />
+                        <Text style={[styles.payableStatusText, {
+                          color: payablesData.currentMonth.transferStatus === 'completed'
+                            ? '#10b981' : '#f97316',
+                        }]}>
+                          {payablesData.currentMonth.transferStatus === 'completed'
+                            ? 'Transferred' : 'Pending'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </>
+          )}
+        </ScrollView>
+      );
+    }
+
+    // Food shops: show order revenue stats
+    return (
     <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
       {statsLoading ? (
         <View style={styles.loadingWrap}>
@@ -298,6 +400,7 @@ export default function OwnerWalletModal({ visible, onClose, initialTab = 'work'
       )}
     </ScrollView>
   );
+  };
 
   return (
     <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={onClose}>

@@ -31,7 +31,7 @@ const authService = {
     return res.data.data;
   },
   changePassword: async (currentPassword: string, newPassword: string): Promise<void> => {
-    await api.put('/auth/change-password', { oldPassword: currentPassword, newPassword });
+    await api.put('/auth/change-password', { currentPassword, newPassword });
   },
 };
 

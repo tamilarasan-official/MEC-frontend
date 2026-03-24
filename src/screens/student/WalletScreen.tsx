@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, RefreshControl, ScrollView,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { StudentHomeStackParamList } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchWalletBalance, fetchTransactions } from '../../store/slices/userSlice';
@@ -68,10 +69,12 @@ export default function WalletScreen({ navigation }: Props) {
     }
   }, [dispatch]);
 
-  useEffect(() => {
-    loadTransactions(period);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch]);
+  // Refresh balance & transactions every time the screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadTransactions(period);
+    }, [loadTransactions, period])
+  );
 
   const handlePeriodChange = (p: Period) => {
     setPeriod(p);

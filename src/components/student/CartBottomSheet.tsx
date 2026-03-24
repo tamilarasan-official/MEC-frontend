@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Image,
-  ActivityIndicator, Animated,
+  ActivityIndicator, Animated, unstable_batchedUpdates,
 } from 'react-native';
 import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -36,7 +36,12 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   const { items: cartItems, shopId, shopName } = useAppSelector(s => s.cart);
   const user = useAppSelector(s => s.auth.user);
   const activeOrders = useAppSelector(s => s.orders.activeOrders);
+  const shops = useAppSelector(s => s.menu.shops);
   const [ordering, setOrdering] = useState(false);
+
+  // Check if the shop is currently open
+  const shop = shops.find(s => s.id === shopId);
+  const isShopClosed = shop ? shop.isActive === false : false;
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
@@ -64,8 +69,15 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   const balance = user?.balance || 0;
   const hasBalance = balance >= cartTotal;
 
+  const animateClose = useCallback((callback: () => void, skipClose = false) => {
+    Animated.parallel([
+      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
+      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => { unstable_batchedUpdates(() => { if (!skipClose) onClose(); callback(); }); });
+  }, [slideAnim, backdropAnim, onClose]);
+
   const handlePay = async () => {
-    if (!hasBalance || !shopId || cartItems.length === 0) return;
+    if (isShopClosed || !hasBalance || !shopId || cartItems.length === 0) return;
     const savedTotal = cartTotal;
     const savedShopName = shopName || '';
     setOrdering(true);
@@ -76,7 +88,6 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       })).unwrap();
       dispatch(clearCart());
       setOrdering(false);
-      onClose();
       // Ensure order has shopName and total filled
       const enrichedResult: CreateOrderResult = {
         ...result,
@@ -91,7 +102,9 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
           shopName: o.shopName || savedShopName,
         })),
       };
-      onOrderSuccess(enrichedResult);
+      // Animate sheet out before triggering success — skip onClose so parent
+      // can delay closing until the success animation covers the screen (#63)
+      animateClose(() => onOrderSuccess(enrichedResult), true);
     } catch (err: any) {
       let msg: string;
       if (typeof err === 'string') {
@@ -104,8 +117,9 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
         msg = 'Order failed. Please check your balance and try again.';
       }
       setOrdering(false);
-      onClose();
-      onOrderFailure(msg);
+      // Animate sheet out before triggering failure — skip onClose so parent
+      // can delay closing until the failure animation covers the screen
+      animateClose(() => onOrderFailure(msg), true);
     }
   };
 
@@ -229,19 +243,27 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>Rs.{cartTotal}</Text>
             </View>
-            {!hasBalance && (
+            {isShopClosed && (
+              <View style={styles.shopClosedBanner}>
+                <Icon name="storefront-outline" size={20} color="#ef4444" />
+                <Text style={styles.shopClosedText}>Shop is currently closed</Text>
+              </View>
+            )}
+            {!isShopClosed && !hasBalance && (
               <Text style={styles.insufficientText}>
                 Insufficient balance. Add Rs.{cartTotal - balance} to proceed.
               </Text>
             )}
-            <TouchableOpacity onPress={() => { mediumHaptic(); handlePay(); }} disabled={!hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={`Pay rupees ${cartTotal}`} accessibilityRole="button">
+            <TouchableOpacity onPress={() => { mediumHaptic(); handlePay(); }} disabled={isShopClosed || !hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`} accessibilityRole="button">
               <LinearGradient
-                colors={hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
+                colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.payBtn}>
                 {ordering ? (
                   <ActivityIndicator color="#fff" />
+                ) : isShopClosed ? (
+                  <Text style={styles.payBtnText}>Shop Closed</Text>
                 ) : (
                   <Text style={styles.payBtnText}>Pay Rs.{cartTotal}</Text>
                 )}
@@ -344,6 +366,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { fontSize: 20, fontWeight: '800', color: colors.text },
   totalValue: { fontSize: 20, fontWeight: '800', color: '#3b82f6' },
+  shopClosedBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+  },
+  shopClosedText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
   insufficientText: { fontSize: 12, color: colors.danger, textAlign: 'center' },
   payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center' },
   payBtnText: { fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: 0.3 },
