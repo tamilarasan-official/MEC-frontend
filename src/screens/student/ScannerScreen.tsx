@@ -41,12 +41,16 @@ export default function ScannerScreen() {
     })();
   }, []);
 
-  // Re-check permission when returning from Settings (issue 5)
+  // Re-check permission when returning from Settings and reactivate camera
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         const status = Camera.getCameraPermissionStatus();
         setPermission(status);
+        // Reactivate camera if permission was granted while in settings
+        if (status === 'granted') {
+          setIsActive(true);
+        }
       }
     });
     return () => sub.remove();
@@ -152,7 +156,7 @@ export default function ScannerScreen() {
         </Text>
         <TouchableOpacity
           style={styles.settingsBtn}
-          onPress={() => { setIsActive(false); Linking.openSettings(); }}
+          onPress={() => Linking.openSettings()}
           activeOpacity={0.8}
           accessibilityLabel="Open Settings"
           accessibilityRole="button">

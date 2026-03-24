@@ -50,13 +50,17 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
     }
   }, [visible]);
 
-  // Re-check permission when returning from Settings
+  // Re-check permission when returning from Settings and reactivate camera
   useEffect(() => {
     if (!visible) return;
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         const status = Camera.getCameraPermissionStatus();
         setPermission(status);
+        // Reactivate camera if permission was granted while in settings
+        if (status === 'granted') {
+          setIsActive(true);
+        }
       }
     });
     return () => sub.remove();
@@ -156,7 +160,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
           </Text>
           <TouchableOpacity
             style={styles.settingsBtn}
-            onPress={() => { setIsActive(false); Linking.openSettings(); }}
+            onPress={() => Linking.openSettings()}
             activeOpacity={0.8}
             accessibilityLabel="Open settings"
             accessibilityRole="button">

@@ -30,7 +30,13 @@ export default function LoginScreen({ navigation }: Props) {
   }, [navigation, dispatch]);
 
   const handlePhoneChange = useCallback((val: string) => {
-    setPhone(val.replace(/\D/g, '').slice(0, 10));
+    let digits = val.replace(/\D/g, '');
+    // Strip common country code prefixes when pasting
+    if (digits.length > 10) {
+      if (digits.startsWith('91')) digits = digits.slice(2);
+      else if (digits.startsWith('091')) digits = digits.slice(3);
+    }
+    setPhone(digits.slice(0, 10));
   }, []);
 
   const handleSendOtp = useCallback(async () => {
@@ -89,7 +95,6 @@ export default function LoginScreen({ navigation }: Props) {
                   placeholder="Enter 10-digit number"
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   keyboardType="phone-pad"
-                  maxLength={10}
                   returnKeyType="done"
                   onSubmitEditing={() => isFormValid && !loading && handleSendOtp()}
                   accessibilityLabel="Phone number"

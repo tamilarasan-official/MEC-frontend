@@ -30,7 +30,6 @@ export default function CreateQRPaymentModal({ visible, onClose }: CreateQRPayme
   useEffect(() => {
     if (visible) {
       isClosingRef.current = false;
-      Keyboard.dismiss();
       setTitle('');
       setDescription('');
       setAmount('');

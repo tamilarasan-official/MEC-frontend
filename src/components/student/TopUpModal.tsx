@@ -41,8 +41,6 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       // Reset closing guard and clear any leftover payment result
       isClosingRef.current = false;
       setPaymentResult(null);
-      // Dismiss keyboard BEFORE starting open animation to prevent KAV layout fights
-      Keyboard.dismiss();
       slideAnim.setValue(600);
       backdropAnim.setValue(0);
       Animated.parallel([

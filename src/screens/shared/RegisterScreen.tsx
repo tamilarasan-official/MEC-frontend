@@ -241,11 +241,17 @@ export default function RegisterScreen({ navigation }: Props) {
                     <TextInput
                       style={styles.phoneInput}
                       value={phone}
-                      onChangeText={val => setPhone(val.replace(/\D/g, '').slice(0, 10))}
+                      onChangeText={val => {
+                        let digits = val.replace(/\D/g, '');
+                        if (digits.length > 10) {
+                          if (digits.startsWith('91')) digits = digits.slice(2);
+                          else if (digits.startsWith('091')) digits = digits.slice(3);
+                        }
+                        setPhone(digits.slice(0, 10));
+                      }}
                       placeholder="Enter 10-digit number"
                       placeholderTextColor="rgba(255,255,255,0.4)"
                       keyboardType="phone-pad"
-                      maxLength={10}
                       accessibilityLabel="Phone number"
                     />
                   </View>

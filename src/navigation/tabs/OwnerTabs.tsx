@@ -16,6 +16,7 @@ import OwnerHistoryScreen from '../../screens/owner/OwnerHistoryScreen';
 import CaptainEatScreen from '../../screens/captain/CaptainEatScreen';
 import CaptainEatOrdersScreen from '../../screens/captain/CaptainEatOrdersScreen';
 import CaptainScannerScreen from '../../screens/captain/CaptainScannerScreen';
+import ScannerScreen from '../../screens/student/ScannerScreen';
 import StationeryHomeScreen from '../../screens/stationery_owner/StationeryHomeScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
 import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
@@ -67,6 +68,12 @@ const EatHomeIcon = ({ focused, color }: { focused: boolean; color: string }) =>
 const EatOrdersIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
     <Icon name={focused ? 'clipboard' : 'clipboard-outline'} size={22} color={color} />
+  </TabPill>
+);
+
+const EatScannerIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+  <TabPill focused={focused}>
+    <Icon name={focused ? 'scan' : 'scan-outline'} size={22} color={color} />
   </TabPill>
 );
 
@@ -165,6 +172,14 @@ export default function OwnerTabs() {
           options={{
             tabBarLabel: 'Orders',
             tabBarIcon: EatOrdersIcon,
+          }}
+        />
+        <Tab.Screen
+          name="EatScanner"
+          component={ScannerScreen}
+          options={{
+            tabBarLabel: 'Scanner',
+            tabBarIcon: EatScannerIcon,
           }}
         />
         <Tab.Screen

@@ -354,6 +354,7 @@ export type OwnerTabParamList = {
   StationeryDashboard: undefined;
   EatFood: undefined;
   EatOrders: undefined;
+  EatScanner: undefined;
   Wallet: undefined;
   TransactionDetail: { transactionId: string };
 };

@@ -27,7 +27,13 @@ export default function UsernameLoginScreen({ navigation }: Props) {
     const passwordRef = useRef<TextInput>(null);
 
     const handlePhoneChange = useCallback((val: string) => {
-        setPhone(val.replace(/\D/g, '').slice(0, 10));
+        let digits = val.replace(/\D/g, '');
+        // Strip common country code prefixes when pasting
+        if (digits.length > 10) {
+            if (digits.startsWith('91')) digits = digits.slice(2);
+            else if (digits.startsWith('091')) digits = digits.slice(3);
+        }
+        setPhone(digits.slice(0, 10));
     }, []);
 
     useEffect(() => {
@@ -102,7 +108,6 @@ export default function UsernameLoginScreen({ navigation }: Props) {
                                     placeholder="Enter 10-digit number"
                                     placeholderTextColor="rgba(255,255,255,0.4)"
                                     keyboardType="phone-pad"
-                                    maxLength={10}
                                     returnKeyType="next"
                                     onSubmitEditing={() => passwordRef.current?.focus()}
                                     accessibilityLabel="Phone number"

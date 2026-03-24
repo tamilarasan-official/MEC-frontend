@@ -151,8 +151,11 @@ export function handleForegroundMessage(
   dispatch: AppDispatch,
 ): void {
   const { data, notification } = remoteMessage;
-  const title = notification?.title || (data?.title as string) || 'Notification';
+  const title = notification?.title || (data?.title as string) || '';
   const body = notification?.body || (data?.body as string) || '';
+
+  // Skip if there's no meaningful content to display
+  if (!title.trim() && !body.trim()) return;
   const type = (data?.type as string) || 'system';
   const orderId = data?.orderId as string;
   const status = data?.status as string;
@@ -163,10 +166,10 @@ export function handleForegroundMessage(
   if (orderId && status) {
     if (isDuplicate(`${orderId}:${status}`)) return;
   } else if (type === 'wallet_credit' || type === 'wallet') {
-    // Use a stable key without time-bucket: amount + 60-second window
-    // so ALL duplicate FCM messages for the same wallet event are caught
+    // Use a stable key with 10-second window to catch duplicate FCM messages
+    // while still allowing legitimate sequential wallet transactions
     const amount = data?.amount as string || '';
-    const walletDedupKey = `wallet:credit:${amount}:${Math.floor(Date.now() / 60000)}`;
+    const walletDedupKey = `wallet:credit:${amount}:${Math.floor(Date.now() / 10000)}`;
     if (isDuplicate(walletDedupKey)) {
       // Still refresh wallet balance even if notification is deduped
       // (matches socket handler behavior in socketService.ts)

@@ -189,9 +189,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       const title = titleMap[payload.type] || 'Wallet Updated';
       const msg = payload.message || `Rs. ${payload.amount} updated`;
 
-      // Dedup: use the same key format as FCM handler (60-second window)
+      // Dedup: use the same key format as FCM handler (10-second window)
       // so socket and FCM don't both show a notification for the same event
-      const dedupKey = `wallet:credit:${payload.amount}:${Math.floor(Date.now() / 60000)}`;
+      const dedupKey = `wallet:credit:${payload.amount}:${Math.floor(Date.now() / 10000)}`;
       if (isDuplicate(dedupKey)) {
         // Still refresh balance even if notification is deduped
         dispatch(fetchWalletBalance());
@@ -255,6 +255,14 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     }
     const title = payload.title.slice(0, 200);
     const message = payload.message.slice(0, 1000);
+
+    // Skip empty notifications
+    if (!title.trim() && !message.trim()) return;
+
+    // Dedup generic notifications by content
+    const dedupKey = `notif:${title}:${message}:${Math.floor(Date.now() / 30000)}`;
+    if (isDuplicate(dedupKey)) return;
+
     dispatch(addNotification({
       id: payload.id || `notif-${Date.now()}`,
       type: payload.type || 'system',

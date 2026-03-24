@@ -181,8 +181,8 @@ export default function StationeryHomeScreen() {
             accessibilityLabel="App logo"
           />
           <TouchableOpacity style={styles.walletPill} onPress={() => setShowWallet(true)} activeOpacity={0.8} accessibilityLabel="Open wallet" accessibilityRole="button">
-            <Icon name="wallet-outline" size={13} color="#f97316" />
-            <Text style={styles.walletPillText}>Rs. {balance || 0}</Text>
+            <Icon name="briefcase-outline" size={13} color="#f97316" />
+            <Text style={styles.walletPillText}>Rs. {totalCollected}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.headerRight}>
