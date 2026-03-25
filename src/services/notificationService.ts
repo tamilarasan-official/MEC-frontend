@@ -1,6 +1,7 @@
 import {
   getMessaging,
   getToken,
+  getAPNSToken,
   requestPermission,
   onTokenRefresh,
   AuthorizationStatus as FBAuthorizationStatus,
@@ -145,10 +146,29 @@ export async function displayLocalNotification(
   });
 }
 
+// ── Work-related FCM notification types ──────────────────────────
+// These are shop/staff notifications that should be suppressed when
+// a captain or owner is in eat mode (acting as a customer).
+const WORK_NOTIFICATION_TYPES = new Set([
+  'new_order', 'order_new', 'payment', 'payment_received',
+  'shop_status', 'shop',
+]);
+
+function isWorkNotification(data: Record<string, unknown> | undefined): boolean {
+  if (!data) return false;
+  const type = (data.type as string || '').toLowerCase();
+  if (WORK_NOTIFICATION_TYPES.has(type)) return true;
+  // New orders often arrive as type 'order' with status 'new' or 'pending'
+  if (type === 'order' && ['new', 'pending'].includes((data.status as string || '').toLowerCase())) return true;
+  return false;
+}
+
 // ── Handle foreground FCM message ───────────────────────────────
 export function handleForegroundMessage(
   remoteMessage: FirebaseMessagingTypes.RemoteMessage,
   dispatch: AppDispatch,
+  userRole?: string,
+  userMode?: string,
 ): void {
   const { data, notification } = remoteMessage;
   const title = notification?.title || (data?.title as string) || '';
@@ -156,6 +176,13 @@ export function handleForegroundMessage(
 
   // Skip if there's no meaningful content to display
   if (!title.trim() && !body.trim()) return;
+
+  // Suppress work-related notifications when captain/owner is in eat mode
+  if (userMode === 'eat' && (userRole === 'captain' || userRole === 'owner') && isWorkNotification(data)) {
+    if (__DEV__) console.log('[FCM] Suppressing work notification in eat mode:', data?.type);
+    return;
+  }
+
   const type = (data?.type as string) || 'system';
   const orderId = data?.orderId as string;
   const status = data?.status as string;
@@ -290,13 +317,20 @@ async function registerTokenWithBackend(token: string, _userId: string): Promise
   }
 }
 
-// ── Unregister FCM token (called on logout) ─────────────────────
+// ── Unregister device token (called on logout) ─────────────────
 export async function unregisterToken(): Promise<void> {
   try {
-    const token = await getToken(getMessaging());
+    // iOS: use APNs token (matches what was registered)
+    // Android: use FCM token
+    let token: string | null = null;
+    if (Platform.OS === 'ios') {
+      token = await getAPNSToken(getMessaging());
+    } else {
+      token = await getToken(getMessaging());
+    }
     if (token) {
       await api.delete('/auth/fcm-token', { data: { token } });
-      if (__DEV__) console.log('[Notifications] FCM token unregistered');
+      if (__DEV__) console.log('[Notifications] Device token unregistered');
     }
   } catch (error) {
     // Fallback: try to unregister by deviceId so the token doesn't linger
@@ -306,7 +340,7 @@ export async function unregisterToken(): Promise<void> {
         await api.delete('/auth/fcm-token', { data: { deviceId } });
       }
     } catch { /* ignore fallback failure */ }
-    if (__DEV__) console.warn('[Notifications] Failed to unregister FCM token:', error);
+    if (__DEV__) console.warn('[Notifications] Failed to unregister device token:', error);
   }
 }
 
@@ -317,8 +351,19 @@ export function setupTokenRefreshListener(userId: string): void {
   if (tokenRefreshUnsubscribe) {
     tokenRefreshUnsubscribe();
   }
-  tokenRefreshUnsubscribe = onTokenRefresh(getMessaging(), (newToken) => {
-    registerTokenWithBackend(newToken, userId);
+  tokenRefreshUnsubscribe = onTokenRefresh(getMessaging(), async () => {
+    // onTokenRefresh fires when FCM token changes.
+    // iOS: re-fetch the APNs device token (backend uses direct APNs)
+    // Android: use the new FCM token directly
+    let token: string | null = null;
+    if (Platform.OS === 'ios') {
+      token = await getAPNSToken(getMessaging());
+    } else {
+      token = await getToken(getMessaging());
+    }
+    if (token) {
+      registerTokenWithBackend(token, userId);
+    }
   });
 }
 
@@ -347,8 +392,15 @@ export async function initializeNotifications(userId: string): Promise<void> {
     // 2. Create notification channels (Android-only, no-op on iOS)
     await createChannels();
 
-    // 3. Get FCM token and register with backend
-    const token = await getToken(getMessaging());
+    // 3. Get device token and register with backend
+    // iOS: Use APNs device token (backend sends direct APNs, not via FCM)
+    // Android: Use FCM token (backend sends via FCM)
+    let token: string | null = null;
+    if (Platform.OS === 'ios') {
+      token = await getAPNSToken(getMessaging());
+    } else {
+      token = await getToken(getMessaging());
+    }
     if (token) {
       await registerTokenWithBackend(token, userId);
     }
@@ -368,7 +420,4 @@ export function cleanupNotifications(): void {
     tokenRefreshUnsubscribe();
     tokenRefreshUnsubscribe = null;
   }
-  // Clear dedup set so a fresh login session starts clean —
-  // prevents stale keys from suppressing the new user's notifications
-  recentKeys.clear();
 }
