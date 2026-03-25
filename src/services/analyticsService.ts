@@ -48,6 +48,13 @@ const analyticsService = {
     const res = await api.get('/owner/payables');
     return res.data.data;
   },
+  getStationeryAnalytics: async (startDate?: string, endDate?: string): Promise<any> => {
+    const params: any = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    const res = await api.get('/orders/shop/analytics/stationery', { params });
+    return res.data.data;
+  },
 };
 
 export default analyticsService;

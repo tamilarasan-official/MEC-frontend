@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Switch, Alert, Linking,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Switch, Animated, Linking, Alert,
 } from 'react-native';
 import Icon from '../common/Icon';
 import { useTheme, ThemeMode } from '../../theme/ThemeContext';
@@ -42,6 +42,16 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
   const isShopOpen = shopDetails?.isActive ?? true;
   const displayBalance = user?.balance ?? balance ?? 0;
+  const [showSignOut, setShowSignOut] = useState(false);
+  const signOutScale = useRef(new Animated.Value(0.9)).current;
+
+  useEffect(() => {
+    if (showSignOut) {
+      Animated.spring(signOutScale, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start();
+    } else {
+      signOutScale.setValue(0.9);
+    }
+  }, [showSignOut, signOutScale]);
 
   const handleDietChange = async (value: DietFilter) => {
     dispatch(setDietFilter(value));
@@ -64,25 +74,17 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: () => {
-            onClose();
-            // Small delay to let dropdown close before wiping auth state
-            setTimeout(() => dispatch(logout()), 50);
-          }
-        },
-      ]
-    );
+    onClose();
+    setTimeout(() => setShowSignOut(true), 150);
+  };
+
+  const confirmSignOut = () => {
+    setShowSignOut(false);
+    setTimeout(() => dispatch(logout()), 50);
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} style={styles.dropdown}>
@@ -284,6 +286,31 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
       </TouchableOpacity>
 
     </Modal>
+
+    {/* Sign Out Confirmation Modal */}
+    <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent onRequestClose={() => setShowSignOut(false)}>
+      <TouchableOpacity style={styles.signOutOverlay} activeOpacity={1} onPress={() => setShowSignOut(false)}>
+        <Animated.View style={[styles.signOutDialog, { transform: [{ scale: signOutScale }] }]}>
+          <View style={styles.signOutIconWrap}>
+            <Icon name="log-out-outline" size={28} color={colors.destructive} />
+          </View>
+          <Text style={styles.signOutTitle}>Sign Out</Text>
+          <Text style={styles.signOutMessage}>
+            Are you sure you want to sign out? You'll need to log in again to access your account.
+          </Text>
+          <View style={styles.signOutActions}>
+            <TouchableOpacity style={styles.signOutCancelBtn} onPress={() => setShowSignOut(false)} activeOpacity={0.7}>
+              <Text style={styles.signOutCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.signOutConfirmBtn} onPress={confirmSignOut} activeOpacity={0.7}>
+              <Icon name="log-out-outline" size={16} color="#fff" />
+              <Text style={styles.signOutConfirmText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </TouchableOpacity>
+    </Modal>
+    </>
   );
 }
 

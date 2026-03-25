@@ -14,6 +14,7 @@ import { statusColors } from '../../theme/colors';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import CaptainHeader from '../../components/captain/CaptainHeader';
 import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
+import NotificationsModal from '../../components/student/NotificationsModal';
 import { Order, OrderStatus } from '../../types';
 import { lightHaptic, mediumHaptic } from '../../utils/haptics';
 import { resolveImageUrl } from '../../utils/imageUrl';
@@ -41,6 +42,7 @@ export default function CaptainHomeScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Item confirmation modal state
@@ -320,6 +322,12 @@ export default function CaptainHomeScreen() {
       <CaptainProfileDropdown
         visible={showProfile}
         onClose={() => setShowProfile(false)}
+        onNavigateNotifications={() => setShowNotifications(true)}
+      />
+
+      <NotificationsModal
+        visible={showNotifications}
+        onClose={() => setShowNotifications(false)}
       />
 
       {/* Item Confirmation Modal */}

@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Animated, ScrollView, Keyboard,
+  ActivityIndicator, Animated, ScrollView, Keyboard, Platform,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
@@ -35,16 +35,42 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
+  const keyboardPadding = useMemo(() => new Animated.Value(0), []);
+
+  // Smooth keyboard padding — replaces KeyboardAvoidingView to avoid abrupt reflow on Android
+  useEffect(() => {
+    if (!visible) return;
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      if (isClosingRef.current) return;
+      Animated.timing(keyboardPadding, {
+        toValue: e.endCoordinates.height,
+        duration: Platform.OS === 'ios' ? (e.duration || 250) : 150,
+        useNativeDriver: false,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      if (isClosingRef.current) return;
+      Animated.timing(keyboardPadding, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: false,
+      }).start();
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, [visible, keyboardPadding]);
 
   useEffect(() => {
     if (visible) {
       // Reset closing guard and clear any leftover payment result
       isClosingRef.current = false;
       setPaymentResult(null);
+      keyboardPadding.setValue(0);
       slideAnim.setValue(600);
       backdropAnim.setValue(0);
       Animated.parallel([
-        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
     }
@@ -65,6 +91,11 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   }, [visible]);
 
   const numericAmount = parseInt(amount || '0', 10);
+
+  const handleChangeText = useCallback((t: string) => {
+    setAmount(t.replace(/[^0-9]/g, ''));
+    setError('');
+  }, []);
 
   const handleTopUp = async () => {
     if (numericAmount < 1 || numericAmount > 50000) {
@@ -110,6 +141,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(keyboardPadding, { toValue: 0, duration: 150, useNativeDriver: false }),
       ]).start(() => { setAmount(''); onClose(); });
 
       setPaymentResult({ type: 'success', amount: paidAmount });
@@ -178,6 +210,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(keyboardPadding, { toValue: 0, duration: 150, useNativeDriver: false }),
       ]).start(() => { setAmount(''); onClose(); });
 
       setPaymentResult({ type: 'success', amount: paidAmount });
@@ -198,6 +231,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
       Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+      Animated.timing(keyboardPadding, { toValue: 0, duration: 200, useNativeDriver: false }),
     ]).start(() => {
       onClose();
     });
@@ -211,10 +245,8 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={loading ? undefined : handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
       </Animated.View>
 
-      <KeyboardAvoidingView
-        style={styles.kvWrapper}
-        behavior="padding"
-        keyboardVerticalOffset={0}>
+      <Animated.View
+        style={[styles.kvWrapper, { paddingBottom: keyboardPadding }]}>
         <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
           {/* Drag handle */}
@@ -249,11 +281,12 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           <TextInput
             style={styles.input}
             value={amount}
-            onChangeText={(t) => { setAmount(t.replace(/[^0-9]/g, '')); setError(''); }}
+            onChangeText={handleChangeText}
             placeholder="0"
             placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"
             maxLength={5}
+            autoCorrect={false}
             accessibilityLabel="Top up amount"
           />
 
@@ -314,7 +347,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           <Text style={styles.helpText}>Or visit the college office for cash deposits.</Text>
           </ScrollView>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </Modal>
 
     {/* Payment Result (Success / Failed) */}

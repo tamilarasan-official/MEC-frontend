@@ -19,6 +19,7 @@ import CreateQRPaymentModal from '../../components/owner/CreateQRPaymentModal';
 import QRPaymentDisplayModal from '../../components/owner/QRPaymentDisplayModal';
 import { QRPayment } from '../../types';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
+import NotificationsModal from '../../components/student/NotificationsModal';
 
 // ---- Stat Item ----
 function StatItem({ value, label, color }: { value: string | number; label: string; color: string }) {
@@ -109,6 +110,7 @@ export default function StationeryHomeScreen() {
   const [showQRDisplay, setShowQRDisplay] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
 
@@ -198,8 +200,8 @@ export default function StationeryHomeScreen() {
           <TouchableOpacity
             style={styles.headerIconBtn}
             activeOpacity={0.7}
-            onPress={() => navigation.navigate('Analytics')}
-            accessibilityLabel="View analytics"
+            onPress={() => navigation.navigate('StationeryAnalytics')}
+            accessibilityLabel="View stationery analytics"
             accessibilityRole="button"
           >
             <Icon name="time-outline" size={20} color={colors.mutedForeground} />
@@ -348,7 +350,13 @@ export default function StationeryHomeScreen() {
       </ScrollView>
 
       {/* Modals */}
-      <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} onOpenWallet={() => {}} />
+      <OwnerProfileDropdown
+        visible={showProfile}
+        onClose={() => setShowProfile(false)}
+        onOpenWallet={() => { setShowProfile(false); setShowWallet(true); }}
+        onNavigateNotifications={() => { setShowProfile(false); setShowNotifications(true); }}
+      />
+      <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
       <OwnerWalletModal visible={showWallet} onClose={() => setShowWallet(false)} />
       <CreateQRPaymentModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} />
       <QRPaymentDisplayModal

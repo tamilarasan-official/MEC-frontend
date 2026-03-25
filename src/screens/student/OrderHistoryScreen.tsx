@@ -114,26 +114,72 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                     </View>
                   </View>
 
-                  {/* Date */}
-                  <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+                  {/* Date + Service Type Badge */}
+                  <View style={styles.dateBadgeRow}>
+                    <Text style={styles.orderDate}>{formatDate(order.createdAt)}</Text>
+                    {order.serviceType === 'stationery' && (
+                      <View style={styles.serviceTypeBadge}>
+                        <Icon name="print-outline" size={11} color="#8b5cf6" />
+                        <Text style={styles.serviceTypeBadgeText}>Stationery</Text>
+                      </View>
+                    )}
+                  </View>
 
-                  {/* Items */}
-                  {order.items.map((item, idx) => (
-                    <View key={`${order.id}-${idx}`} style={styles.itemRow}>
-                      <View style={styles.itemIconWrap}>
-                        {item.image ? (
-                          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImage} accessibilityLabel="Order item image" />
-                        ) : (
-                          <Icon name="restaurant-outline" size={18} color={colors.textSecondary} />
-                        )}
+                  {/* Stationery details OR food items */}
+                  {order.serviceType === 'stationery' ? (
+                    <View style={styles.stationeryDetails}>
+                      <View style={styles.itemRow}>
+                        <View style={[styles.itemIconWrap, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
+                          <Icon name="print-outline" size={20} color="#8b5cf6" />
+                        </View>
+                        <View style={styles.itemInfo}>
+                          <Text style={styles.itemName}>Print Order</Text>
+                          <Text style={styles.itemQty}>{order.shopName || 'Stationery Shop'}</Text>
+                        </View>
                       </View>
-                      <View style={styles.itemInfo}>
-                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={styles.itemQty}>x{item.quantity}</Text>
+                      <View style={styles.stationeryGrid}>
+                        <View style={styles.stationeryCell}>
+                          <Text style={styles.stationeryCellLabel}>Pages</Text>
+                          <Text style={styles.stationeryCellValue}>{order.serviceDetails?.stationery?.pageCount ?? '-'}</Text>
+                        </View>
+                        <View style={styles.stationeryCell}>
+                          <Text style={styles.stationeryCellLabel}>Copies</Text>
+                          <Text style={styles.stationeryCellValue}>{order.serviceDetails?.stationery?.copies ?? '-'}</Text>
+                        </View>
+                        <View style={styles.stationeryCell}>
+                          <Text style={styles.stationeryCellLabel}>Color</Text>
+                          <Text style={styles.stationeryCellValue}>{order.serviceDetails?.stationery?.colorType === 'bw' ? 'B&W' : 'Color'}</Text>
+                        </View>
+                        <View style={styles.stationeryCell}>
+                          <Text style={styles.stationeryCellLabel}>Paper</Text>
+                          <Text style={styles.stationeryCellValue}>{order.serviceDetails?.stationery?.paperSize ?? '-'}</Text>
+                        </View>
                       </View>
-                      <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                      {order.serviceDetails?.stationery?.doubleSided && (
+                        <Text style={styles.stationeryNote}>Double-sided printing</Text>
+                      )}
+                      {order.serviceDetails?.stationery?.specialInstructions ? (
+                        <Text style={styles.stationeryNote} numberOfLines={2}>{order.serviceDetails.stationery.specialInstructions}</Text>
+                      ) : null}
                     </View>
-                  ))}
+                  ) : (
+                    order.items.map((item, idx) => (
+                      <View key={`${order.id}-${idx}`} style={styles.itemRow}>
+                        <View style={styles.itemIconWrap}>
+                          {item.image ? (
+                            <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImage} accessibilityLabel="Order item image" />
+                          ) : (
+                            <Icon name="restaurant-outline" size={18} color={colors.textSecondary} />
+                          )}
+                        </View>
+                        <View style={styles.itemInfo}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          <Text style={styles.itemQty}>x{item.quantity}</Text>
+                        </View>
+                        <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                      </View>
+                    ))
+                  )}
 
                   {/* Total */}
                   <View style={styles.orderFooter}>
@@ -184,7 +230,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
   },
   statusText: { fontSize: 12, fontWeight: '600' },
-  orderDate: { fontSize: 12, color: c.textSecondary, marginTop: 4, marginBottom: 12 },
+  dateBadgeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, marginBottom: 12 },
+  orderDate: { fontSize: 12, color: c.textSecondary },
+  serviceTypeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    backgroundColor: 'rgba(139,92,246,0.1)',
+  },
+  serviceTypeBadgeText: { fontSize: 10, fontWeight: '600', color: '#8b5cf6' },
 
   itemRow: {
     flexDirection: 'row', alignItems: 'center', marginBottom: 10,
@@ -198,6 +251,18 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: '600', color: c.text },
   itemQty: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
   itemPrice: { fontSize: 14, fontWeight: '600', color: c.text },
+
+  stationeryDetails: { marginBottom: 4 },
+  stationeryGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10,
+  },
+  stationeryCell: {
+    flex: 1, minWidth: '40%', backgroundColor: c.surface || c.background,
+    borderRadius: 10, padding: 10, borderWidth: 1, borderColor: c.border,
+  },
+  stationeryCellLabel: { fontSize: 11, color: c.textSecondary, marginBottom: 2 },
+  stationeryCellValue: { fontSize: 14, fontWeight: '600', color: c.text },
+  stationeryNote: { fontSize: 12, color: c.textSecondary, marginTop: 6, fontStyle: 'italic' },
 
   orderFooter: {
     flexDirection: 'row', justifyContent: 'space-between', marginTop: 8,

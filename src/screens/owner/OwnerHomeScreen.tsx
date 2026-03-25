@@ -19,6 +19,7 @@ import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
 import { Order, OrderStatus } from '../../types';
 import { lightHaptic, mediumHaptic } from '../../utils/haptics';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import NotificationsModal from '../../components/student/NotificationsModal';
 
 type FilterKey = 'ready_serve' | 'pending' | 'preparing' | 'ready';
 
@@ -44,6 +45,7 @@ export default function OwnerHomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Item confirmation modal state
@@ -314,8 +316,10 @@ export default function OwnerHomeScreen() {
       <OwnerProfileDropdown
         visible={showProfile}
         onClose={() => setShowProfile(false)}
-        onOpenWallet={() => setShowWallet(true)}
+        onOpenWallet={() => { setShowProfile(false); setShowWallet(true); }}
+        onNavigateNotifications={() => { setShowProfile(false); setShowNotifications(true); }}
       />
+      <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
 
       {/* Wallet Modal */}
       <OwnerWalletModal

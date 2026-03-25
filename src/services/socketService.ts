@@ -224,6 +224,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // Announcements
   socket.on('announcement', (payload: { title: string; message: string }) => {
     try {
+      // Reject empty announcements
+      if ((!payload.title || !payload.title.trim()) && (!payload.message || !payload.message.trim())) return;
+
       // Dedup announcements by content (prevents duplicate on socket reconnect)
       const dedupKey = `announce:${payload.title}:${Math.floor(Date.now() / 60000)}`;
       if (isDuplicate(dedupKey)) return;
@@ -294,6 +297,13 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     paidCount: number;
   }) => {
     try {
+      // Validate required payload fields
+      if (!payload || !payload.paymentRequestId || !payload.amount || !payload.studentName) return;
+
+      // Dedup: prevent duplicate payment notifications on socket reconnect
+      const dedupKey = `payment:${payload.paymentRequestId}:${payload.paidCount}`;
+      if (isDuplicate(dedupKey)) return;
+
       if (__DEV__) console.log('[Socket] Payment received:', payload);
 
       const title = 'Payment Received';
