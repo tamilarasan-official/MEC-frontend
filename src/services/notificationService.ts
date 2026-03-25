@@ -368,4 +368,7 @@ export function cleanupNotifications(): void {
     tokenRefreshUnsubscribe();
     tokenRefreshUnsubscribe = null;
   }
+  // Clear dedup set so a fresh login session starts clean —
+  // prevents stale keys from suppressing the new user's notifications
+  recentKeys.clear();
 }

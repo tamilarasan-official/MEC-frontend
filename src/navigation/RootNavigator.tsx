@@ -25,7 +25,6 @@ import {
 } from '../services/notificationService';
 import { checkForUpdate, UpdateInfo } from '../services/versionService';
 import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
-import { PermissionDrawer } from '../components/common/PermissionDrawer';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -45,8 +44,6 @@ export default function RootNavigator() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [popup, setPopup] = useState<PopupData | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [permissionsHandled, setPermissionsHandled] = useState(false);
-
   // Listen for order status popup events (from socket + FCM)
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: PopupData) => {
@@ -98,6 +95,8 @@ export default function RootNavigator() {
   }, [dispatch]);
 
   // Connect/disconnect socket based on auth state
+  // NOTE: Depend on user?.id (primitive) — NOT user (object ref) — to prevent
+  // infinite re-render loops when fetchWalletBalance updates the balance.
   useEffect(() => {
     if (isAuthenticated && user) {
       try {
@@ -110,33 +109,40 @@ export default function RootNavigator() {
       disconnectSocket();
     }
     return () => { disconnectSocket(); };
-  }, [isAuthenticated, user, dispatch]);
+  }, [isAuthenticated, user?.id, dispatch]);
 
   // Re-setup socket listeners when eat/work mode changes (no reconnect needed)
   useEffect(() => {
     if (isAuthenticated && user) {
       setupSocketListeners(dispatch, user.role, userMode);
     }
-  }, [userMode, isAuthenticated, user, dispatch]);
+  }, [userMode, isAuthenticated, user?.id, dispatch]);
 
   // Disconnect socket when app is backgrounded to save battery (Bug #59)
   const appStateRef = useRef(AppState.currentState);
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (appStateRef.current.match(/active/) && nextAppState === 'background') {
-        disconnectSocket();
-      } else if (appStateRef.current.match(/background|inactive/) && nextAppState === 'active') {
-        connectSocket(user.id, user.role, user.shopId);
-        setupSocketListeners(dispatch, user.role, userModeRef.current);
-        // Refresh wallet balance on app resume — socket was disconnected in
-        // background so any wallet:updated events (e.g. accountant credit) were missed
-        dispatch(fetchWalletBalance());
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      try {
+        if (appStateRef.current.match(/active/) && nextAppState === 'background') {
+          disconnectSocket();
+        } else if (appStateRef.current.match(/background|inactive/) && nextAppState === 'active') {
+          // Await socket connection before setting up listeners — prevents
+          // setupSocketListeners from running while socket is still null
+          await connectSocket(user.id, user.role, user.shopId);
+          setupSocketListeners(dispatch, user.role, userModeRef.current);
+          // Refresh wallet balance on app resume — socket was disconnected in
+          // background so any wallet:updated events (e.g. accountant credit) were missed
+          dispatch(fetchWalletBalance());
+        }
+      } catch {
+        // Swallow errors on resume — network may be unavailable, token may be stale.
+        // The app continues without real-time updates; next foreground cycle retries.
       }
       appStateRef.current = nextAppState;
     });
     return () => subscription.remove();
-  }, [isAuthenticated, user, dispatch]);
+  }, [isAuthenticated, user?.id, dispatch]);
 
   // Initialize push notifications after authentication
   useEffect(() => {
@@ -161,7 +167,7 @@ export default function RootNavigator() {
       unsubscribeNotifee();
       cleanupNotifications();
     };
-  }, [isAuthenticated, user, dispatch]);
+  }, [isAuthenticated, user?.id, dispatch]);
 
   // Handle cold-start notification (app opened by tapping a notification)
   useEffect(() => {
@@ -220,11 +226,6 @@ export default function RootNavigator() {
             }
           }}
         />
-      )}
-
-      {/* Permission drawer — shown once on first launch after login */}
-      {isAuthenticated && !permissionsHandled && (
-        <PermissionDrawer onComplete={() => setPermissionsHandled(true)} />
       )}
     </>
   );

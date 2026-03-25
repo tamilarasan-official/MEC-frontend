@@ -268,17 +268,21 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
       });
     // Sync balance from wallet fetch
+    // IMPORTANT: Mutate directly via Immer — do NOT spread ({ ...state.user, balance })
+    // because that creates a new object reference, which triggers all useEffects in
+    // RootNavigator that depend on `user`, causing an infinite re-render loop
+    // (socket reconnect → wallet fetch → new user ref → effects refire → repeat)
     builder
       .addCase(fetchWalletBalance.fulfilled, (state, action) => {
         if (state.user) {
-          state.user = { ...state.user, balance: action.payload.balance };
+          state.user.balance = action.payload.balance;
         }
       });
     // Sync balance after order creation (deduct immediately)
     builder
       .addCase(createOrder.fulfilled, (state, action) => {
         if (state.user && action.payload.newBalance !== undefined) {
-          state.user = { ...state.user, balance: action.payload.newBalance };
+          state.user.balance = action.payload.newBalance;
         }
       });
   },

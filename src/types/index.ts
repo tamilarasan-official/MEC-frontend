@@ -351,6 +351,7 @@ export type OwnerTabParamList = {
   Menu: undefined;
   History: undefined;
   Analytics: undefined;
+  StationeryAnalytics: undefined;
   StationeryDashboard: undefined;
   EatFood: undefined;
   EatOrders: undefined;

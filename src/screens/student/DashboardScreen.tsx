@@ -1,12 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, UIManager, Platform,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform,
 } from 'react-native';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';

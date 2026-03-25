@@ -187,6 +187,7 @@ export default function PaymentResultModal({
 
   return (
     <Modal visible animationType="none" statusBarTranslucent onRequestClose={animateDismiss}>
+      <View style={s.rootBg}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <Animated.View style={[s.root, { opacity: dissolveOp, transform: [{ scale: dissolveScale }] }]}>
 
@@ -263,6 +264,7 @@ export default function PaymentResultModal({
           {isSuccess && <Confetti anim={confettiAnim} pieces={confettiPieces} />}
         </TouchableOpacity>
       </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -272,6 +274,7 @@ const CARD_H = SH * 0.56;
 const STATUS_H = StatusBar.currentHeight || 44;
 
 const s = StyleSheet.create({
+  rootBg: { flex: 1, backgroundColor: '#0a0a0a' },
   root: { flex: 1, backgroundColor: '#0a0a0a' },
 
   // Gradient card
