@@ -58,10 +58,9 @@ const orderService = {
     const d = res.data.data;
     return mapOrder(d?.order || d);
   },
-  getMyOrders: async (status?: string, serviceType?: string): Promise<Order[]> => {
+  getMyOrders: async (status?: string): Promise<Order[]> => {
     const params: any = {};
     if (status) params.status = status;
-    if (serviceType) params.serviceType = serviceType;
     const res = await api.get('/orders/my', { params });
     return mapOrders(res.data.data || res.data);
   },
@@ -69,10 +68,9 @@ const orderService = {
     const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 50 } });
     return mapOrders(res.data.data || res.data);
   },
-  getShopOrders: async (status?: string, serviceType?: string): Promise<Order[]> => {
+  getShopOrders: async (status?: string): Promise<Order[]> => {
     const params: any = {};
     if (status) params.status = status;
-    if (serviceType) params.serviceType = serviceType;
     const res = await api.get('/orders/shop', { params });
     return mapOrders(res.data.data || res.data);
   },

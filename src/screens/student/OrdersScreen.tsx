@@ -15,13 +15,14 @@ import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { resolveImageUrl } from '../../utils/imageUrl';
 
-const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready', 'partially_delivered']);
+const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'partially_ready', 'ready', 'partially_delivered']);
 
 const statusConfig: Record<string, { icon: string; label: string; bg: string; color: string }> = {
   pending: { icon: 'time-outline', label: 'Ordered', bg: 'rgba(234,179,8,0.12)', color: '#eab308' },
   preparing: { icon: 'flame-outline', label: 'Preparing', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+  partially_ready: { icon: 'git-branch-outline', label: 'Partially Ready', bg: 'rgba(139,92,246,0.12)', color: '#8b5cf6' },
   ready: { icon: 'checkmark-circle-outline', label: 'Ready for Pickup', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
-  partially_delivered: { icon: 'checkmark-circle-outline', label: 'Partial Delivery', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+  partially_delivered: { icon: 'cube-outline', label: 'Partial Pickup', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   completed: { icon: 'checkmark-done-outline', label: 'Delivered', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
   cancelled: { icon: 'close-circle-outline', label: 'Cancelled', bg: 'rgba(239,68,68,0.12)', color: '#ef4444' },
 };
@@ -43,7 +44,8 @@ export default function OrdersScreen() {
   const user = useAppSelector(s => s.auth.user);
   const { orders: myOrders, isLoading: loading } = useAppSelector(s => s.orders);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const selectedOrder = useMemo(() => selectedOrderId ? (myOrders ?? []).find(o => o.id === selectedOrderId) ?? null : null, [selectedOrderId, myOrders]);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   // Auto-refresh orders every time this screen gains focus
@@ -114,13 +116,15 @@ export default function OrdersScreen() {
                 {/* Pickup Token */}
                 {order.status !== 'completed' && order.status !== 'cancelled' && order.pickupToken && (
                   (() => {
-                    const isReady = order.isReadyServe || order.status === 'ready' || order.status === 'partially_delivered';
+                    const isReady = order.isReadyServe || order.status === 'ready' || order.status === 'partially_ready' || order.status === 'partially_delivered';
                     return (
-                      <TouchableOpacity onPress={() => { mediumHaptic(); setSelectedOrder(order); }} activeOpacity={0.9} style={styles.tokenWrap} accessibilityLabel="Show pickup QR code" accessibilityRole="button">
-                        <LinearGradient
-                          colors={isReady ? ['#f97316', '#f59e0b', '#fb923c'] : ['#10b981', '#06d6a0', '#14b8a6']}
-                          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                          style={styles.tokenCard}>
+                      <TouchableOpacity onPress={() => { mediumHaptic(); setSelectedOrderId(order.id); }} activeOpacity={0.9} style={styles.tokenWrap} accessibilityLabel="Show pickup QR code" accessibilityRole="button">
+                        <View style={styles.tokenCard}>
+                          <LinearGradient
+                            colors={isReady ? ['#f97316', '#f59e0b', '#fb923c'] : ['#10b981', '#06d6a0', '#14b8a6']}
+                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                            style={StyleSheet.absoluteFill}
+                          />
                           <View style={styles.tokenContent}>
                             <View>
                               <Text style={styles.tokenLabel}>
@@ -133,7 +137,7 @@ export default function OrdersScreen() {
                               <Icon name={isReady ? 'flash' : 'qr-code'} size={28} color="#fff" />
                             </View>
                           </View>
-                        </LinearGradient>
+                        </View>
                       </TouchableOpacity>
                     );
                   })()
@@ -213,7 +217,7 @@ export default function OrdersScreen() {
 
       {/* QR Modal */}
       {selectedOrder && (
-        <OrderQRCard order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+        <OrderQRCard order={selectedOrder} onClose={() => setSelectedOrderId(null)} />
       )}
     </View>
     </ScreenWrapper>
@@ -253,7 +257,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Token Card
   tokenWrap: { marginBottom: 14 },
-  tokenCard: { borderRadius: 16, padding: 16 },
+  tokenCard: { borderRadius: 16, padding: 16, overflow: 'hidden' },
   tokenContent: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },

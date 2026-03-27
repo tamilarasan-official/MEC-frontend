@@ -20,6 +20,8 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
     pending: { label: 'Order Placed', icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
     preparing: { label: 'Preparing', icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
     ready: { label: 'Ready for Pickup', icon: 'cube-outline', color: colors.orange[500], bg: colors.orangeBg },
+    partially_ready: { label: 'Partially Ready', icon: 'git-branch-outline', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
+    partially_delivered: { label: 'Partial Pickup', icon: 'cube-outline', color: colors.blue[400], bg: colors.blueBg },
     completed: { label: 'Completed', icon: 'checkmark-circle', color: colors.primary, bg: colors.successBg },
     cancelled: { label: 'Cancelled', icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
   }), [colors]);

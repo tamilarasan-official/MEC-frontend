@@ -172,7 +172,7 @@ export const logout = createAsyncThunk('auth/logout', async (_, { dispatch }) =>
   try { await unregisterToken(); } catch { /* ignore */ }
   try { await api.post('/auth/logout'); } catch { /* ignore */ }
   cleanupNotifications();
-  await clearTokens();
+  try { await clearTokens(); } catch { /* ignore */ }
   dispatch(resetOrders());
   dispatch(resetUserState());
 });
@@ -258,9 +258,11 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       });
-    // Logout
+    // Logout — always reset state, even if the thunk rejects
     builder
-      .addCase(logout.fulfilled, () => initialState);
+      .addCase(logout.pending, (state) => { state.isLoading = true; })
+      .addCase(logout.fulfilled, () => initialState)
+      .addCase(logout.rejected, () => initialState);
     // Refresh user data
     builder
       .addCase(refreshUserData.fulfilled, (state, action) => {
@@ -268,21 +270,17 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
       });
     // Sync balance from wallet fetch
-    // IMPORTANT: Mutate directly via Immer — do NOT spread ({ ...state.user, balance })
-    // because that creates a new object reference, which triggers all useEffects in
-    // RootNavigator that depend on `user`, causing an infinite re-render loop
-    // (socket reconnect → wallet fetch → new user ref → effects refire → repeat)
     builder
       .addCase(fetchWalletBalance.fulfilled, (state, action) => {
         if (state.user) {
-          state.user.balance = action.payload.balance;
+          state.user = { ...state.user, balance: action.payload.balance };
         }
       });
     // Sync balance after order creation (deduct immediately)
     builder
       .addCase(createOrder.fulfilled, (state, action) => {
         if (state.user && action.payload.newBalance !== undefined) {
-          state.user.balance = action.payload.newBalance;
+          state.user = { ...state.user, balance: action.payload.newBalance };
         }
       });
   },

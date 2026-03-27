@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   RefreshControl, Alert, FlatList, Image, AppState, Modal,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { RootState } from '../../store';
 import { fetchActiveShopOrders, updateOrderStatus, markItemDelivered } from '../../store/slices/ordersSlice';
@@ -14,17 +15,17 @@ import { statusColors } from '../../theme/colors';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import CaptainHeader from '../../components/captain/CaptainHeader';
 import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
-import NotificationsModal from '../../components/student/NotificationsModal';
 import { Order, OrderStatus } from '../../types';
 import { lightHaptic, mediumHaptic } from '../../utils/haptics';
 import { resolveImageUrl } from '../../utils/imageUrl';
 
-type FilterKey = 'ready_serve' | 'pending' | 'preparing' | 'ready';
+type FilterKey = 'ready_serve' | 'pending' | 'preparing' | 'partially_ready' | 'ready';
 
-const FILTERS: { key: FilterKey; label: string; icon: string; color: string }[] = [
+const BASE_FILTERS: { key: FilterKey; label: string; icon: string; color: string }[] = [
   { key: 'ready_serve', label: 'Ready to Serve', icon: 'flash', color: '#f97316' },
   { key: 'pending', label: 'New', icon: 'time-outline', color: '#3b82f6' },
   { key: 'preparing', label: 'Preparing', icon: 'restaurant-outline', color: '#3b82f6' },
+  { key: 'partially_ready', label: 'Partially Ready', icon: 'git-branch-outline', color: '#8b5cf6' },
   { key: 'ready', label: 'Ready', icon: 'cube-outline', color: '#3b82f6' },
 ];
 
@@ -42,8 +43,10 @@ export default function CaptainHomeScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Partial pickup full-screen overlay
+  const [partialPickupOverlay, setPartialPickupOverlay] = useState<{ visible: boolean; token: string }>({ visible: false, token: '' });
 
   // Item confirmation modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -69,7 +72,14 @@ export default function CaptainHomeScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh every 5 seconds, pause when app is backgrounded
+  // Re-fetch active orders every time the screen regains focus (e.g. tab switch)
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchActiveShopOrders());
+    }, [dispatch])
+  );
+
+  // Auto-refresh every 30 seconds, pause when app is backgrounded
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     // Always clear before starting to prevent duplicate intervals when AppState
@@ -111,26 +121,31 @@ export default function CaptainHomeScreen() {
   const activeOrders = useMemo(() => shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status)), [shopOrders]);
   const pendingCount = useMemo(() => activeOrders.filter(o => o.status === 'pending').length, [activeOrders]);
   const preparingCount = useMemo(() => activeOrders.filter(o => o.status === 'preparing').length, [activeOrders]);
-  // Count both 'ready' and 'partially_delivered' as "ready" — partially delivered orders still have
-  // remaining items that are ready for collection and must stay visible in the Ready tab.
-  const readyCount = useMemo(() => activeOrders.filter(o => (o.status === 'ready' || o.status === 'partially_delivered')).length, [activeOrders]);
+  const partiallyReadyCount = useMemo(() => activeOrders.filter(o => o.status === 'partially_ready' && !o.isReadyServe).length, [activeOrders]);
+  const readyCount = useMemo(() => activeOrders.filter(o => o.status === 'ready' && !o.isReadyServe).length, [activeOrders]);
   const readyServeCount = useMemo(() => activeOrders.filter(o => o.isReadyServe && o.status === 'ready').length, [activeOrders]);
-  const inProgressCount = pendingCount + preparingCount + readyCount;
+  const inProgressCount = pendingCount + preparingCount + partiallyReadyCount + readyCount;
   const completedToday = dashboardStats?.completedToday ?? 0;
   const cancelledToday = dashboardStats?.cancelledToday ?? 0;
   const totalOrders = inProgressCount + completedToday + cancelledToday;
+
+  // Only show "Partially Ready" tab when there are partially_ready orders
+  const FILTERS = useMemo(() => partiallyReadyCount > 0
+    ? BASE_FILTERS
+    : BASE_FILTERS.filter(f => f.key !== 'partially_ready'),
+  [partiallyReadyCount]);
 
   // Filter orders — memoized for performance
   const filteredOrders = useMemo(() => {
     let orders: Order[];
     if (filter === 'ready_serve') {
       orders = activeOrders.filter(o => o.isReadyServe && o.status === 'ready');
+    } else if (filter === 'partially_ready') {
+      orders = activeOrders.filter(o => o.status === 'partially_ready' && !o.isReadyServe);
     } else {
       orders = activeOrders.filter(o => {
         if (o.isReadyServe && o.status === 'ready') return false;
-        // 'partially_delivered' orders belong to the 'ready' tab — they were 'ready' and
-        // are being scanned; remaining items are still ready for collection.
-        if (filter === 'ready' && o.status === 'partially_delivered') return true;
+        if (o.status === 'partially_ready') return false;
         return o.status === filter;
       });
     }
@@ -146,7 +161,8 @@ export default function CaptainHomeScreen() {
 
   const getFilterCount = (key: FilterKey) => {
     if (key === 'ready_serve') return readyServeCount;
-    if (key === 'ready') return activeOrders.filter(o => (o.status === 'ready' || o.status === 'partially_delivered') && !o.isReadyServe).length;
+    if (key === 'partially_ready') return partiallyReadyCount;
+    if (key === 'ready') return readyCount;
     return activeOrders.filter(o => o.status === key).length;
   };
 
@@ -176,7 +192,14 @@ export default function CaptainHomeScreen() {
     const { orderId, itemIndex, type } = confirmModal;
     setConfirmLoading(true);
     try {
-      await dispatch(markItemDelivered({ orderId, itemIndex, itemStatus: type === 'ready' ? 'ready' : 'delivered' })).unwrap();
+      const prevOrder = shopOrders.find(o => o.id === orderId);
+      const prevStatus = prevOrder?.status;
+      const result = await dispatch(markItemDelivered({ orderId, itemIndex, itemStatus: type === 'ready' ? 'ready' : 'delivered' })).unwrap();
+      // Show partial pickup overlay when order transitions to partially_ready
+      if (result?.status === 'partially_ready' && prevStatus !== 'partially_ready') {
+        const token = result.pickupToken || prevOrder?.pickupToken || '';
+        setPartialPickupOverlay({ visible: true, token });
+      }
     } catch {
       Alert.alert('Error', 'Failed to update item');
     }
@@ -263,7 +286,8 @@ export default function CaptainHomeScreen() {
             const count = getFilterCount(f.key);
             const isActive = filter === f.key;
             const isOrange = f.key === 'ready_serve';
-            const activeColor = isOrange ? '#f97316' : colors.accent;
+            const isPurple = f.key === 'partially_ready';
+            const activeColor = isOrange ? '#f97316' : isPurple ? '#8b5cf6' : colors.accent;
             return (
               <TouchableOpacity
                 key={f.key}
@@ -322,12 +346,6 @@ export default function CaptainHomeScreen() {
       <CaptainProfileDropdown
         visible={showProfile}
         onClose={() => setShowProfile(false)}
-        onNavigateNotifications={() => setShowNotifications(true)}
-      />
-
-      <NotificationsModal
-        visible={showNotifications}
-        onClose={() => setShowNotifications(false)}
       />
 
       {/* Item Confirmation Modal */}
@@ -372,6 +390,31 @@ export default function CaptainHomeScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Partial Pickup Full-Screen Overlay */}
+      <Modal visible={partialPickupOverlay.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setPartialPickupOverlay({ visible: false, token: '' })}>
+        <View style={styles.partialOverlay}>
+          <View style={styles.partialOverlayContent}>
+            <View style={styles.partialIconWrap}>
+              <Icon name="checkmark-circle" size={64} color="#fff" />
+            </View>
+            <Text style={styles.partialTitle}>Item Ready for Partial Pickup</Text>
+            {partialPickupOverlay.token ? (
+              <Text style={styles.partialToken}>#{partialPickupOverlay.token}</Text>
+            ) : null}
+            <Text style={styles.partialSubtitle}>
+              Some items have been handed over. Remaining items will be available once ready.
+            </Text>
+            <TouchableOpacity
+              style={styles.partialDismissBtn}
+              onPress={() => setPartialPickupOverlay({ visible: false, token: '' })}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.partialDismissText}>GOT IT</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </ScreenWrapper>
   );
 }
@@ -406,6 +449,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
     switch (order.status) {
       case 'pending': return { bg: 'rgba(249,115,22,0.1)', iconBg: 'rgba(249,115,22,0.2)', iconColor: '#f97316', icon: 'time' };
       case 'preparing': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'restaurant' };
+      case 'partially_ready': return { bg: 'rgba(139,92,246,0.1)', iconBg: 'rgba(139,92,246,0.2)', iconColor: '#8b5cf6', icon: 'git-branch-outline' };
       case 'ready': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'checkmark-circle' };
       default: return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'time' };
     }
@@ -413,7 +457,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
   const headerStyle = getHeaderStyle();
 
   // Show item controls for all active non-instant orders
-  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'ready' || order.status === 'partially_delivered');
+  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'partially_ready' || order.status === 'ready' || order.status === 'partially_delivered');
 
   // Status badge label
   const getBadgeLabel = () => {
@@ -548,42 +592,51 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
             </>
           )}
           {/* No "Mark Ready" button in preparing — items auto-move the order when all checked ready */}
-          {(order.status === 'ready' || order.isReadyServe) && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: order.isReadyServe ? '#f97316' : colors.accent, flex: 1 }]}
-              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
-              disabled={isUpdating}
-              activeOpacity={0.7}
-              accessibilityLabel={order.isReadyServe ? 'Mark delivered' : 'Complete order'}
-              accessibilityRole="button"
-            >
-              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
-                <>
-                  <Icon name="checkmark-done" size={18} color="#fff" />
-                  <Text style={[styles.actionText, { color: '#fff', fontWeight: '700' }]}>
-                    {order.isReadyServe ? 'Delivered' : 'Complete Order'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-          {order.status === 'partially_delivered' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 1 }]}
-              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
-              disabled={isUpdating}
-              activeOpacity={0.7}
-              accessibilityLabel="Complete all items"
-              accessibilityRole="button"
-            >
-              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
-                <>
-                  <Icon name="checkmark-done" size={18} color="#fff" />
-                  <Text style={[styles.actionText, { color: '#fff', fontWeight: '700' }]}>Complete All</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          {(order.status === 'ready' || order.isReadyServe) && (() => {
+            const allDone = order.isReadyServe || order.items.every(i => {
+              const s = i.itemStatus || 'preparing';
+              return s === 'ready' || s === 'delivered';
+            });
+            return (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: order.isReadyServe ? '#f97316' : allDone ? colors.accent : colors.muted, flex: 1 }]}
+                onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
+                disabled={isUpdating || !allDone}
+                activeOpacity={0.7}
+                accessibilityLabel={order.isReadyServe ? 'Mark delivered' : 'Complete order'}
+                accessibilityRole="button"
+              >
+                {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
+                  <>
+                    <Icon name="checkmark-done" size={18} color={allDone ? '#fff' : colors.mutedForeground} />
+                    <Text style={[styles.actionText, { color: allDone ? '#fff' : colors.mutedForeground, fontWeight: '700' }]}>
+                      {order.isReadyServe ? 'Delivered' : 'Complete Order'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })()}
+          {(order.status === 'partially_ready' || order.status === 'partially_delivered') && (() => {
+            const allItemsReady = order.items.every(i => (i.itemStatus || 'preparing') === 'ready' || (i.itemStatus || 'preparing') === 'delivered');
+            return (
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: allItemsReady ? colors.accent : colors.muted, flex: 1 }]}
+                onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
+                disabled={isUpdating || !allItemsReady}
+                activeOpacity={0.7}
+                accessibilityLabel="Complete all items"
+                accessibilityRole="button"
+              >
+                {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
+                  <>
+                    <Icon name="checkmark-done" size={18} color={allItemsReady ? '#fff' : colors.mutedForeground} />
+                    <Text style={[styles.actionText, { color: allItemsReady ? '#fff' : colors.mutedForeground, fontWeight: '700' }]}>Complete All</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })()}
         </View>
       </View>
     </View>
@@ -733,6 +786,32 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   confirmActionText: {
     fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: 0.5,
+  },
+
+  // Partial Pickup Overlay
+  partialOverlay: {
+    flex: 1, backgroundColor: '#3b82f6', justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  partialOverlayContent: { alignItems: 'center', maxWidth: 320 },
+  partialIconWrap: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 24,
+  },
+  partialTitle: {
+    fontSize: 24, fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: 8,
+  },
+  partialToken: {
+    fontSize: 36, fontWeight: '900', color: '#fff', letterSpacing: 4, marginBottom: 16,
+  },
+  partialSubtitle: {
+    fontSize: 15, color: 'rgba(255,255,255,0.85)', textAlign: 'center', lineHeight: 22, marginBottom: 32,
+  },
+  partialDismissBtn: {
+    backgroundColor: '#fff', paddingHorizontal: 40, paddingVertical: 16, borderRadius: 16,
+  },
+  partialDismissText: {
+    fontSize: 16, fontWeight: '800', color: '#3b82f6', letterSpacing: 1,
   },
 
 });

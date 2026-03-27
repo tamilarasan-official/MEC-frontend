@@ -1,8 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, UIManager, Platform,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';
@@ -191,9 +195,10 @@ export default function StudentDashboard({ navigation }: Props) {
         await walletService.payAdhocPayment(selectedPayment.id);
       } else {
         const orderData = await walletService.createRazorpayOrder(selectedPayment.amount);
+        const amountPaise = orderData.amount > 1000 ? orderData.amount : selectedPayment.amount * 100;
         const options = {
           key: orderData.keyId,
-          amount: selectedPayment.amount * 100,
+          amount: amountPaise,
           currency: orderData.currency || 'INR',
           name: 'CampusOne',
           description: selectedPayment.title,
@@ -237,14 +242,16 @@ export default function StudentDashboard({ navigation }: Props) {
 
   const allCategories = useMemo(() => {
     const cats = categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) as string[];
-    return [...cats].sort((a, b) => {
-      const ai = CATEGORY_ORDER.indexOf(a);
-      const bi = CATEGORY_ORDER.indexOf(b);
-      if (ai === -1 && bi === -1) return 0;
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
-    });
+    return cats
+      .filter(c => c.toLowerCase() !== 'new')
+      .sort((a, b) => {
+        const ai = CATEGORY_ORDER.indexOf(a);
+        const bi = CATEGORY_ORDER.indexOf(b);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categories]);
 
@@ -299,8 +306,9 @@ export default function StudentDashboard({ navigation }: Props) {
   const statusConfig: Record<string, { bg: string; color: string; label: string }> = {
     pending: { bg: 'rgba(234,179,8,0.15)', color: '#eab308', label: 'Ordered' },
     preparing: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Preparing' },
+    partially_ready: { bg: 'rgba(139,92,246,0.15)', color: '#8b5cf6', label: 'Partially Ready' },
     ready: { bg: 'rgba(16,185,129,0.15)', color: '#10b981', label: 'Ready' },
-    partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial' },
+    partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial Pickup' },
   };
 
   const renderFoodCard = ({ item }: { item: FoodItem }) => {
@@ -578,11 +586,13 @@ export default function StudentDashboard({ navigation }: Props) {
           activeOpacity={0.9}
           accessibilityLabel="View cart"
           accessibilityRole="button">
-          <LinearGradient
-            colors={isShopOpen ? ['#3b82f6', '#06d6a0'] : ['#6b7280', '#6b7280']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.floatingBar}>
+          <View style={styles.floatingBar}>
+            <LinearGradient
+              colors={isShopOpen ? ['#3b82f6', '#06d6a0'] : ['#6b7280', '#6b7280']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={styles.floatingBarLeft}>
               <View style={styles.floatingBarIcon}>
                 <Icon name={isShopOpen ? 'bag-handle' : 'storefront-outline'} size={22} color="#fff" />
@@ -599,7 +609,7 @@ export default function StudentDashboard({ navigation }: Props) {
               <Text style={styles.floatingBarAction}>View Cart</Text>
               <Icon name="arrow-forward" size={18} color="#fff" />
             </View>
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
       </Animated.View>
 
@@ -649,13 +659,10 @@ export default function StudentDashboard({ navigation }: Props) {
             setSuccessOrderType(order.isReadyServe ? 'instant' : 'regular');
             setShowSuccessAnim(true);
           }
-          // Delay cart close so OrderAnimation's fade-in covers the transition
-          setTimeout(() => setShowCart(false), 150);
         }}
         onOrderFailure={(errorMessage) => {
           setFailError(errorMessage || '');
           setShowFailAnim(true);
-          setTimeout(() => setShowCart(false), 150);
         }}
       />
 
@@ -968,8 +975,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
   },
   floatingBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderRadius: 20, padding: 14,
+    height: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 20, paddingHorizontal: 16, overflow: 'hidden',
   },
   floatingBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   floatingBarIcon: {

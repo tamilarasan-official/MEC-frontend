@@ -49,7 +49,8 @@ export default function ProfileScreen({ navigation }: Props) {
     try {
       await api.delete('/auth/account');
       setShowDeleteDialog(false);
-      dispatch(logout());
+      // Wait for Modal fade-out to complete before wiping auth state — iOS freezes otherwise
+      setTimeout(() => dispatch(logout()), 500);
     } catch (err: any) {
       setDeleteLoading(false);
       const msg = err?.response?.data?.error?.message || 'Failed to delete account. Please try again.';
@@ -133,10 +134,12 @@ export default function ProfileScreen({ navigation }: Props) {
           }>
 
           {/* Profile Card */}
-          <LinearGradient
-            colors={['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.04)']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={styles.profileCard}>
+          <View style={styles.profileCard}>
+            <LinearGradient
+              colors={['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.04)']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} activeOpacity={0.8} disabled={avatarUploading} accessibilityLabel="Change profile picture" accessibilityRole="button">
               {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
                 <Image
@@ -166,7 +169,7 @@ export default function ProfileScreen({ navigation }: Props) {
                 </Text>
               </View>
             </View>
-          </LinearGradient>
+          </View>
 
           {/* Info Cards Row — only for verified MEC students */}
           {user?.rollNumber && (
@@ -358,7 +361,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // Profile card
   profileCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    borderRadius: 20, padding: 18,
+    borderRadius: 20, padding: 18, overflow: 'hidden',
     borderWidth: 1, borderColor: c.primaryBorder,
     marginBottom: 12,
   },

@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Linking, Animated,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Image, Linking, Alert,
 } from 'react-native';
 import Icon from '../common/Icon';
 import { useTheme, ThemeMode } from '../../theme/ThemeContext';
@@ -40,16 +40,6 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
   const roleLabel = (user?.role || 'captain').charAt(0).toUpperCase() + (user?.role || 'captain').slice(1);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [showSignOut, setShowSignOut] = useState(false);
-  const signOutScale = useRef(new Animated.Value(0.9)).current;
-
-  useEffect(() => {
-    if (showSignOut) {
-      Animated.spring(signOutScale, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start();
-    } else {
-      signOutScale.setValue(0.9);
-    }
-  }, [showSignOut, signOutScale]);
 
   const handleDietChange = async (value: DietFilter) => {
     dispatch(setDietFilter(value));
@@ -64,18 +54,26 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
   };
 
   const handleLogout = () => {
-    onClose();
-    setTimeout(() => setShowSignOut(true), 150);
-  };
-
-  const confirmSignOut = () => {
-    setShowSignOut(false);
-    setTimeout(() => dispatch(logout()), 50);
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => {
+            onClose();
+            setTimeout(() => dispatch(logout()), 500);
+          }
+        },
+      ]
+    );
   };
 
   return (
     <>
-    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
+    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={onClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} style={styles.dropdown}>
 
@@ -250,30 +248,6 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
     {/* Change Password Modal */}
     <Modal visible={showChangePassword} animationType="slide" statusBarTranslucent onRequestClose={() => setShowChangePassword(false)}>
       <ChangePasswordScreen onClose={() => setShowChangePassword(false)} />
-    </Modal>
-
-    {/* Sign Out Confirmation Modal */}
-    <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent onRequestClose={() => setShowSignOut(false)}>
-      <TouchableOpacity style={styles.signOutOverlay} activeOpacity={1} onPress={() => setShowSignOut(false)}>
-        <Animated.View style={[styles.signOutDialog, { transform: [{ scale: signOutScale }] }]}>
-          <View style={styles.signOutIconWrap}>
-            <Icon name="log-out-outline" size={28} color={colors.destructive} />
-          </View>
-          <Text style={styles.signOutTitle}>Sign Out</Text>
-          <Text style={styles.signOutMessage}>
-            Are you sure you want to sign out? You'll need to log in again to access your account.
-          </Text>
-          <View style={styles.signOutActions}>
-            <TouchableOpacity style={styles.signOutCancelBtn} onPress={() => setShowSignOut(false)} activeOpacity={0.7}>
-              <Text style={styles.signOutCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.signOutConfirmBtn} onPress={confirmSignOut} activeOpacity={0.7}>
-              <Icon name="log-out-outline" size={16} color="#fff" />
-              <Text style={styles.signOutConfirmText}>Sign Out</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-      </TouchableOpacity>
     </Modal>
     </>
   );

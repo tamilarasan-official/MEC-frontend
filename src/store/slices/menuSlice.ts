@@ -295,7 +295,7 @@ const menuSlice = createSlice({
         s.ownerCategories = a.payload.categories;
         s.ownerMenuLastFetched = Date.now();
       })
-      .addCase(fetchOwnerMenu.pending, (s) => { s.ownerMenuLoading = s.ownerMenuItems.length === 0; })
+      .addCase(fetchOwnerMenu.pending, (s) => { s.ownerMenuLoading = true; })
       .addCase(fetchOwnerMenu.rejected, (s) => { s.ownerMenuLoading = false; });
     builder
       .addCase(createMenuItem.fulfilled, (s, a) => { s.ownerMenuItems.push(a.payload); });

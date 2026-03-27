@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, Animated, ScrollView, Keyboard, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Animated, ScrollView, Keyboard,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
@@ -9,7 +9,7 @@ import PaymentResultModal from '../common/PaymentResultModal';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { fetchWalletBalance } from '../../store/slices/userSlice';
+import { fetchWalletBalance, fetchTransactions } from '../../store/slices/userSlice';
 import walletService from '../../services/walletService';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 
@@ -25,8 +25,10 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
+  const walletBalance = useAppSelector(s => s.user.balance);
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
   const [error, setError] = useState('');
   const [verificationFailed, setVerificationFailed] = useState(false);
   const [paymentResult, setPaymentResult] = useState<{ type: 'success' | 'failed'; amount: number } | null>(null);
@@ -35,42 +37,16 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
-  const keyboardPadding = useMemo(() => new Animated.Value(0), []);
-
-  // Smooth keyboard padding — replaces KeyboardAvoidingView to avoid abrupt reflow on Android
-  useEffect(() => {
-    if (!visible) return;
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      if (isClosingRef.current) return;
-      Animated.timing(keyboardPadding, {
-        toValue: e.endCoordinates.height,
-        duration: Platform.OS === 'ios' ? (e.duration || 250) : 150,
-        useNativeDriver: false,
-      }).start();
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      if (isClosingRef.current) return;
-      Animated.timing(keyboardPadding, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: false,
-      }).start();
-    });
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, [visible, keyboardPadding]);
 
   useEffect(() => {
     if (visible) {
       // Reset closing guard and clear any leftover payment result
       isClosingRef.current = false;
       setPaymentResult(null);
-      keyboardPadding.setValue(0);
       slideAnim.setValue(600);
       backdropAnim.setValue(0);
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
     }
@@ -85,6 +61,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         setVerificationFailed(false);
         pendingPaymentRef.current = null;
         isClosingRef.current = false;
+        submittingRef.current = false;
       }, 300);
       return () => clearTimeout(resetTimer);
     }
@@ -92,23 +69,22 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
 
   const numericAmount = parseInt(amount || '0', 10);
 
-  const handleChangeText = useCallback((t: string) => {
-    setAmount(t.replace(/[^0-9]/g, ''));
-    setError('');
-  }, []);
-
   const handleTopUp = async () => {
+    if (submittingRef.current) return;
     if (numericAmount < 1 || numericAmount > 50000) {
+      Keyboard.dismiss();
       setError('Amount must be between Rs. 1 and Rs. 50,000');
       return;
     }
+    submittingRef.current = true;
     setLoading(true);
     setError('');
     try {
       const orderData = await walletService.createRazorpayOrder(numericAmount);
+      const amountPaise = orderData.amount > 1000 ? orderData.amount : orderData.amount * 100;
       const options = {
         key: orderData.keyId,
-        amount: orderData.amount * 100, // Use server amount, not local — prevents mismatch
+        amount: amountPaise, // orderData.amount is expected in paise from backend
         currency: orderData.currency || 'INR',
         name: 'CampusOne',
         description: `Wallet Top-up Rs. ${orderData.amount}`,
@@ -134,6 +110,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       setVerificationFailed(false);
       const paidAmount = numericAmount;
       dispatch(fetchWalletBalance());
+      dispatch(fetchTransactions());
 
       // Close TopUpModal, then show success result screen
       isClosingRef.current = true;
@@ -141,7 +118,6 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(keyboardPadding, { toValue: 0, duration: 150, useNativeDriver: false }),
       ]).start(() => { setAmount(''); onClose(); });
 
       setPaymentResult({ type: 'success', amount: paidAmount });
@@ -191,6 +167,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       }
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -210,7 +187,6 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
         Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(keyboardPadding, { toValue: 0, duration: 150, useNativeDriver: false }),
       ]).start(() => { setAmount(''); onClose(); });
 
       setPaymentResult({ type: 'success', amount: paidAmount });
@@ -231,7 +207,6 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
       Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(keyboardPadding, { toValue: 0, duration: 200, useNativeDriver: false }),
     ]).start(() => {
       onClose();
     });
@@ -245,8 +220,10 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={loading ? undefined : handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
       </Animated.View>
 
-      <Animated.View
-        style={[styles.kvWrapper, { paddingBottom: keyboardPadding }]}>
+      <KeyboardAvoidingView
+        style={styles.kvWrapper}
+        behavior="padding"
+        keyboardVerticalOffset={0}>
         <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
           {/* Drag handle */}
@@ -272,7 +249,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
             </View>
             <View>
               <Text style={styles.balanceLabel}>Current Balance</Text>
-              <Text style={styles.balanceValue}>Rs. {user?.balance || 0}</Text>
+              <Text style={styles.balanceValue}>Rs. {walletBalance ?? 0}</Text>
             </View>
           </View>
 
@@ -281,12 +258,11 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           <TextInput
             style={styles.input}
             value={amount}
-            onChangeText={handleChangeText}
+            onChangeText={(t) => { setAmount(t.replace(/[^0-9]/g, '')); setError(''); }}
             placeholder="0"
             placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"
             maxLength={5}
-            autoCorrect={false}
             accessibilityLabel="Top up amount"
           />
 
@@ -347,7 +323,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           <Text style={styles.helpText}>Or visit the college office for cash deposits.</Text>
           </ScrollView>
         </Animated.View>
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
 
     {/* Payment Result (Success / Failed) */}

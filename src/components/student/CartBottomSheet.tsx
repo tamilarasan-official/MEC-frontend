@@ -24,8 +24,9 @@ interface CartBottomSheetProps {
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
   pending:              { bg: 'rgba(234,179,8,0.15)',   color: '#eab308', label: 'Order Placed' },
   preparing:            { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Preparing' },
+  partially_ready:      { bg: 'rgba(139,92,246,0.15)',  color: '#8b5cf6', label: 'Partially Ready' },
   ready:                { bg: 'rgba(16,185,129,0.15)',  color: '#10b981', label: 'Ready For Pickup' },
-  partially_delivered:  { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Partial' },
+  partially_delivered:  { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Partial Pickup' },
 };
 
 export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailure }: CartBottomSheetProps) {
@@ -35,13 +36,14 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
 
   const { items: cartItems, shopId, shopName } = useAppSelector(s => s.cart);
   const user = useAppSelector(s => s.auth.user);
+  const userMode = useAppSelector(s => s.user.userMode);
   const activeOrders = useAppSelector(s => s.orders.activeOrders);
   const shops = useAppSelector(s => s.menu.shops);
   const [ordering, setOrdering] = useState(false);
 
   // Check if the shop is currently open
   const shop = shops.find(s => s.id === shopId);
-  const isShopClosed = shop ? shop.isActive === false : false;
+  const isShopClosed = !shop || shop.isActive === false;
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
@@ -85,6 +87,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       const result = await dispatch(createOrder({
         shopId,
         items: cartItems.map(c => ({ foodItemId: c.item.id, quantity: c.quantity })),
+        ...(userMode === 'eat' ? { mode: 'eat' as const } : {}),
       })).unwrap();
       dispatch(clearCart());
       setOrdering(false);
@@ -102,9 +105,10 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
           shopName: o.shopName || savedShopName,
         })),
       };
-      // Animate sheet out before triggering success — skip onClose so parent
-      // can delay closing until the success animation covers the screen (#63)
-      animateClose(() => onOrderSuccess(enrichedResult), true);
+      // Show success IMMEDIATELY — the animation overlay covers the screen
+      // so the cart close happens invisibly underneath (no freeze gap)
+      onOrderSuccess(enrichedResult);
+      onClose();
     } catch (err: any) {
       let msg: string;
       if (typeof err === 'string') {
@@ -117,9 +121,8 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
         msg = 'Order failed. Please check your balance and try again.';
       }
       setOrdering(false);
-      // Animate sheet out before triggering failure — skip onClose so parent
-      // can delay closing until the failure animation covers the screen
-      animateClose(() => onOrderFailure(msg), true);
+      onOrderFailure(msg);
+      onClose();
     }
   };
 
@@ -255,11 +258,13 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
               </Text>
             )}
             <TouchableOpacity onPress={() => { mediumHaptic(); handlePay(); }} disabled={isShopClosed || !hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`} accessibilityRole="button">
-              <LinearGradient
-                colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.payBtn}>
+              <View style={styles.payBtn}>
+                <LinearGradient
+                  colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
                 {ordering ? (
                   <ActivityIndicator color="#fff" />
                 ) : isShopClosed ? (
@@ -267,7 +272,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                 ) : (
                   <Text style={styles.payBtnText}>Pay Rs.{cartTotal}</Text>
                 )}
-              </LinearGradient>
+              </View>
             </TouchableOpacity>
           </View>
         )}
@@ -373,6 +378,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   shopClosedText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
   insufficientText: { fontSize: 12, color: colors.danger, textAlign: 'center' },
-  payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center' },
+  payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center', overflow: 'hidden' },
   payBtnText: { fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: 0.3 },
 });

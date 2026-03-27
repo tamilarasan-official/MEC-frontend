@@ -9,6 +9,7 @@ import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 import {
   isDuplicate,
   displayLocalNotification,
+  CHANNEL_ORDER_READY,
   CHANNEL_ORDER_UPDATES,
   CHANNEL_WALLET,
   CHANNEL_GENERAL,
@@ -28,13 +29,14 @@ export interface OrderUpdatePayload {
   items?: { name: string; quantity: number }[];
 }
 
-export const connectSocket = async (userId: string, role: string, shopId?: string) => {
+export const connectSocket = async (userId: string, role: string, shopId?: string, userMode: string = 'work') => {
   // If already connected to the server, reuse the existing socket
   if (socket?.connected) return socket;
 
   // Clean up any existing socket (disconnected, reconnecting, or stale)
   // to prevent zombie connections from piling up on the server
   if (socket) {
+    socket.io.removeAllListeners();
     socket.removeAllListeners();
     socket.disconnect();
     socket = null;
@@ -57,13 +59,19 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
     const freshToken = await getAccessToken();
     if (freshToken && socket) {
       socket.auth = { token: freshToken };
+    } else if (socket) {
+      // Token expired / unavailable — stop reconnecting with stale credentials
+      if (__DEV__) console.warn('[Socket] No valid token on reconnect, disconnecting');
+      socket.disconnect();
     }
   });
 
   socket.on('connect', () => {
     if (__DEV__) console.log('[Socket] Connected:', socket?.id);
     socket?.emit('join:user', userId);
-    if (['captain', 'owner', 'superadmin'].includes(role) && shopId) {
+    // Only join shop room in work mode — eat mode users are customers,
+    // they shouldn't receive shop notifications (new orders, status changes)
+    if (userMode !== 'eat' && ['captain', 'owner', 'superadmin'].includes(role) && shopId) {
       socket?.emit('join:shop', shopId);
     }
   });
@@ -81,6 +89,7 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
 
 export const disconnectSocket = () => {
   if (socket) {
+    socket.io.removeAllListeners();
     socket.removeAllListeners();
     socket.disconnect();
     socket = null;
@@ -107,7 +116,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // double Redux notification, and double order refetch.
   socket.on('order:status_changed', (payload: OrderUpdatePayload) => {
     try {
-      const status = payload.status as 'preparing' | 'ready' | 'completed' | 'cancelled';
+      const status = payload.status as 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
 
       // Dedup: skip entirely if this orderId+status was already processed
       // (from the other room delivery, or from FCM arriving first)
@@ -116,36 +125,52 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
 
       // Show popup for students and eat-mode users (captain/owner ordering food)
       const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
-      if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
-        if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
+      if (isStudentOrEatMode && ['preparing', 'partially_ready', 'ready', 'partially_delivered', 'completed', 'cancelled'].includes(status)) {
+        const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
+        if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber, itemNames);
         DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
           status,
           orderNumber: payload.orderNumber || payload.orderId.slice(-6),
+          itemNames: (status === 'partially_ready' || status === 'partially_delivered') ? itemNames : undefined,
         });
       }
 
-      // Add to Redux notification list
-      const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
-      const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
-      const statusLabels: Record<string, string> = {
-        preparing: `Your order is being prepared${itemsSuffix}`,
-        ready: `Your order is ready for pickup!${itemsSuffix}`,
-        completed: `Your order has been completed${itemsSuffix}`,
-        cancelled: `Your order has been cancelled${itemsSuffix}`,
-      };
-      const orderNum = payload.orderNumber || payload.orderId.slice(-6);
-      const title = payload.notification?.title || `Order #${orderNum}`;
-      const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
+      // Only show order status notifications to the customer (student or eat-mode user)
+      // Captain/owner in work mode manages orders — they don't need "Your order is completed" messages
+      if (isStudentOrEatMode) {
+        const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
+        const itemsSuffix = itemNames.length > 0 ? ` — ${itemNames.join(', ')}` : '';
+        const statusLabels: Record<string, string> = {
+          preparing: `Your order is being prepared${itemsSuffix}`,
+          partially_ready: itemNames.length > 0
+            ? `${itemNames.join(', ')} ready for pickup!`
+            : 'Some items are ready for partial pickup!',
+          partially_delivered: 'Some items have been handed over. Remaining items coming soon!',
+          ready: `All items are ready for pickup!${itemsSuffix}`,
+          completed: `Your order has been completed${itemsSuffix}`,
+          cancelled: `Your order has been cancelled${itemsSuffix}`,
+        };
+        const orderNum = payload.orderNumber || payload.orderId.slice(-6);
+        const title = payload.notification?.title || (status === 'partially_ready'
+          ? `Order #${orderNum} — Items Ready!`
+          : status === 'partially_delivered'
+          ? `Order #${orderNum} — Partial Pickup`
+          : `Order #${orderNum}`);
+        const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
 
-      dispatch(addNotification({
-        id: `notif-${Date.now()}`,
-        type: 'order',
-        title,
-        message,
-        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
-        createdAt: payload.updatedAt,
-        read: false,
-      }));
+        dispatch(addNotification({
+          id: `notif-${Date.now()}`,
+          type: 'order',
+          title,
+          message,
+          data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
+          createdAt: payload.updatedAt,
+          read: false,
+        }));
+
+        const channelId = (status === 'ready' || status === 'partially_ready' || status === 'partially_delivered') ? CHANNEL_ORDER_READY : CHANNEL_ORDER_UPDATES;
+        displayLocalNotification(title, message, { orderId: payload.orderId, status }, channelId);
+      }
 
       // Re-fetch orders so the UI reflects the new status immediately
       if (userRole === 'student' || userMode === 'eat') {
@@ -161,6 +186,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // New order (for staff)
   socket.on('order:new', (payload: { orderId: string; orderNumber: string; total: number; pickupToken?: string }) => {
     try {
+      // Eat-mode users are customers — they shouldn't receive shop order notifications
+      if (userMode === 'eat') return;
+
       // Check AND mark dedup key — skip if FCM already handled this event
       const alreadySeen = isDuplicate(`${payload.orderId}:new`);
       if (alreadySeen) return;
@@ -175,6 +203,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         createdAt: new Date().toISOString(),
         read: false,
       }));
+
+      // Re-fetch orders so the UI reflects the new order immediately
+      dispatch(fetchActiveShopOrders());
 
       displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES, `new-order-${payload.orderId}`);
     } catch (e) {
@@ -224,9 +255,6 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // Announcements
   socket.on('announcement', (payload: { title: string; message: string }) => {
     try {
-      // Reject empty announcements
-      if ((!payload.title || !payload.title.trim()) && (!payload.message || !payload.message.trim())) return;
-
       // Dedup announcements by content (prevents duplicate on socket reconnect)
       const dedupKey = `announce:${payload.title}:${Math.floor(Date.now() / 60000)}`;
       if (isDuplicate(dedupKey)) return;
@@ -297,12 +325,8 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     paidCount: number;
   }) => {
     try {
-      // Validate required payload fields
-      if (!payload || !payload.paymentRequestId || !payload.amount || !payload.studentName) return;
-
-      // Dedup: prevent duplicate payment notifications on socket reconnect
-      const dedupKey = `payment:${payload.paymentRequestId}:${payload.paidCount}`;
-      if (isDuplicate(dedupKey)) return;
+      // Eat-mode users are customers — they shouldn't receive payment notifications for their shop
+      if (userMode === 'eat') return;
 
       if (__DEV__) console.log('[Socket] Payment received:', payload);
 

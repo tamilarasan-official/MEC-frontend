@@ -11,33 +11,16 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import OwnerHeader from '../../components/owner/OwnerHeader';
 import OwnerProfileDropdown from '../../components/owner/OwnerProfileDropdown';
 import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
-import analyticsService from '../../services/analyticsService';
+import analyticsService, { StationeryAnalytics } from '../../services/analyticsService';
 
 type TimeFilter = 'today' | 'week' | 'month' | 'all';
-
-interface StationeryData {
-  todaySales: number;
-  weekSales: number;
-  thisMonthRevenue: number;
-  alltimeSales: number;
-  todayOrders: number;
-  weekOrders: number;
-  thisMonthOrders: number;
-  alltimeOrders: number;
-  totalPages: number;
-  totalCopies: number;
-  uniqueCustomers: number;
-  completionRate: number;
-  colorDistribution: Array<{ type: string; count: number }>;
-  paperDistribution: Array<{ size: string; count: number }>;
-}
 
 export default function StationeryAnalyticsScreen() {
   const { colors } = useTheme();
   const s = useMemo(() => createStyles(colors), [colors]);
   const navigation = useNavigation();
 
-  const [data, setData] = useState<StationeryData | null>(null);
+  const [data, setData] = useState<StationeryAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [salesFilter, setSalesFilter] = useState<TimeFilter>('month');
@@ -100,8 +83,11 @@ export default function StationeryAnalyticsScreen() {
   return (
     <ScreenWrapper>
       <OwnerHeader
-        onAvatarPress={() => setShowProfile(true)}
-        onWalletPress={() => setShowWallet(true)}
+        searchQuery=""
+        onSearchChange={() => {}}
+        showSearch={false}
+        onToggleSearch={() => {}}
+        onProfilePress={() => setShowProfile(true)}
       />
       <ScrollView
         style={s.container}

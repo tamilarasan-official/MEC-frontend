@@ -120,16 +120,7 @@ const userSlice = createSlice({
     setOrderStatusPopup: (s, a: PayloadAction<{ status: string; orderNumber: string } | null>) => {
       s.orderStatusPopup = a.payload as OrderStatusPopupData | null;
     },
-    addNotification: (s, a: PayloadAction<AppNotification>) => {
-      const { title, message } = a.payload;
-      // Reject notifications where both title and message are empty/whitespace
-      if ((!title || !title.trim()) && (!message || !message.trim())) return;
-      s.notifications.unshift(a.payload);
-      // Cap at 200 entries to prevent unbounded memory growth
-      if (s.notifications.length > 200) {
-        s.notifications.length = 200;
-      }
-    },
+    addNotification: (s, a: PayloadAction<AppNotification>) => { s.notifications.unshift(a.payload); },
     markNotificationRead: (s, a: PayloadAction<string>) => {
       const n = s.notifications.find(x => x.id === a.payload);
       if (n) n.read = true;

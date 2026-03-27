@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Easing, Vibration,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Easing, Vibration, Platform,
 } from 'react-native';
 import Sound from 'react-native-sound';
 import Icon from './Icon';
@@ -9,17 +9,30 @@ import Icon from './Icon';
 Sound.setCategory('Playback');
 
 interface OrderStatusPopupProps {
-  status: 'preparing' | 'ready' | 'completed' | 'cancelled';
+  status: 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
   orderNumber: string;
+  itemNames?: string[];
   onDismiss: () => void;
 }
 
-const statusConfig = {
+const statusConfig: Record<string, { icon: string; label: string; message: string; bgColors: string[] }> = {
   preparing: {
     icon: 'restaurant-outline',
     label: 'Preparing Your Order',
     message: 'Your order has been confirmed and is being prepared!',
     bgColors: ['#f59e0b', '#eab308'],
+  },
+  partially_ready: {
+    icon: 'git-branch-outline',
+    label: 'Item Ready for Pickup!',
+    message: 'Some items from your order are ready. Head to the counter to collect them!',
+    bgColors: ['#8b5cf6', '#7c3aed'],
+  },
+  partially_delivered: {
+    icon: 'cube-outline',
+    label: 'Partial Pickup Done',
+    message: 'Some items have been handed over. Remaining items will be ready soon!',
+    bgColors: ['#3b82f6', '#2563eb'],
   },
   ready: {
     icon: 'cube-outline',
@@ -41,8 +54,11 @@ const statusConfig = {
   },
 };
 
-export function OrderStatusPopup({ status, orderNumber, onDismiss }: OrderStatusPopupProps) {
-  const config = statusConfig[status];
+export function OrderStatusPopup({ status, orderNumber, itemNames, onDismiss }: OrderStatusPopupProps) {
+  const config = statusConfig[status] || statusConfig.preparing;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  const stableDismiss = useCallback(() => onDismissRef.current(), []);
   const scaleAnim = useRef(new Animated.Value(0.3)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const bounceAnim = useRef(new Animated.Value(0)).current;
@@ -53,7 +69,11 @@ export function OrderStatusPopup({ status, orderNumber, onDismiss }: OrderStatus
     Vibration.vibrate(100);
 
     // Play notification sound for all order status changes
-    const sound = new Sound('notification_sound.wav', Sound.MAIN_BUNDLE, (error) => {
+    // Android: loads from res/raw/ by name (no extension, no basePath)
+    // iOS: loads from main bundle with extension
+    const fileName = Platform.OS === 'android' ? 'notification_sound' : 'notification_sound.wav';
+    const basePath = Platform.OS === 'android' ? undefined : Sound.MAIN_BUNDLE;
+    const sound = new Sound(fileName, basePath, (error) => {
       if (!error) {
         sound.setVolume(1.0);
         sound.play(() => sound.release());
@@ -75,17 +95,17 @@ export function OrderStatusPopup({ status, orderNumber, onDismiss }: OrderStatus
     // Progress bar shrink (5s auto-dismiss)
     Animated.timing(progressAnim, { toValue: 0, duration: 5000, easing: Easing.linear, useNativeDriver: false }).start();
 
-    const timer = setTimeout(onDismiss, 5000);
+    const timer = setTimeout(stableDismiss, 5000);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onDismiss}>
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={stableDismiss}>
       <TouchableOpacity
         style={[styles.overlay, { backgroundColor: config.bgColors[0] }]}
         activeOpacity={1}
-        onPress={onDismiss}
+        onPress={stableDismiss}
       >
         {/* Pulsing rings */}
         <View style={styles.ringContainer}>
@@ -107,6 +127,11 @@ export function OrderStatusPopup({ status, orderNumber, onDismiss }: OrderStatus
 
           {/* Message */}
           <Text style={styles.message}>{config.message}</Text>
+
+          {/* Item names for partial delivery */}
+          {itemNames && itemNames.length > 0 && (
+            <Text style={styles.itemNames}>{itemNames.join(', ')}</Text>
+          )}
 
           {/* Dismiss hint */}
           <Text style={styles.dismissHint}>Tap anywhere to dismiss</Text>
@@ -155,6 +180,10 @@ const styles = StyleSheet.create({
   },
   message: {
     fontSize: 16, color: 'rgba(255,255,255,0.9)', textAlign: 'center', maxWidth: 280, lineHeight: 22,
+  },
+  itemNames: {
+    fontSize: 15, fontWeight: '700', color: '#fff', textAlign: 'center', marginTop: 12,
+    maxWidth: 280, lineHeight: 22,
   },
   dismissHint: {
     fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '500', marginTop: 40,

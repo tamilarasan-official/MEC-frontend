@@ -12,13 +12,14 @@ import type { ThemeColors } from '../../theme/colors';
 import { Order, OrderStatus } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
-type FilterStatus = 'pending' | 'preparing' | 'ready' | 'partially_delivered';
+type FilterStatus = 'pending' | 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered';
 
 const FILTERS: { key: FilterStatus; label: string; icon: string; activeColor: string }[] = [
   { key: 'pending', label: 'Pending', icon: 'time-outline', activeColor: '#f59e0b' },
   { key: 'preparing', label: 'Cooking', icon: 'restaurant-outline', activeColor: '#3b82f6' },
+  { key: 'partially_ready', label: 'Partial Ready', icon: 'git-branch-outline', activeColor: '#8b5cf6' },
   { key: 'ready', label: 'Ready', icon: 'cube-outline', activeColor: '#f97316' },
-  { key: 'partially_delivered', label: 'Partial', icon: 'checkmark-done-outline', activeColor: '#60a5fa' },
+  { key: 'partially_delivered', label: 'Partial Pickup', icon: 'checkmark-done-outline', activeColor: '#60a5fa' },
 ];
 
 export default function CaptainOrdersScreen() {
@@ -109,11 +110,11 @@ export default function CaptainOrdersScreen() {
           </View>
         </View>
 
-        {/* Items - with delivery checkboxes for preparing/partially_delivered */}
+        {/* Items - with delivery checkboxes for preparing/partially_ready/partially_delivered */}
         <View style={styles.itemsList}>
           {order.items.map((item, idx) => {
             const isDelivered = item.delivered ?? false;
-            const showCheckbox = order.status === 'preparing' || order.status === 'partially_delivered';
+            const showCheckbox = order.status === 'preparing' || order.status === 'partially_ready' || order.status === 'partially_delivered';
             return (
               <View key={idx} style={styles.itemRow}>
                 {showCheckbox && (
@@ -220,7 +221,7 @@ export default function CaptainOrdersScreen() {
               )}
             </TouchableOpacity>
           )}
-          {order.status === 'partially_delivered' && (
+          {(order.status === 'partially_ready' || order.status === 'partially_delivered') && (
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.primary, flex: 1 }]}
               onPress={() => handleStatusUpdate(order.id, 'completed')}

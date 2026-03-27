@@ -65,7 +65,8 @@ export default function CaptainSettingsScreen() {
 
   const confirmLogout = () => {
     setShowLogout(false);
-    dispatch(logout());
+    // Wait for Modal fade-out to complete before wiping auth state — iOS freezes otherwise
+    setTimeout(() => dispatch(logout()), 500);
   };
 
   const handleDeleteAccount = async () => {
@@ -73,7 +74,7 @@ export default function CaptainSettingsScreen() {
     try {
       await api.delete('/auth/account');
       setShowDeleteAccount(false);
-      dispatch(logout());
+      setTimeout(() => dispatch(logout()), 500);
     } catch (err: any) {
       setDeleteLoading(false);
       const msg = err?.response?.data?.error?.message || 'Failed to delete account. Please try again.';

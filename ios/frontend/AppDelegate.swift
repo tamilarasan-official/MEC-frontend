@@ -62,6 +62,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     guard let appDelegate = UIApplication.shared.delegate as? AppDelegate,
           let factory = appDelegate.reactNativeFactory else { return }
 
+    // Ensure legacy AppDelegate.window is set for libraries that rely on it (like react-native-razorpay)
+    appDelegate.window = window
+
     factory.startReactNative(
       withModuleName: "frontend",
       in: window,

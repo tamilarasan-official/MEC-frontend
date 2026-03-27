@@ -35,6 +35,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tez</string>
+		<string>phonepe</string>
+		<string>paytmmp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>CampusOne needs camera access to scan QR codes for order pickup.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Modal, Animated, Easing, Dimensions, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, Modal, Animated, Easing, Dimensions, TouchableOpacity, ScrollView, Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Sound from 'react-native-sound';
@@ -59,7 +59,9 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
   useEffect(() => {
     if (type === 'success') {
       // Play notification sound
-      const sound = new Sound('notification_sound.wav', Sound.MAIN_BUNDLE, (error) => {
+      const fileName = Platform.OS === 'android' ? 'notification_sound' : 'notification_sound.wav';
+      const basePath = Platform.OS === 'android' ? undefined : Sound.MAIN_BUNDLE;
+      const sound = new Sound(fileName, basePath, (error) => {
         if (!error) {
           sound.setVolume(1.0);
           sound.play(() => sound.release());
@@ -83,16 +85,16 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
       // Progress bar (non-native driver, separate from above)
       animRef.current = Animated.timing(progressAnim, {
         toValue: width * 0.55,
-        duration: 4500,
+        duration: 2000,
         easing: Easing.linear,
         useNativeDriver: false,
       });
       animRef.current.start();
 
-      // Auto dismiss after 5 seconds
+      // Auto dismiss after 2.5 seconds
       timerRef.current = setTimeout(() => {
         onComplete?.();
-      }, 5000);
+      }, 2500);
     } else {
       // Failure: shake + fade in
       Animated.timing(failOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
@@ -216,59 +218,60 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
 
     return (
       <Modal visible transparent animationType="fade" statusBarTranslucent>
-        <TouchableOpacity activeOpacity={1} onPress={handleDismiss} style={styles.touchFill}>
-          <LinearGradient colors={gradientColors} style={styles.orangeOverlay}>
-            {/* Animated icon */}
-            <Animated.View style={[styles.iconCircleOrange, { transform: [{ scale: iconScale }], opacity: iconOpacity }]}>
-              <Icon name={mainIcon} size={56} color="rgba(255,255,255,0.95)" />
-            </Animated.View>
+        <TouchableOpacity activeOpacity={1} onPress={handleDismiss} style={styles.overlay}>
+          {/* Gradient background — fills entire screen including notch/cutout */}
+          <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFill} />
 
-            <Animated.View style={[styles.mainContent, { opacity: contentOpacity }]}>
-              {/* Order number */}
-              {orderId && (
-                <Text style={styles.orderNum}>ORDER #{orderId.slice(-16).toUpperCase()}</Text>
-              )}
+          {/* Animated icon */}
+          <Animated.View style={[styles.iconCircleOrange, { transform: [{ scale: iconScale }], opacity: iconOpacity }]}>
+            <Icon name={mainIcon} size={56} color="rgba(255,255,255,0.95)" />
+          </Animated.View>
 
-              {/* Title */}
-              <Text style={styles.readyTitle}>{titleText}</Text>
+          <Animated.View style={[styles.mainContent, { opacity: contentOpacity }]}>
+            {/* Order number */}
+            {orderId && (
+              <Text style={styles.orderNum}>ORDER #{orderId.slice(-16).toUpperCase()}</Text>
+            )}
 
-              {/* Subtitle */}
-              <Text style={styles.readySub}>{subText}</Text>
+            {/* Title */}
+            <Text style={styles.readyTitle}>{titleText}</Text>
 
-              {/* Pickup Token Card - shown for regular orders */}
-              {!isInstant && pickupToken ? (
-                <View style={styles.tokenCardWrap}>
-                  <View style={styles.tokenCard}>
-                    <Text style={styles.tokenCardLabel}>PICKUP TOKEN</Text>
-                    <Text style={styles.tokenCardValue}>{pickupToken}</Text>
-                    <Text style={styles.tokenCardHint}>Show this at the counter</Text>
-                  </View>
+            {/* Subtitle */}
+            <Text style={styles.readySub}>{subText}</Text>
+
+            {/* Pickup Token Card - shown for regular orders */}
+            {!isInstant && pickupToken ? (
+              <View style={styles.tokenCardWrap}>
+                <View style={styles.tokenCard}>
+                  <Text style={styles.tokenCardLabel}>PICKUP TOKEN</Text>
+                  <Text style={styles.tokenCardValue}>{pickupToken}</Text>
+                  <Text style={styles.tokenCardHint}>Show this at the counter</Text>
                 </View>
-              ) : null}
-
-              {/* Tap to dismiss */}
-              <Text style={styles.tapDismiss}>Tap anywhere to dismiss</Text>
-
-              {/* Progress bar */}
-              <View style={styles.progressWrap}>
-                <Animated.View style={[styles.progressFill, { width: progressAnim }]} />
               </View>
-            </Animated.View>
+            ) : null}
 
-            {/* Money Deducted toast */}
-            <Animated.View style={[styles.moneyToast, { transform: [{ translateY: toastSlide }] }]}>
-              <View style={styles.moneyToastIconWrap}>
-                <Icon name="card" size={20} color="#10b981" />
-              </View>
-              <View style={styles.moneyToastText}>
-                <Text style={styles.moneyToastTitle}>Money Deducted</Text>
-                <Text style={styles.moneyToastSub} numberOfLines={1}>
-                  Payment for order {orderId || 'your order'}
-                  {total ? ` · Rs.${total}` : ''}
-                </Text>
-              </View>
-            </Animated.View>
-          </LinearGradient>
+            {/* Tap to dismiss */}
+            <Text style={styles.tapDismiss}>Tap anywhere to dismiss</Text>
+
+            {/* Progress bar */}
+            <View style={styles.progressWrap}>
+              <Animated.View style={[styles.progressFill, { width: progressAnim }]} />
+            </View>
+          </Animated.View>
+
+          {/* Money Deducted toast */}
+          <Animated.View style={[styles.moneyToast, { transform: [{ translateY: toastSlide }] }]}>
+            <View style={styles.moneyToastIconWrap}>
+              <Icon name="card" size={20} color="#10b981" />
+            </View>
+            <View style={styles.moneyToastText}>
+              <Text style={styles.moneyToastTitle}>Money Deducted</Text>
+              <Text style={styles.moneyToastSub} numberOfLines={1}>
+                Payment for order {orderId || 'your order'}
+                {total ? ` · Rs.${total}` : ''}
+              </Text>
+            </View>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
     );
@@ -299,7 +302,7 @@ export function LoadingSpinner({ size = 32, color }: { size?: number; color?: st
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const resolvedColor = color ?? colors.primary;
-  const spinValue = useState(new Animated.Value(0))[0];
+  const spinValue = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -324,8 +327,8 @@ export function LoadingSpinner({ size = 32, color }: { size?: number; color?: st
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   touchFill: { flex: 1 },
 
-  // ── Success (orange) ──
-  orangeOverlay: {
+  // ── Success overlay (same pattern as OrderStatusPopup) ──
+  overlay: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 32,
   },

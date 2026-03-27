@@ -19,7 +19,6 @@ import CreateQRPaymentModal from '../../components/owner/CreateQRPaymentModal';
 import QRPaymentDisplayModal from '../../components/owner/QRPaymentDisplayModal';
 import { QRPayment } from '../../types';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
-import NotificationsModal from '../../components/student/NotificationsModal';
 
 // ---- Stat Item ----
 function StatItem({ value, label, color }: { value: string | number; label: string; color: string }) {
@@ -110,7 +109,6 @@ export default function StationeryHomeScreen() {
   const [showQRDisplay, setShowQRDisplay] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showNotifications, setShowNotifications] = useState(false);
 
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
 
@@ -200,8 +198,8 @@ export default function StationeryHomeScreen() {
           <TouchableOpacity
             style={styles.headerIconBtn}
             activeOpacity={0.7}
-            onPress={() => navigation.navigate('StationeryAnalytics')}
-            accessibilityLabel="View stationery analytics"
+            onPress={() => navigation.navigate('Analytics')}
+            accessibilityLabel="View analytics"
             accessibilityRole="button"
           >
             <Icon name="time-outline" size={20} color={colors.mutedForeground} />
@@ -249,29 +247,31 @@ export default function StationeryHomeScreen() {
       >
         {/* Total Collected Card */}
         {canGenerateQR && (
-          <LinearGradient
-            colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.totalCard}
-          >
+          <View style={styles.totalCard}>
+            <LinearGradient
+              colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={styles.totalCardHeader}>
               <Icon name="logo-usd" size={18} color="#10b981" />
               <Text style={styles.totalCardLabel}>Total Collected</Text>
             </View>
             <Text style={styles.totalCardAmount}>Rs. {totalCollected}</Text>
             <Text style={styles.totalCardSub}>{totalPaymentCount} payments received</Text>
-          </LinearGradient>
+          </View>
         )}
 
         {/* QR Payment Overview */}
         {canGenerateQR && (
-          <LinearGradient
-            colors={['rgba(139,92,246,0.15)', 'rgba(139,92,246,0.05)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.overviewCard}
-          >
+          <View style={styles.overviewCard}>
+            <LinearGradient
+              colors={['rgba(139,92,246,0.15)', 'rgba(139,92,246,0.05)']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={styles.overviewHeader}>
               <Text style={styles.overviewTitle}>QR PAYMENT OVERVIEW</Text>
               <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} accessibilityLabel="Refresh payments" accessibilityRole="button">
@@ -290,7 +290,7 @@ export default function StationeryHomeScreen() {
                 <Text style={{ fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>Collected</Text>
               </View>
             </View>
-          </LinearGradient>
+          </View>
         )}
 
         {/* QR Payments List Section */}
@@ -350,13 +350,7 @@ export default function StationeryHomeScreen() {
       </ScrollView>
 
       {/* Modals */}
-      <OwnerProfileDropdown
-        visible={showProfile}
-        onClose={() => setShowProfile(false)}
-        onOpenWallet={() => { setShowProfile(false); setShowWallet(true); }}
-        onNavigateNotifications={() => { setShowProfile(false); setShowNotifications(true); }}
-      />
-      <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
+      <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} onOpenWallet={() => {}} />
       <OwnerWalletModal visible={showWallet} onClose={() => setShowWallet(false)} />
       <CreateQRPaymentModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} />
       <QRPaymentDisplayModal
@@ -451,6 +445,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   totalCard: {
     borderRadius: 16,
     padding: 18,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(16,185,129,0.25)',
   },
@@ -463,6 +458,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overviewCard: {
     borderRadius: 16,
     padding: 18,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(139,92,246,0.25)',
   },

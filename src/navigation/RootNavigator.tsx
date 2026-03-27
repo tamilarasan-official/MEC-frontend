@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState, Platform, Linking } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
 import { refreshUserData } from '../store/slices/authSlice';
 import { fetchWalletBalance } from '../store/slices/userSlice';
+import { fetchMyActiveOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
 import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
@@ -25,12 +26,14 @@ import {
 } from '../services/notificationService';
 import { checkForUpdate, UpdateInfo } from '../services/versionService';
 import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
+import { PermissionDrawer } from '../components/common/PermissionDrawer';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 interface PopupData {
-  status: 'preparing' | 'ready' | 'completed' | 'cancelled';
+  status: 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
   orderNumber: string;
+  itemNames?: string[];
 }
 
 export default function RootNavigator() {
@@ -44,6 +47,8 @@ export default function RootNavigator() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [popup, setPopup] = useState<PopupData | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [permissionsHandled, setPermissionsHandled] = useState(false);
+
   // Listen for order status popup events (from socket + FCM)
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: PopupData) => {
@@ -94,55 +99,108 @@ export default function RootNavigator() {
     });
   }, [dispatch]);
 
-  // Connect/disconnect socket based on auth state
-  // NOTE: Depend on user?.id (primitive) — NOT user (object ref) — to prevent
-  // infinite re-render loops when fetchWalletBalance updates the balance.
+  // Request battery optimization exemption on Android (one-time)
+  // Without this, OEMs like Motorola/Samsung kill the app after a few minutes
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (!isAuthenticated || Platform.OS !== 'android') return;
+    // Use sendIntent to trigger the system battery optimization dialog
+    Linking.sendIntent(
+      'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+      [{ key: 'data', value: 'package:com.mec.campusone' }]
+    ).catch(() => {
+      // Device doesn't support this intent — non-critical
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  // Stable refs for socket — avoids re-running effects when user object changes
+  const userIdRef = useRef(user?.id);
+  const userRoleRef = useRef(user?.role);
+  const userShopIdRef = useRef(user?.shopId);
+  useEffect(() => {
+    userIdRef.current = user?.id;
+    userRoleRef.current = user?.role;
+    userShopIdRef.current = user?.shopId;
+  }, [user?.id, user?.role, user?.shopId]);
+
+  // Connect socket once on login, disconnect on logout/unmount
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) {
+      disconnectSocket();
+      return;
+    }
+    const userId = user.id;
+    const role = user.role;
+    const shopId = user.shopId;
+
+    (async () => {
       try {
-        connectSocket(user.id, user.role, user.shopId);
-        setupSocketListeners(dispatch, user.role, userModeRef.current);
+        const sock = await connectSocket(userId, role, shopId, userModeRef.current);
+        if (sock) {
+          setupSocketListeners(dispatch, role, userModeRef.current);
+        }
       } catch {
         // Socket connection failed — app continues without real-time updates
       }
-    } else {
-      disconnectSocket();
-    }
+    })();
+
     return () => { disconnectSocket(); };
-  }, [isAuthenticated, user?.id, dispatch]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?.id]);
 
-  // Re-setup socket listeners when eat/work mode changes (no reconnect needed)
+  // Reconnect socket when eat/work mode changes (need to rejoin/leave shop room)
   useEffect(() => {
-    if (isAuthenticated && user) {
-      setupSocketListeners(dispatch, user.role, userMode);
-    }
-  }, [userMode, isAuthenticated, user?.id, dispatch]);
+    if (!isAuthenticated || !userIdRef.current || !userRoleRef.current) return;
+    // Reconnect to change room membership (eat mode leaves shop room)
+    disconnectSocket();
+    (async () => {
+      const sock = await connectSocket(
+        userIdRef.current!, userRoleRef.current!, userShopIdRef.current, userMode
+      );
+      if (sock) {
+        setupSocketListeners(dispatch, userRoleRef.current!, userMode);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userMode]);
 
-  // Disconnect socket when app is backgrounded to save battery (Bug #59)
+  // Background/foreground app state handling
   const appStateRef = useRef(AppState.currentState);
   useEffect(() => {
-    if (!isAuthenticated || !user) return;
+    if (!isAuthenticated || !user?.id) return;
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
-      try {
-        if (appStateRef.current.match(/active/) && nextAppState === 'background') {
-          disconnectSocket();
-        } else if (appStateRef.current.match(/background|inactive/) && nextAppState === 'active') {
-          // Await socket connection before setting up listeners — prevents
-          // setupSocketListeners from running while socket is still null
-          await connectSocket(user.id, user.role, user.shopId);
-          setupSocketListeners(dispatch, user.role, userModeRef.current);
-          // Refresh wallet balance on app resume — socket was disconnected in
-          // background so any wallet:updated events (e.g. accountant credit) were missed
-          dispatch(fetchWalletBalance());
-        }
-      } catch {
-        // Swallow errors on resume — network may be unavailable, token may be stale.
-        // The app continues without real-time updates; next foreground cycle retries.
-      }
+      const prev = appStateRef.current;
       appStateRef.current = nextAppState;
+
+      if (prev.match(/active/) && nextAppState === 'background') {
+        // Only disconnect on Android — OEM battery managers kill apps with active sockets
+        // iOS handles background sockets efficiently and needs them for real-time notifications
+        if (Platform.OS === 'android') {
+          disconnectSocket();
+        }
+      } else if (prev.match(/background/) && nextAppState === 'active') {
+        const id = userIdRef.current;
+        const role = userRoleRef.current;
+        const shopId = userShopIdRef.current;
+        if (id && role) {
+          const sock = await connectSocket(id, role, shopId, userModeRef.current);
+          if (sock) {
+            setupSocketListeners(dispatch, role, userModeRef.current);
+          }
+        }
+        // Refresh data on resume — events were missed while backgrounded
+        dispatch(fetchWalletBalance());
+        const mode = userModeRef.current;
+        if (role === 'student' || mode === 'eat') {
+          dispatch(fetchMyActiveOrders());
+        } else {
+          dispatch(fetchActiveShopOrders());
+        }
+      }
     });
     return () => subscription.remove();
-  }, [isAuthenticated, user?.id, dispatch]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?.id]);
 
   // Initialize push notifications after authentication
   useEffect(() => {
@@ -152,7 +210,7 @@ export default function RootNavigator() {
 
     // Foreground FCM message listener
     const unsubscribeFcm = onMessage(getMessaging(), (remoteMessage) => {
-      handleForegroundMessage(remoteMessage, dispatch);
+      handleForegroundMessage(remoteMessage, dispatch, userRoleRef.current, userModeRef.current);
     });
 
     // Notifee foreground event handler (notification tap while app is open)
@@ -167,7 +225,7 @@ export default function RootNavigator() {
       unsubscribeNotifee();
       cleanupNotifications();
     };
-  }, [isAuthenticated, user?.id, dispatch]);
+  }, [isAuthenticated, user, dispatch]);
 
   // Handle cold-start notification (app opened by tapping a notification)
   useEffect(() => {
@@ -206,10 +264,11 @@ export default function RootNavigator() {
         )}
       </Stack.Navigator>
 
-      {popup && (
+      {isAuthenticated && popup && (
         <OrderStatusPopup
           status={popup.status}
           orderNumber={popup.orderNumber}
+          itemNames={popup.itemNames}
           onDismiss={dismissPopup}
         />
       )}
@@ -226,6 +285,11 @@ export default function RootNavigator() {
             }
           }}
         />
+      )}
+
+      {/* Permission drawer — shown once on first app launch, only when authenticated */}
+      {isAuthenticated && !permissionsHandled && (
+        <PermissionDrawer onComplete={() => setPermissionsHandled(true)} />
       )}
     </>
   );

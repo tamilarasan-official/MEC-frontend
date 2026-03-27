@@ -149,6 +149,7 @@ export default function OTPScreen({ navigation, route }: Props) {
     mediumHaptic();
     const result = await dispatch(sendOtp({ phone }));
     if (sendOtp.fulfilled.match(result)) {
+      autoFilledRef.current = false;
       setSessionId(result.payload.sessionId);
       setOtp(Array(OTP_LENGTH).fill(''));
       setCountdown(RESEND_COOLDOWN);
@@ -302,7 +303,7 @@ export default function OTPScreen({ navigation, route }: Props) {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>CampusOne - Madras Engineering College</Text>
+          <Text style={styles.footerText}>CampusOne</Text>
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>

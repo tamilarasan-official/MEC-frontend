@@ -54,9 +54,15 @@ export default function ProfileDropdown({
   };
 
   const confirmSignOut = () => {
+    // Dismiss inner confirmation modal first
     setShowSignOut(false);
-    onClose();
-    setTimeout(() => dispatch(logout()), 50);
+    // Wait for inner Modal to finish dismissing, then close outer dropdown
+    setTimeout(() => {
+      onClose();
+      // Wait for outer Modal fade-out to complete before resetting auth —
+      // iOS freezes if the parent unmounts while a Modal is mid-dismiss
+      setTimeout(() => dispatch(logout()), 500);
+    }, 300);
   };
 
   return (

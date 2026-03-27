@@ -191,18 +191,21 @@ export function handleForegroundMessage(
   // Dedup: skip if already shown (e.g. socket delivered first, or duplicate FCM tokens)
   // Use content-based key so duplicate FCM messages (from stale tokens) are caught
   if (orderId && status) {
-    if (isDuplicate(`${orderId}:${status}`)) return;
-  } else if (type === 'wallet_credit' || type === 'wallet') {
-    // Use a stable key with 10-second window to catch duplicate FCM messages
-    // while still allowing legitimate sequential wallet transactions
-    const amount = data?.amount as string || '';
-    const walletDedupKey = `wallet:credit:${amount}:${Math.floor(Date.now() / 10000)}`;
+    const itemNamesStr = data?.itemNames as string;
+    const orderDedupKey = itemNamesStr && status === 'item_ready' ? `${orderId}:${status}:${itemNamesStr}` : `${orderId}:${status}`;
+    if (isDuplicate(orderDedupKey)) return;
+  } else if (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') {
+    const txId = (data?.transactionId as string) || '';
+    const walletDedupKey = txId ? `wallet:tx:${txId}` : `wallet:credit:${data?.amount || ''}:${Math.floor(Date.now() / 10000)}`;
     if (isDuplicate(walletDedupKey)) {
       // Still refresh wallet balance even if notification is deduped
-      // (matches socket handler behavior in socketService.ts)
       dispatch(fetchWalletBalance());
       return;
     }
+  } else if (type === 'payment_received') {
+    const txId = (data?.transactionId as string) || '';
+    const prDedupKey = txId ? `pr:tx:${txId}` : `pr:${data?.paymentRequestId || ''}:${Math.floor(Date.now() / 10000)}`;
+    if (isDuplicate(prDedupKey)) return;
   } else {
     // Content-based dedup for all other notifications (prevents duplicates from stale FCM tokens)
     const contentKey = `${type}:${title}:${body}:${Math.floor(Date.now() / 30000)}`;
@@ -211,27 +214,32 @@ export function handleForegroundMessage(
 
   // Auto-refresh wallet balance when receiving wallet notifications via FCM
   // (covers cases where the socket missed the wallet:updated event)
-  if (type === 'wallet_credit' || type === 'wallet') {
+  if (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') {
     dispatch(fetchWalletBalance());
   }
 
   // Determine channel and display strategy
-  if (type === 'order' && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
+  if (type === 'order' && ['preparing', 'partially_ready', 'ready', 'partially_delivered', 'completed', 'cancelled'].includes(status)) {
     // Show full-screen popup for all order status changes
-    if (__DEV__) console.log('[FCM] Emitting ORDER_STATUS_POPUP_EVENT:', status, orderNumber);
+    const itemNamesRaw = data?.itemNames as string;
+    const itemNamesList = itemNamesRaw ? itemNamesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (__DEV__) console.log('[FCM] Emitting ORDER_STATUS_POPUP_EVENT:', status, orderNumber, itemNamesList);
     DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
       status,
       orderNumber: orderNumber || orderId?.slice(-6) || '',
+      itemNames: (status === 'partially_ready' || status === 'partially_delivered') ? itemNamesList : undefined,
     });
   } else {
     const channelId =
       type === 'order' ? CHANNEL_ORDER_UPDATES :
       type === 'wallet' ? CHANNEL_WALLET :
       CHANNEL_GENERAL;
-    // Use a stable notification ID so Notifee replaces instead of stacking
-    // if both socket and FCM slip through dedup
-    const notifId = orderId ? `order-${orderId}` :
-      (type === 'wallet_credit' || type === 'wallet') ? `wallet-${data?.amount || ''}` :
+    // Use unique notification IDs so Android doesn't silently squelch sounds on stacked notifications
+    const itemNamesStr = data?.itemNames as string;
+    const notifId = orderId ? 
+      (status === 'item_ready' && itemNamesStr ? `order-${orderId}-${status}-${itemNamesStr}` : `order-${orderId}-${status}`) :
+      (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') ? `wallet-${(data?.transactionId as string) || Date.now()}` :
+      (type === 'payment_received') ? `pr-${(data?.transactionId as string) || Date.now()}` :
       undefined;
     displayLocalNotification(title, body, (data as Record<string, string>) || {}, channelId, notifId);
   }
@@ -275,11 +283,17 @@ export async function handleBackgroundMessage(
 
   // Dedup — same logic as foreground handler
   if (orderId && status) {
-    if (isDuplicate(`${orderId}:${status}`)) return;
-  } else if (type === 'wallet_credit' || type === 'wallet') {
-    const amount = data?.amount as string || '';
-    const walletDedupKey = `wallet:credit:${amount}:${Math.floor(Date.now() / 60000)}`;
+    const itemNamesStr = data?.itemNames as string;
+    const orderDedupKey = itemNamesStr && status === 'item_ready' ? `${orderId}:${status}:${itemNamesStr}` : `${orderId}:${status}`;
+    if (isDuplicate(orderDedupKey)) return;
+  } else if (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') {
+    const txId = (data?.transactionId as string) || '';
+    const walletDedupKey = txId ? `wallet:tx:${txId}` : `wallet:credit:${data?.amount || ''}:${Math.floor(Date.now() / 60000)}`;
     if (isDuplicate(walletDedupKey)) return;
+  } else if (type === 'payment_received') {
+    const txId = (data?.transactionId as string) || '';
+    const prDedupKey = txId ? `pr:tx:${txId}` : `pr:${data?.paymentRequestId || ''}:${Math.floor(Date.now() / 60000)}`;
+    if (isDuplicate(prDedupKey)) return;
   } else if (remoteMessage.messageId) {
     if (isDuplicate(remoteMessage.messageId)) return;
   }
@@ -288,16 +302,41 @@ export async function handleBackgroundMessage(
   await createChannels();
 
   // Full-screen notification for all order status changes (background/killed state)
-  if (type === 'order' && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
+  if (type === 'order' && ['preparing', 'partially_ready', 'ready', 'partially_delivered', 'completed', 'cancelled'].includes(status)) {
     await displayOrderStatusFullScreen(title, body, orderNumber || '', orderId || '', status);
   } else {
     const channelId =
       type === 'order' ? CHANNEL_ORDER_UPDATES :
       type === 'wallet' ? CHANNEL_WALLET :
       CHANNEL_GENERAL;
-    await displayLocalNotification(title, body, (data as Record<string, string>) || {}, channelId);
+    const itemNamesStr = data?.itemNames as string;
+    const notifId = orderId ? 
+      (status === 'item_ready' && itemNamesStr ? `order-${orderId}-${status}-${itemNamesStr}` : `order-${orderId}-${status}`) :
+      (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') ? `wallet-${(data?.transactionId as string) || Date.now()}` :
+      (type === 'payment_received') ? `pr-${(data?.transactionId as string) || Date.now()}` :
+      undefined;
+    await displayLocalNotification(title, body, (data as Record<string, string>) || {}, channelId, notifId);
   }
   // No Redux dispatch here — store is not available in background/headless JS
+}
+
+// ── iOS APNs Token Helper ─────────────────────────────────────────
+async function getIosApnsToken(): Promise<string | null> {
+  // In production (TestFlight), the APNs token might not be immediately available.
+  // First, getting the FCM token forces Firebase to wait for the APNs token under the hood.
+  try { await getToken(getMessaging()); } catch { /* ignore */ }
+  
+  let apnsToken = await getAPNSToken(getMessaging());
+  
+  // Fallback polling if still null
+  let retries = 5;
+  while (!apnsToken && retries > 0) {
+    if (__DEV__) console.log('[Notifications] Waiting for APNs token...', retries, 'retries left');
+    await new Promise(resolve => setTimeout(() => resolve(null), 1000));
+    apnsToken = await getAPNSToken(getMessaging());
+    retries--;
+  }
+  return apnsToken;
 }
 
 // ── Register FCM token with backend ─────────────────────────────
@@ -324,7 +363,7 @@ export async function unregisterToken(): Promise<void> {
     // Android: use FCM token
     let token: string | null = null;
     if (Platform.OS === 'ios') {
-      token = await getAPNSToken(getMessaging());
+      token = await getIosApnsToken();
     } else {
       token = await getToken(getMessaging());
     }
@@ -357,7 +396,7 @@ export function setupTokenRefreshListener(userId: string): void {
     // Android: use the new FCM token directly
     let token: string | null = null;
     if (Platform.OS === 'ios') {
-      token = await getAPNSToken(getMessaging());
+      token = await getIosApnsToken();
     } else {
       token = await getToken(getMessaging());
     }
@@ -397,7 +436,7 @@ export async function initializeNotifications(userId: string): Promise<void> {
     // Android: Use FCM token (backend sends via FCM)
     let token: string | null = null;
     if (Platform.OS === 'ios') {
-      token = await getAPNSToken(getMessaging());
+      token = await getIosApnsToken();
     } else {
       token = await getToken(getMessaging());
     }

@@ -282,7 +282,7 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
                 )}
               </TouchableOpacity>
             )}
-            {(order.status === 'ready' || order.status === 'partially_delivered') && (
+            {(order.status === 'ready' || order.status === 'partially_ready' || order.status === 'partially_delivered') && (
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: colors.primary }]}
                 onPress={() => handleAction('completed')}

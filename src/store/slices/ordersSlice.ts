@@ -67,13 +67,15 @@ const initialState: OrdersState = {
 // Student thunks
 export const createOrder = createAsyncThunk(
   'orders/createOrder',
-  async (data: { shopId: string; items: Array<{ foodItemId: string; quantity: number }>; notes?: string }, { rejectWithValue }) => {
+  async (data: { shopId: string; items: Array<{ foodItemId: string; quantity: number }>; notes?: string; mode?: 'eat' | 'work' }, { rejectWithValue }) => {
     try {
       const payload = {
         shopId: data.shopId,
         items: data.items.map(i => ({ foodItemId: i.foodItemId, quantity: i.quantity })),
         ...(data.notes ? { special_instructions: data.notes } : {}),
+        ...(data.mode === 'eat' ? { mode: 'eat' } : {}),
       };
+      if (__DEV__) console.log('[createOrder] payload:', JSON.stringify(payload));
       const res = await api.post('/orders', payload);
       const d = res.data.data;
 
@@ -117,7 +119,7 @@ export const fetchMyActiveOrders = createAsyncThunk(
   'orders/fetchMyActiveOrders',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready,partially_delivered', limit: 50 } });
+      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,partially_ready,ready,partially_delivered', limit: 50 } });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch active orders');
@@ -255,10 +257,17 @@ const ordersSlice = createSlice({
       .addCase(updateOrderStatus.pending, (s) => { s.error = null; })
       .addCase(updateOrderStatus.fulfilled, (s, a) => {
         const o = a.payload;
-        const si = s.shopOrders.findIndex(x => x.id === o.id);
-        if (si >= 0) s.shopOrders[si] = o;
-        const ai = s.activeOrders.findIndex(x => x.id === o.id);
-        if (ai >= 0) s.activeOrders[ai] = o;
+        const isTerminal = o.status === 'cancelled' || o.status === 'completed';
+        // Remove terminal orders from active lists, update others in place
+        if (isTerminal) {
+          s.shopOrders = s.shopOrders.filter(x => x.id !== o.id);
+          s.activeOrders = s.activeOrders.filter(x => x.id !== o.id);
+        } else {
+          const si = s.shopOrders.findIndex(x => x.id === o.id);
+          if (si >= 0) s.shopOrders[si] = o;
+          const ai = s.activeOrders.findIndex(x => x.id === o.id);
+          if (ai >= 0) s.activeOrders[ai] = o;
+        }
         const ui = s.orders.findIndex(x => x.id === o.id);
         if (ui >= 0) s.orders[ui] = o;
         if (s.currentOrder?.id === o.id) s.currentOrder = o;

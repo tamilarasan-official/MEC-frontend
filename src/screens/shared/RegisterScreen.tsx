@@ -24,6 +24,7 @@ export default function RegisterScreen({ navigation }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
   const [sessionId, setSessionId] = useState('');
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [countdown, setCountdown] = useState(0);
@@ -236,7 +237,18 @@ export default function RegisterScreen({ navigation }: Props) {
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Phone Number</Text>
                   <View style={styles.phoneRow}>
-                    <Text style={styles.phonePrefix}>+91</Text>
+                    <TextInput
+                      style={styles.phonePrefix}
+                      value={countryCode}
+                      onChangeText={(val) => {
+                        let cleaned = val.replace(/[^0-9+]/g, '');
+                        if (!cleaned.startsWith('+')) cleaned = '+' + cleaned;
+                        setCountryCode(cleaned.slice(0, 4));
+                      }}
+                      keyboardType="phone-pad"
+                      maxLength={4}
+                      accessibilityLabel="Country code"
+                    />
                     <View style={styles.phoneDivider} />
                     <TextInput
                       style={styles.phoneInput}
@@ -353,7 +365,7 @@ export default function RegisterScreen({ navigation }: Props) {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>CampusOne - Madras Engineering College</Text>
+          <Text style={styles.footerText}>CampusOne</Text>
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -406,7 +418,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
     borderRadius: 14, overflow: 'hidden',
   },
-  phonePrefix: { paddingLeft: 16, paddingRight: 12, fontSize: 15, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+  phonePrefix: { paddingLeft: 16, paddingRight: 12, fontSize: 15, color: 'rgba(255,255,255,0.6)', fontWeight: '600', minWidth: 50, textAlign: 'center' },
   phoneDivider: { width: 1, height: 22, backgroundColor: 'rgba(255,255,255,0.2)' },
   phoneInput: { flex: 1, paddingLeft: 12, paddingRight: 16, paddingVertical: 16, fontSize: 15, color: '#fff' },
 

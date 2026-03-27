@@ -11,7 +11,6 @@ import { OwnerTabParamList } from '../../types';
 import OwnerHomeScreen from '../../screens/owner/OwnerHomeScreen';
 import OwnerMenuScreen from '../../screens/owner/OwnerMenuScreen';
 import OwnerAnalyticsScreen from '../../screens/owner/OwnerAnalyticsScreen';
-import StationeryAnalyticsScreen from '../../screens/owner/StationeryAnalyticsScreen';
 import CaptainPrepListScreen from '../../screens/captain/CaptainPrepListScreen';
 import OwnerHistoryScreen from '../../screens/owner/OwnerHistoryScreen';
 import CaptainEatScreen from '../../screens/captain/CaptainEatScreen';
@@ -259,14 +258,6 @@ export default function OwnerTabs() {
         <Tab.Screen
           name="Analytics"
           component={OwnerAnalyticsScreen}
-          options={{
-            tabBarButton: () => null,
-            tabBarItemStyle: { display: 'none' },
-          }}
-        />
-        <Tab.Screen
-          name="StationeryAnalytics"
-          component={StationeryAnalyticsScreen}
           options={{
             tabBarButton: () => null,
             tabBarItemStyle: { display: 'none' },

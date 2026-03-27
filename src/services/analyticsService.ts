@@ -9,6 +9,23 @@ export interface OwnerTransfer {
   notes?: string;
 }
 
+export interface StationeryAnalytics {
+  todaySales: number;
+  weekSales: number;
+  thisMonthRevenue: number;
+  alltimeSales: number;
+  todayOrders: number;
+  weekOrders: number;
+  thisMonthOrders: number;
+  alltimeOrders: number;
+  totalPages: number;
+  totalCopies: number;
+  uniqueCustomers: number;
+  completionRate: number;
+  colorDistribution: Array<{ type: string; count: number }>;
+  paperDistribution: Array<{ size: string; count: number }>;
+}
+
 export interface OwnerPayablesData {
   currentMonth: {
     period: string;
@@ -48,11 +65,8 @@ const analyticsService = {
     const res = await api.get('/owner/payables');
     return res.data.data;
   },
-  getStationeryAnalytics: async (startDate?: string, endDate?: string): Promise<any> => {
-    const params: any = {};
-    if (startDate) params.startDate = startDate;
-    if (endDate) params.endDate = endDate;
-    const res = await api.get('/orders/shop/analytics/stationery', { params });
+  getStationeryAnalytics: async (): Promise<StationeryAnalytics> => {
+    const res = await api.get('/orders/shop/analytics/stationery');
     return res.data.data;
   },
 };

@@ -109,15 +109,17 @@ export default function WalletScreen({ navigation }: Props) {
           ListHeaderComponent={
             <>
               {/* Balance Card */}
-              <LinearGradient
-                colors={['#10b981', '#059669']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.balanceCard}>
+              <View style={styles.balanceCard}>
+                <LinearGradient
+                  colors={['#10b981', '#059669']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
                 <Text style={styles.balanceLabel}>Available Balance</Text>
                 <Text style={styles.balanceAmount}>Rs. {balance}</Text>
                 <Text style={styles.balanceHint}>Visit the accountant office to add money</Text>
-              </LinearGradient>
+              </View>
 
               {/* Period Filter */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.periodRow} contentContainerStyle={styles.periodContent}>
@@ -202,7 +204,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // Balance card
   balanceCard: {
-    borderRadius: 20, padding: 24, marginBottom: 28,
+    borderRadius: 20, padding: 24, marginBottom: 28, overflow: 'hidden',
   },
   balanceLabel: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '500', marginBottom: 6 },
   balanceAmount: { fontSize: 36, fontWeight: '900', color: '#fff', marginBottom: 8 },
