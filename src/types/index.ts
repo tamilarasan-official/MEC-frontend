@@ -5,7 +5,7 @@
 // ---- Enums / Literal Types ----
 export type UserRole = 'student' | 'captain' | 'owner' | 'accountant' | 'superadmin';
 export type DietFilter = 'all' | 'veg' | 'nonveg';
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
 export type ServiceType = 'food' | 'laundry' | 'stationery';
 export type TransactionType = 'credit' | 'debit' | 'refund';
 export type ShopCategory = 'canteen' | 'classic' | 'bites' | 'laundry' | 'stationery' | 'other';

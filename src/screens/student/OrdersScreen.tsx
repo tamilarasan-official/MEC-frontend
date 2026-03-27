@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator,
 } from 'react-native';
@@ -15,11 +15,12 @@ import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { resolveImageUrl } from '../../utils/imageUrl';
 
-const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready', 'partially_delivered']);
+const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'partially_ready', 'ready', 'partially_delivered']);
 
 const statusConfig: Record<string, { icon: string; label: string; bg: string; color: string }> = {
   pending: { icon: 'time-outline', label: 'Ordered', bg: 'rgba(234,179,8,0.12)', color: '#eab308' },
   preparing: { icon: 'flame-outline', label: 'Preparing', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+  partially_ready: { icon: 'hourglass-outline', label: 'Partially Ready', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   ready: { icon: 'checkmark-circle-outline', label: 'Ready for Pickup', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
   partially_delivered: { icon: 'checkmark-circle-outline', label: 'Partial Delivery', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   completed: { icon: 'checkmark-done-outline', label: 'Delivered', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
@@ -45,6 +46,21 @@ export default function OrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+
+  // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
+  // Also detect item-level changes (itemStatus) so per-item tags update in the QR modal
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const fresh = myOrders.find(o => o.id === selectedOrder.id);
+    if (!fresh) return;
+    const statusChanged = fresh.status !== selectedOrder.status;
+    const itemsChanged = fresh.items.some((item, i) =>
+      selectedOrder.items[i] && item.itemStatus !== selectedOrder.items[i].itemStatus
+    );
+    if (statusChanged || itemsChanged) {
+      setSelectedOrder(fresh);
+    }
+  }, [myOrders, selectedOrder]);
 
   // Auto-refresh orders every time this screen gains focus
   useFocusEffect(
@@ -114,7 +130,7 @@ export default function OrdersScreen() {
                 {/* Pickup Token */}
                 {order.status !== 'completed' && order.status !== 'cancelled' && order.pickupToken && (
                   (() => {
-                    const isReady = order.isReadyServe || order.status === 'ready' || order.status === 'partially_delivered';
+                    const isReady = order.isReadyServe || order.status === 'ready' || order.status === 'partially_ready' || order.status === 'partially_delivered';
                     return (
                       <TouchableOpacity onPress={() => { mediumHaptic(); setSelectedOrder(order); }} activeOpacity={0.9} style={styles.tokenWrap} accessibilityLabel="Show pickup QR code" accessibilityRole="button">
                         <LinearGradient
@@ -164,6 +180,8 @@ export default function OrdersScreen() {
                   const imageUri = resolveImageUrl(item.image);
                   const imgKey = `${order.id}-${idx}`;
                   const imgFailed = failedImages.has(imgKey);
+                  const iStatus = item.itemStatus || 'preparing';
+                  const showItemTag = order.status === 'partially_ready' || order.status === 'partially_delivered';
                   return (
                     <View key={imgKey} style={styles.orderItem}>
                       {imageUri && !imgFailed ? (
@@ -179,7 +197,16 @@ export default function OrdersScreen() {
                         </View>
                       )}
                       <View style={styles.flex1}>
-                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          {showItemTag && (
+                            <View style={[styles.itemStatusTag, iStatus === 'ready' ? styles.itemStatusReady : iStatus === 'delivered' ? styles.itemStatusDelivered : styles.itemStatusPreparing]}>
+                              <Text style={[styles.itemStatusTagText, iStatus === 'ready' ? styles.itemStatusReadyText : iStatus === 'delivered' ? styles.itemStatusDeliveredText : styles.itemStatusPreparingText]}>
+                                {iStatus === 'ready' ? 'Ready' : iStatus === 'delivered' ? 'Delivered' : 'Preparing'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.itemQty}>x{item.quantity}</Text>
                       </View>
                       <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
@@ -302,9 +329,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(59,130,246,0.15)',
     justifyContent: 'center', alignItems: 'center',
   },
-  itemName: { fontSize: 14, fontWeight: '500', color: colors.text },
+  itemName: { fontSize: 14, fontWeight: '500', color: colors.text, flexShrink: 1 },
   itemQty: { fontSize: 12, color: '#3b82f6', marginTop: 1 },
   itemPrice: { fontSize: 14, fontWeight: '600', color: colors.text },
+  itemStatusTag: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+  },
+  itemStatusReady: { backgroundColor: 'rgba(16,185,129,0.12)' },
+  itemStatusReadyText: { color: '#10b981' },
+  itemStatusDelivered: { backgroundColor: 'rgba(16,185,129,0.12)' },
+  itemStatusDeliveredText: { color: '#10b981' },
+  itemStatusPreparing: { backgroundColor: 'rgba(234,179,8,0.12)' },
+  itemStatusPreparingText: { color: '#eab308' },
+  itemStatusTagText: { fontSize: 10, fontWeight: '700' },
 
   // Footer
   orderFooter: {

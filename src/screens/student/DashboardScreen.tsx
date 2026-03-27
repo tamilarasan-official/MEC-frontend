@@ -85,7 +85,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
   const { shops, menuItems: shopMenu, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
-  const { activeOrders } = useAppSelector(s => s.orders);
+  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
   const { items: cartItems } = useAppSelector(s => s.cart);
   const { dietFilter } = useAppSelector(s => s.user);
   const notifications = useAppSelector(s => s.user.notifications);
@@ -111,6 +111,25 @@ export default function StudentDashboard({ navigation }: Props) {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const submittingRef = useRef(false);
   const paymentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
+  // Check both activeOrders and allOrders — completed/cancelled orders get removed from
+  // activeOrders on refetch, but patchOrderStatus updates them in-place before that happens.
+  // Also detect item-level changes (itemStatus) so per-item tags update in the QR modal.
+  useEffect(() => {
+    if (!successOrder) return;
+    const fresh = activeOrders.find(o => o.id === successOrder.id)
+      || allOrders.find(o => o.id === successOrder.id);
+    if (!fresh) return;
+    // Detect status change OR any item-level status change
+    const statusChanged = fresh.status !== successOrder.status;
+    const itemsChanged = fresh.items.some((item, i) =>
+      successOrder.items[i] && item.itemStatus !== successOrder.items[i].itemStatus
+    );
+    if (statusChanged || itemsChanged) {
+      setSuccessOrder(fresh);
+    }
+  }, [activeOrders, allOrders, successOrder]);
 
   useEffect(() => {
     return () => {
@@ -299,6 +318,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const statusConfig: Record<string, { bg: string; color: string; label: string }> = {
     pending: { bg: 'rgba(234,179,8,0.15)', color: '#eab308', label: 'Ordered' },
     preparing: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Preparing' },
+    partially_ready: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partially Ready' },
     ready: { bg: 'rgba(16,185,129,0.15)', color: '#10b981', label: 'Ready' },
     partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial' },
   };

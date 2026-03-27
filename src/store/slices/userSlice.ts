@@ -4,7 +4,7 @@ import api from '../../services/api';
 import { createOrder } from './ordersSlice';
 
 interface OrderStatusPopupData {
-  status: 'preparing' | 'ready' | 'completed' | 'cancelled';
+  status: 'preparing' | 'partially_ready' | 'ready' | 'completed' | 'cancelled';
   orderNumber: string;
 }
 
@@ -91,6 +91,22 @@ export const toggleShopStatus = createAsyncThunk('user/toggleShopStatus', async 
   } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
 });
 
+export const fetchNotifications = createAsyncThunk('user/fetchNotifications', async (_, { rejectWithValue }) => {
+  try {
+    const res = await api.get('/student/notifications', { params: { limit: 50 } });
+    const data = res.data.data?.notifications ?? res.data.data ?? res.data;
+    return (Array.isArray(data) ? data : []).map((n: any) => ({
+      id: n.id || n._id || `notif-${Date.now()}-${Math.random()}`,
+      type: n.type || 'system',
+      title: n.title || '',
+      message: n.message || '',
+      data: n.referenceId ? { orderId: n.referenceId } : undefined,
+      createdAt: n.createdAt || new Date().toISOString(),
+      read: n.isRead ?? false,
+    })) as AppNotification[];
+  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed to fetch notifications'); }
+});
+
 export const fetchQRPayments = createAsyncThunk('user/fetchQRPayments', async (_, { rejectWithValue }) => {
   try {
     const res = await api.get('/owner/qr-payments');
@@ -145,6 +161,16 @@ const userSlice = createSlice({
       if (a.payload.newBalance !== undefined) s.balance = a.payload.newBalance;
     });
     builder.addCase(fetchDashboardStats.fulfilled, (s, a) => { s.dashboardStats = a.payload; });
+    builder.addCase(fetchNotifications.fulfilled, (s, a) => {
+      // Merge backend notifications with existing in-memory ones (dedup by id)
+      const existingIds = new Set(s.notifications.map(n => n.id));
+      const newOnes = a.payload.filter(n => !existingIds.has(n.id));
+      if (newOnes.length > 0) {
+        s.notifications = [...newOnes, ...s.notifications]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 200);
+      }
+    });
     builder.addCase(fetchAnalytics.pending, (s) => { s.isLoading = true; s.error = null; });
     builder.addCase(fetchAnalytics.fulfilled, (s, a) => { s.isLoading = false; s.analytics = a.payload; });
     builder.addCase(fetchAnalytics.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });

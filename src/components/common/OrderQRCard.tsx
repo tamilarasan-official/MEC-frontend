@@ -19,11 +19,13 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = useMemo(() => ({
     pending: { label: 'Order Placed', icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
     preparing: { label: 'Preparing', icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
+    partially_ready: { label: 'Partially Ready', icon: 'hourglass-outline', color: colors.blue[400], bg: colors.blueBg },
     ready: { label: 'Ready for Pickup', icon: 'cube-outline', color: colors.orange[500], bg: colors.orangeBg },
     completed: { label: 'Completed', icon: 'checkmark-circle', color: colors.primary, bg: colors.successBg },
     cancelled: { label: 'Cancelled', icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
   }), [colors]);
-  const [showDetails, setShowDetails] = useState(false);
+  // Auto-expand details when partially_ready so student sees which items are ready
+  const [showDetails, setShowDetails] = useState(order.status === 'partially_ready' || order.status === 'partially_delivered');
   const [currentStatus, setCurrentStatus] = useState(order.status);
   const slideAnim = useState(new Animated.Value(300))[0];
 
@@ -36,7 +38,11 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const status = statusMeta[currentStatus] || statusMeta.pending;
+  const statusBase = statusMeta[currentStatus] || statusMeta.pending;
+  // For partially_ready, show "1 of 3 Ready" instead of generic label
+  const status = currentStatus === 'partially_ready'
+    ? { ...statusBase, label: `${order.items.filter(i => (i.itemStatus || 'preparing') === 'ready').length} of ${order.items.length} Ready` }
+    : statusBase;
   const isReady = currentStatus === 'ready';
 
   const qrValue = useMemo(() => {
@@ -115,17 +121,28 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
           {showDetails && (
             <View style={styles.detailsSection}>
               <View style={styles.divider} />
-              {order.items.map((item, idx) => (
-                <View key={idx} style={styles.detailItem}>
-                  <View style={styles.detailItemLeft}>
-                    <Text style={styles.detailQty}>{item.quantity}x</Text>
-                    <Text style={styles.detailName} numberOfLines={1}>{item.name}</Text>
+              {order.items.map((item, idx) => {
+                const iStatus = item.itemStatus || 'preparing';
+                const showTag = currentStatus === 'partially_ready' || currentStatus === 'partially_delivered';
+                return (
+                  <View key={idx} style={styles.detailItem}>
+                    <View style={styles.detailItemLeft}>
+                      <Text style={styles.detailQty}>{item.quantity}x</Text>
+                      <Text style={styles.detailName} numberOfLines={1}>{item.name}</Text>
+                      {showTag && (
+                        <View style={[styles.itemTag, iStatus === 'ready' ? styles.itemTagReady : iStatus === 'delivered' ? styles.itemTagReady : styles.itemTagPreparing]}>
+                          <Text style={[styles.itemTagText, iStatus === 'ready' || iStatus === 'delivered' ? styles.itemTagReadyText : styles.itemTagPreparingText]}>
+                            {iStatus === 'ready' ? 'Ready' : iStatus === 'delivered' ? 'Done' : 'Preparing'}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.detailPrice}>
+                      Rs.{((item.offerPrice ?? item.price) * item.quantity)}
+                    </Text>
                   </View>
-                  <Text style={styles.detailPrice}>
-                    Rs.{((item.offerPrice ?? item.price) * item.quantity)}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
               <View style={[styles.divider, styles.dividerTop]} />
               <View style={styles.detailItem}>
                 <Text style={styles.detailTotalLabel}>Total Paid</Text>
@@ -209,7 +226,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   metaText: { fontSize: 11, color: colors.mutedForeground },
   metaMono: { fontFamily: 'monospace' },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  detailItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  detailItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap' },
+  itemTag: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  itemTagReady: { backgroundColor: 'rgba(16,185,129,0.15)' },
+  itemTagPreparing: { backgroundColor: 'rgba(234,179,8,0.15)' },
+  itemTagText: { fontSize: 9, fontWeight: '700' },
+  itemTagReadyText: { color: '#10b981' },
+  itemTagPreparingText: { color: '#eab308' },
   dividerTop: { marginTop: 8 },
   bottomBar: {
     borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 20, paddingVertical: 12,

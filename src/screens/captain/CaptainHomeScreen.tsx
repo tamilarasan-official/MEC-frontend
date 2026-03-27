@@ -19,14 +19,16 @@ import { Order, OrderStatus } from '../../types';
 import { lightHaptic, mediumHaptic } from '../../utils/haptics';
 import { resolveImageUrl } from '../../utils/imageUrl';
 
-type FilterKey = 'ready_serve' | 'pending' | 'preparing' | 'ready';
+type FilterKey = 'ready_serve' | 'pending' | 'preparing' | 'partially_ready' | 'ready';
 
-const FILTERS: { key: FilterKey; label: string; icon: string; color: string }[] = [
+const BASE_FILTERS: { key: FilterKey; label: string; icon: string; color: string }[] = [
   { key: 'ready_serve', label: 'Ready to Serve', icon: 'flash', color: '#f97316' },
   { key: 'pending', label: 'New', icon: 'time-outline', color: '#3b82f6' },
   { key: 'preparing', label: 'Preparing', icon: 'restaurant-outline', color: '#3b82f6' },
   { key: 'ready', label: 'Ready', icon: 'cube-outline', color: '#3b82f6' },
 ];
+
+const PARTIAL_READY_FILTER = { key: 'partially_ready' as FilterKey, label: 'Partial Ready', icon: 'hourglass-outline', color: '#3b82f6' };
 
 export default function CaptainHomeScreen() {
   const { colors } = useTheme();
@@ -44,6 +46,10 @@ export default function CaptainHomeScreen() {
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Reject order modal state
+  const [rejectModal, setRejectModal] = useState<{ visible: boolean; orderId: string; token: string }>({ visible: false, orderId: '', token: '' });
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   // Item confirmation modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -75,10 +81,17 @@ export default function CaptainHomeScreen() {
     // Always clear before starting to prevent duplicate intervals when AppState
     // fires 'active' multiple times without an intervening 'background' event.
     const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
-    const startPolling = () => { stopPolling(); interval = setInterval(() => dispatch(fetchActiveShopOrders()), 30000); };
+    const startPolling = () => {
+      stopPolling();
+      interval = setInterval(() => {
+        dispatch(fetchActiveShopOrders());
+        dispatch(fetchDashboardStats());
+      }, 30000);
+    };
     startPolling();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') startPolling(); else stopPolling();
+      if (state === 'active') { startPolling(); dispatch(fetchActiveShopOrders()); dispatch(fetchDashboardStats()); }
+      else stopPolling();
     });
     return () => { stopPolling(); sub.remove(); };
   }, [dispatch]);
@@ -111,20 +124,65 @@ export default function CaptainHomeScreen() {
   const activeOrders = useMemo(() => shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status)), [shopOrders]);
   const pendingCount = useMemo(() => activeOrders.filter(o => o.status === 'pending').length, [activeOrders]);
   const preparingCount = useMemo(() => activeOrders.filter(o => o.status === 'preparing').length, [activeOrders]);
+  const partiallyReadyCount = useMemo(() => activeOrders.filter(o => o.status === 'partially_ready').length, [activeOrders]);
   // Count both 'ready' and 'partially_delivered' as "ready" — partially delivered orders still have
   // remaining items that are ready for collection and must stay visible in the Ready tab.
-  const readyCount = useMemo(() => activeOrders.filter(o => (o.status === 'ready' || o.status === 'partially_delivered')).length, [activeOrders]);
+  const readyCount = useMemo(() => activeOrders.filter(o => (o.status === 'ready' || o.status === 'partially_delivered') && !o.isReadyServe).length, [activeOrders]);
   const readyServeCount = useMemo(() => activeOrders.filter(o => o.isReadyServe && o.status === 'ready').length, [activeOrders]);
-  const inProgressCount = pendingCount + preparingCount + readyCount;
+  const inProgressCount = pendingCount + preparingCount + partiallyReadyCount + readyCount;
   const completedToday = dashboardStats?.completedToday ?? 0;
   const cancelledToday = dashboardStats?.cancelledToday ?? 0;
   const totalOrders = inProgressCount + completedToday + cancelledToday;
 
+  // Dynamic filters — partially_ready tab only visible when there are partially_ready orders
+  const filters = useMemo(() => {
+    if (partiallyReadyCount > 0) {
+      // Insert partially_ready before 'ready'
+      const idx = BASE_FILTERS.findIndex(f => f.key === 'ready');
+      const arr = [...BASE_FILTERS];
+      arr.splice(idx, 0, PARTIAL_READY_FILTER);
+      return arr;
+    }
+    return BASE_FILTERS;
+  }, [partiallyReadyCount]);
+
   // Filter orders — memoized for performance
+  // For partially_ready orders, we create split "views":
+  //   - Preparing tab shows the order with only still-preparing items
+  //   - Partially Ready tab shows the order with only ready items
   const filteredOrders = useMemo(() => {
     let orders: Order[];
     if (filter === 'ready_serve') {
       orders = activeOrders.filter(o => o.isReadyServe && o.status === 'ready');
+    } else if (filter === 'partially_ready') {
+      // Show only the ready items from partially_ready orders, preserving original indices
+      orders = activeOrders
+        .filter(o => o.status === 'partially_ready')
+        .map(o => ({
+          ...o,
+          _splitView: 'ready' as const,
+          items: o.items
+            .map((item, i) => ({ ...item, _originalIdx: i }))
+            .filter(i => (i.itemStatus || 'preparing') === 'ready'),
+        }))
+        .filter(o => o.items.length > 0);
+    } else if (filter === 'preparing') {
+      // Normal preparing orders + partially_ready orders showing only their preparing items
+      const normal = activeOrders.filter(o => {
+        if (o.isReadyServe && o.status === 'ready') return false;
+        return o.status === 'preparing';
+      });
+      const splitPreparing = activeOrders
+        .filter(o => o.status === 'partially_ready')
+        .map(o => ({
+          ...o,
+          _splitView: 'preparing' as const,
+          items: o.items
+            .map((item, i) => ({ ...item, _originalIdx: i }))
+            .filter(i => (i.itemStatus || 'preparing') === 'preparing'),
+        }))
+        .filter(o => o.items.length > 0);
+      orders = [...normal, ...splitPreparing];
     } else {
       orders = activeOrders.filter(o => {
         if (o.isReadyServe && o.status === 'ready') return false;
@@ -146,7 +204,8 @@ export default function CaptainHomeScreen() {
 
   const getFilterCount = (key: FilterKey) => {
     if (key === 'ready_serve') return readyServeCount;
-    if (key === 'ready') return activeOrders.filter(o => (o.status === 'ready' || o.status === 'partially_delivered') && !o.isReadyServe).length;
+    if (key === 'partially_ready') return partiallyReadyCount;
+    if (key === 'ready') return readyCount;
     return activeOrders.filter(o => o.status === key).length;
   };
 
@@ -259,7 +318,7 @@ export default function CaptainHomeScreen() {
           style={styles.filterScroll}
           contentContainerStyle={styles.filterRow}
         >
-          {FILTERS.map(f => {
+          {filters.map(f => {
             const count = getFilterCount(f.key);
             const isActive = filter === f.key;
             const isOrange = f.key === 'ready_serve';
@@ -304,13 +363,14 @@ export default function CaptainHomeScreen() {
         ) : (
           filteredOrders.map(order => (
             <OrderCard
-              key={order.id}
+              key={`${order.id}-${(order as any)._splitView || 'full'}`}
               order={order}
               colors={colors}
               styles={styles}
               isUpdating={updatingId === order.id}
               onStatusUpdate={handleStatusUpdate}
               onItemDelivered={handleItemDelivered}
+              onReject={(id, token) => setRejectModal({ visible: true, orderId: id, token })}
             />
           ))
         )}
@@ -372,6 +432,43 @@ export default function CaptainHomeScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Reject Order Modal */}
+      <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
+        <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
+          <TouchableOpacity activeOpacity={1} style={styles.confirmDialog}>
+            <View style={[styles.confirmIconWrap, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
+              <Icon name="close-circle" size={28} color="#ef4444" />
+            </View>
+            <Text style={styles.confirmTitle}>Reject Order</Text>
+            <Text style={styles.confirmMessage}>
+              Are you sure you want to reject order #{rejectModal.token}? The amount will be refunded to the student's wallet.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setRejectModal(prev => ({ ...prev, visible: false }))} disabled={rejectLoading} activeOpacity={0.7}>
+                <Text style={styles.confirmCancelText}>CANCEL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmActionBtn, { backgroundColor: '#ef4444' }]}
+                onPress={async () => {
+                  setRejectLoading(true);
+                  await handleStatusUpdate(rejectModal.orderId, 'cancelled');
+                  setRejectLoading(false);
+                  setRejectModal(prev => ({ ...prev, visible: false }));
+                }}
+                disabled={rejectLoading}
+                activeOpacity={0.7}
+              >
+                {rejectLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmActionText}>REJECT</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </ScreenWrapper>
   );
 }
@@ -387,13 +484,14 @@ const StatItem = React.memo(({ value, label, color, styles }: { value: number; l
 });
 
 /* ─── Order Card ─── */
-const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDelivered }: {
+const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDelivered, onReject }: {
   order: Order;
   colors: ThemeColors;
   styles: any;
   isUpdating: boolean;
   onStatusUpdate: (id: string, status: OrderStatus) => void;
   onItemDelivered: (id: string, idx: number) => void;
+  onReject: (id: string, token: string) => void;
 }) {
   const sc = statusColors[order.status];
   const timeSince = new Date(order.createdAt).toLocaleTimeString('en-IN', {
@@ -406,6 +504,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
     switch (order.status) {
       case 'pending': return { bg: 'rgba(249,115,22,0.1)', iconBg: 'rgba(249,115,22,0.2)', iconColor: '#f97316', icon: 'time' };
       case 'preparing': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'restaurant' };
+      case 'partially_ready': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'hourglass' };
       case 'ready': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'checkmark-circle' };
       default: return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'time' };
     }
@@ -413,7 +512,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
   const headerStyle = getHeaderStyle();
 
   // Show item controls for all active non-instant orders
-  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'ready' || order.status === 'partially_delivered');
+  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'partially_ready' || order.status === 'ready' || order.status === 'partially_delivered');
 
   // Status badge label
   const getBadgeLabel = () => {
@@ -460,13 +559,15 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
             const isItemDelivered = iStatus === 'delivered';
             const iconName = isItemDelivered ? 'checkmark-done-circle' : isReady ? 'checkbox' : 'square-outline';
             const iconColor = isItemDelivered ? '#22c55e' : isReady ? '#3b82f6' : colors.mutedForeground;
+            // Use original index for API calls when showing a split view (filtered items)
+            const apiIdx = (item as any)._originalIdx ?? idx;
             return (
-              <View key={idx} style={styles.itemRow}>
+              <View key={apiIdx} style={styles.itemRow}>
                 {canCheckDeliver && (
                   <TouchableOpacity
                     onPress={() => {
-                      if (iStatus === 'preparing') onItemDelivered(order.id, idx);
-                      else if (iStatus === 'ready') onItemDelivered(order.id, idx);
+                      if (iStatus === 'preparing') onItemDelivered(order.id, apiIdx);
+                      else if (iStatus === 'ready') onItemDelivered(order.id, apiIdx);
                       // delivered items cannot be clicked
                     }}
                     style={styles.checkboxBtn}
@@ -512,8 +613,14 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
 
         {/* Total */}
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>Rs. {order.total}</Text>
+          <Text style={styles.totalLabel}>
+            {(order as any)._splitView ? `Subtotal (${order.items.length} item${order.items.length !== 1 ? 's' : ''})` : 'Total'}
+          </Text>
+          <Text style={styles.totalValue}>
+            Rs. {(order as any)._splitView
+              ? order.items.reduce((sum, i) => sum + (i.offerPrice || i.price) * i.quantity, 0)
+              : order.total}
+          </Text>
         </View>
 
         {/* Action Buttons */}
@@ -537,7 +644,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => { mediumHaptic(); Alert.alert('Reject Order', 'Are you sure you want to reject this order?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reject', style: 'destructive', onPress: () => onStatusUpdate(order.id, 'cancelled') }]); }}
+                onPress={() => { mediumHaptic(); onReject(order.id, order.pickupToken); }}
                 disabled={isUpdating}
                 activeOpacity={0.7}
                 accessibilityLabel="Reject order"

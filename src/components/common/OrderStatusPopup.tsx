@@ -9,7 +9,7 @@ import Icon from './Icon';
 Sound.setCategory('Playback');
 
 interface OrderStatusPopupProps {
-  status: 'preparing' | 'ready' | 'completed' | 'cancelled';
+  status: 'preparing' | 'partially_ready' | 'ready' | 'completed' | 'cancelled';
   orderNumber: string;
   onDismiss: () => void;
 }
@@ -20,6 +20,12 @@ const statusConfig = {
     label: 'Preparing Your Order',
     message: 'Your order has been confirmed and is being prepared!',
     bgColors: ['#f59e0b', '#eab308'],
+  },
+  partially_ready: {
+    icon: 'hourglass-outline',
+    label: 'Items Partially Ready!',
+    message: 'Some items from your order are ready for partial pickup!',
+    bgColors: ['#3b82f6', '#2563eb'],
   },
   ready: {
     icon: 'cube-outline',

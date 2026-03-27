@@ -117,7 +117,7 @@ export const fetchMyActiveOrders = createAsyncThunk(
   'orders/fetchMyActiveOrders',
   async (_, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready,partially_delivered', limit: 50 } });
+      const res = await api.get('/orders/my', { params: { status: 'pending,preparing,partially_ready,ready,partially_delivered', limit: 50 } });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch active orders');
@@ -210,6 +210,37 @@ const ordersSlice = createSlice({
     addNewOrder: (state, action: PayloadAction<Order>) => {
       state.shopOrders.unshift(action.payload);
     },
+    // Patch order status + item statuses in-place — used by socket handler so QR modal
+    // reflects real-time updates even for terminal statuses (completed/cancelled)
+    // that get dropped from activeOrders on the next refetch.
+    patchOrderStatus: (state, action: PayloadAction<{
+      orderId: string;
+      status: Order['status'];
+      items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
+    }>) => {
+      const { orderId, status, items } = action.payload;
+      const patchOrder = (order: Order) => {
+        order.status = status;
+        // Patch per-item statuses if provided by socket payload
+        if (items && items.length > 0 && order.items.length === items.length) {
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].itemStatus) {
+              order.items[i] = { ...order.items[i], itemStatus: items[i].itemStatus as any };
+            }
+            if (items[i].delivered !== undefined) {
+              order.items[i] = { ...order.items[i], delivered: items[i].delivered };
+            }
+          }
+        }
+      };
+      for (const list of [state.orders, state.activeOrders, state.shopOrders]) {
+        const idx = list.findIndex(o => o.id === orderId);
+        if (idx >= 0) patchOrder(list[idx]);
+      }
+      if (state.currentOrder?.id === orderId) {
+        patchOrder(state.currentOrder);
+      }
+    },
     resetOrders: () => initialState,
   },
   extraReducers: (builder) => {
@@ -286,5 +317,5 @@ const ordersSlice = createSlice({
   },
 });
 
-export const { clearError, setCurrentOrder, updateOrderInList, addNewOrder, resetOrders } = ordersSlice.actions;
+export const { clearError, setCurrentOrder, updateOrderInList, addNewOrder, patchOrderStatus, resetOrders } = ordersSlice.actions;
 export default ordersSlice.reducer;

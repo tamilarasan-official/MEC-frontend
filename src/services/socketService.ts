@@ -2,8 +2,8 @@ import { io, Socket } from 'socket.io-client';
 import { DeviceEventEmitter } from 'react-native';
 import { getAccessToken, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
-import { addNotification, fetchWalletBalance, fetchQRPayments } from '../store/slices/userSlice';
-import { fetchMyActiveOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
+import { addNotification, fetchWalletBalance, fetchTransactions, fetchDashboardStats, fetchQRPayments } from '../store/slices/userSlice';
+import { fetchMyActiveOrders, fetchActiveShopOrders, patchOrderStatus } from '../store/slices/ordersSlice';
 import { updateShopStatus } from '../store/slices/menuSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 import {
@@ -25,7 +25,7 @@ export interface OrderUpdatePayload {
   previousStatus?: string;
   updatedAt: string;
   notification?: { title: string; body: string };
-  items?: { name: string; quantity: number }[];
+  items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
 }
 
 export const connectSocket = async (userId: string, role: string, shopId?: string) => {
@@ -107,16 +107,33 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   // double Redux notification, and double order refetch.
   socket.on('order:status_changed', (payload: OrderUpdatePayload) => {
     try {
-      const status = payload.status as 'preparing' | 'ready' | 'completed' | 'cancelled';
+      const status = payload.status as 'preparing' | 'partially_ready' | 'ready' | 'completed' | 'cancelled';
 
-      // Dedup: skip entirely if this orderId+status was already processed
-      // (from the other room delivery, or from FCM arriving first)
+      // ALWAYS patch Redux immediately so item-level status tags update in real-time
+      // (e.g. 2nd item marked ready while order is still partially_ready).
+      // This must happen BEFORE dedup check — dedup only gates notifications/popups.
+      dispatch(patchOrderStatus({ orderId: payload.orderId, status, items: payload.items }));
+
+      // Re-fetch orders so the UI reflects the new status immediately
+      if (userRole === 'student' || userMode === 'eat') {
+        dispatch(fetchMyActiveOrders());
+        if (status === 'cancelled' || status === 'completed') {
+          dispatch(fetchWalletBalance());
+        }
+      } else {
+        dispatch(fetchActiveShopOrders());
+        dispatch(fetchDashboardStats());
+      }
+
+      // Dedup: only skip notification + popup if this orderId+status was already processed
+      // (from the other room delivery, or from FCM arriving first).
+      // Redux patch + refetch above always run regardless.
       const dedupKey = `${payload.orderId}:${status}`;
       if (isDuplicate(dedupKey)) return;
 
       // Show popup for students and eat-mode users (captain/owner ordering food)
       const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
-      if (isStudentOrEatMode && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
+      if (isStudentOrEatMode && ['preparing', 'partially_ready', 'ready', 'completed', 'cancelled'].includes(status)) {
         if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
         DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
           status,
@@ -129,6 +146,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
       const statusLabels: Record<string, string> = {
         preparing: `Your order is being prepared${itemsSuffix}`,
+        partially_ready: `Some items from your order are ready for pickup!${itemsSuffix}`,
         ready: `Your order is ready for pickup!${itemsSuffix}`,
         completed: `Your order has been completed${itemsSuffix}`,
         cancelled: `Your order has been cancelled${itemsSuffix}`,
@@ -146,13 +164,6 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         createdAt: payload.updatedAt,
         read: false,
       }));
-
-      // Re-fetch orders so the UI reflects the new status immediately
-      if (userRole === 'student' || userMode === 'eat') {
-        dispatch(fetchMyActiveOrders());
-      } else {
-        dispatch(fetchActiveShopOrders());
-      }
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in order:status_changed handler:', e);
     }
@@ -175,6 +186,12 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         createdAt: new Date().toISOString(),
         read: false,
       }));
+
+      // Refetch order list + dashboard stats so new order appears immediately
+      if (userRole !== 'student' || userMode === 'work') {
+        dispatch(fetchActiveShopOrders());
+        dispatch(fetchDashboardStats());
+      }
 
       displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES, `new-order-${payload.orderId}`);
     } catch (e) {
@@ -207,8 +224,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         read: false,
       }));
 
-      // Auto-refresh balance immediately
+      // Auto-refresh balance + transaction history immediately
       dispatch(fetchWalletBalance());
+      dispatch(fetchTransactions());
 
       // Only show system notification for credits/refunds (user is in-app for debits)
       // Use a fixed Notifee notification ID so duplicate wallet notifications
@@ -320,6 +338,10 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
 
       // Refresh QR payments so dashboard shows updated collected amount
       dispatch(fetchQRPayments());
+      // Also refresh wallet balance + orders in case payment is linked to an order
+      dispatch(fetchWalletBalance());
+      dispatch(fetchActiveShopOrders());
+      dispatch(fetchDashboardStats());
 
       // Show local notification for shop staff
       displayLocalNotification(title, msg, { paymentRequestId: payload.paymentRequestId }, CHANNEL_WALLET, `payment-${payload.paymentRequestId}`);

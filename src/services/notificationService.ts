@@ -189,7 +189,7 @@ export function handleForegroundMessage(
   }
 
   // Determine channel and display strategy
-  if (type === 'order' && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
+  if (type === 'order' && ['preparing', 'partially_ready', 'ready', 'completed', 'cancelled'].includes(status)) {
     // Show full-screen popup for all order status changes
     if (__DEV__) console.log('[FCM] Emitting ORDER_STATUS_POPUP_EVENT:', status, orderNumber);
     DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
@@ -261,7 +261,7 @@ export async function handleBackgroundMessage(
   await createChannels();
 
   // Full-screen notification for all order status changes (background/killed state)
-  if (type === 'order' && ['preparing', 'ready', 'completed', 'cancelled'].includes(status)) {
+  if (type === 'order' && ['preparing', 'partially_ready', 'ready', 'completed', 'cancelled'].includes(status)) {
     await displayOrderStatusFullScreen(title, body, orderNumber || '', orderId || '', status);
   } else {
     const channelId =

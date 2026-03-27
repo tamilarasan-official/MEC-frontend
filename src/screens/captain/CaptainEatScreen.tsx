@@ -77,7 +77,7 @@ export default function CaptainEatScreen() {
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
   const { shops, menuItems: shopMenu, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
-  const { activeOrders } = useAppSelector(s => s.orders);
+  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
   const { items: cartItems } = useAppSelector(s => s.cart);
   const { dietFilter } = useAppSelector(s => s.user);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,6 +92,21 @@ export default function CaptainEatScreen() {
   const [showSuccessAnim, setShowSuccessAnim] = useState(false);
   const [showFailAnim, setShowFailAnim] = useState(false);
   const [failError, setFailError] = useState('');
+
+  // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
+  useEffect(() => {
+    if (!successOrder) return;
+    const fresh = activeOrders.find(o => o.id === successOrder.id)
+      || allOrders.find(o => o.id === successOrder.id);
+    if (!fresh) return;
+    const statusChanged = fresh.status !== successOrder.status;
+    const itemsChanged = fresh.items.some((item, i) =>
+      successOrder.items[i] && item.itemStatus !== successOrder.items[i].itemStatus
+    );
+    if (statusChanged || itemsChanged) {
+      setSuccessOrder(fresh);
+    }
+  }, [activeOrders, allOrders, successOrder]);
 
   const canteenShop = shops.find(s => s.category === 'canteen');
 

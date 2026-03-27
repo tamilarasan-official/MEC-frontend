@@ -13,11 +13,12 @@ import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { resolveImageUrl } from '../../utils/imageUrl';
 
-const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'ready', 'partially_delivered']);
+const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'partially_ready', 'ready', 'partially_delivered']);
 
 const statusConfig: Record<string, { icon: string; label: string; bg: string; color: string }> = {
   pending: { icon: 'time-outline', label: 'Ordered', bg: 'rgba(234,179,8,0.12)', color: '#eab308' },
   preparing: { icon: 'flame-outline', label: 'Preparing', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+  partially_ready: { icon: 'hourglass-outline', label: 'Partially Ready', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   ready: { icon: 'checkmark-circle-outline', label: 'Ready for Pickup', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
   partially_delivered: { icon: 'checkmark-circle-outline', label: 'Partial Delivery', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   completed: { icon: 'checkmark-done-outline', label: 'Delivered', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
@@ -41,6 +42,20 @@ export default function CaptainEatOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+
+  // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const fresh = myOrders.find(o => o.id === selectedOrder.id);
+    if (!fresh) return;
+    const statusChanged = fresh.status !== selectedOrder.status;
+    const itemsChanged = fresh.items.some((item, i) =>
+      selectedOrder.items[i] && item.itemStatus !== selectedOrder.items[i].itemStatus
+    );
+    if (statusChanged || itemsChanged) {
+      setSelectedOrder(fresh);
+    }
+  }, [myOrders, selectedOrder]);
 
   useEffect(() => { dispatch(fetchMyOrders()); }, [dispatch]);
 

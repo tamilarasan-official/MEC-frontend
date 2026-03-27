@@ -172,6 +172,7 @@ export const colors = lightColors;
 export const statusColors: Record<string, { text: string; bg: string; label: string }> = {
   pending: { text: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Pending' },
   preparing: { text: '#60a5fa', bg: 'rgba(59,130,246,0.12)', label: 'Preparing' },
+  partially_ready: { text: '#3b82f6', bg: 'rgba(59,130,246,0.12)', label: 'Partially Ready' },
   ready: { text: '#f97316', bg: 'rgba(249,115,22,0.12)', label: 'Ready' },
   partially_delivered: { text: '#3b82f6', bg: 'rgba(59,130,246,0.12)', label: 'Partial' },
   completed: { text: '#10b981', bg: 'rgba(16,185,129,0.12)', label: 'Completed' },

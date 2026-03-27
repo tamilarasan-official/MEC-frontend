@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   RefreshControl, ActivityIndicator, TextInput, Switch,
@@ -53,6 +53,22 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
   const submittingRef = useRef(false);
+  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
+
+  // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
+  useEffect(() => {
+    if (!createdOrder) return;
+    const fresh = activeOrders.find(o => o.id === createdOrder.id)
+      || allOrders.find(o => o.id === createdOrder.id);
+    if (!fresh) return;
+    const statusChanged = fresh.status !== createdOrder.status;
+    const itemsChanged = fresh.items.some((item, i) =>
+      createdOrder.items[i] && item.itemStatus !== createdOrder.items[i].itemStatus
+    );
+    if (statusChanged || itemsChanged) {
+      setCreatedOrder(fresh);
+    }
+  }, [activeOrders, allOrders, createdOrder]);
 
   const onRefresh = async () => {
     setRefreshing(true);

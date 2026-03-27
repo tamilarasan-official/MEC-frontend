@@ -4,7 +4,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
 import { refreshUserData } from '../store/slices/authSlice';
-import { fetchWalletBalance } from '../store/slices/userSlice';
+import { fetchWalletBalance, fetchDashboardStats, fetchNotifications } from '../store/slices/userSlice';
+import { fetchActiveShopOrders, fetchMyActiveOrders } from '../store/slices/ordersSlice';
 import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
@@ -29,7 +30,7 @@ import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 interface PopupData {
-  status: 'preparing' | 'ready' | 'completed' | 'cancelled';
+  status: 'preparing' | 'partially_ready' | 'ready' | 'completed' | 'cancelled';
   orderNumber: string;
 }
 
@@ -131,9 +132,16 @@ export default function RootNavigator() {
           // setupSocketListeners from running while socket is still null
           await connectSocket(user.id, user.role, user.shopId);
           setupSocketListeners(dispatch, user.role, userModeRef.current);
-          // Refresh wallet balance on app resume — socket was disconnected in
-          // background so any wallet:updated events (e.g. accountant credit) were missed
+          // Refresh critical data on app resume — socket was disconnected in
+          // background so events (orders, wallet, notifications) may have been missed
           dispatch(fetchWalletBalance());
+          dispatch(fetchNotifications());
+          if (user.role === 'student') {
+            dispatch(fetchMyActiveOrders());
+          } else {
+            dispatch(fetchActiveShopOrders());
+            dispatch(fetchDashboardStats());
+          }
         }
       } catch {
         // Swallow errors on resume — network may be unavailable, token may be stale.

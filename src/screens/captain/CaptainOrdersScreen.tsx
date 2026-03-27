@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert, AppState,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, AppState, Modal,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
@@ -12,14 +12,16 @@ import type { ThemeColors } from '../../theme/colors';
 import { Order, OrderStatus } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 
-type FilterStatus = 'pending' | 'preparing' | 'ready' | 'partially_delivered';
+type FilterStatus = 'pending' | 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered';
 
-const FILTERS: { key: FilterStatus; label: string; icon: string; activeColor: string }[] = [
+const BASE_FILTERS: { key: FilterStatus; label: string; icon: string; activeColor: string }[] = [
   { key: 'pending', label: 'Pending', icon: 'time-outline', activeColor: '#f59e0b' },
   { key: 'preparing', label: 'Cooking', icon: 'restaurant-outline', activeColor: '#3b82f6' },
   { key: 'ready', label: 'Ready', icon: 'cube-outline', activeColor: '#f97316' },
   { key: 'partially_delivered', label: 'Partial', icon: 'checkmark-done-outline', activeColor: '#60a5fa' },
 ];
+
+const PARTIAL_READY_FILTER = { key: 'partially_ready' as FilterStatus, label: 'Partial Ready', icon: 'hourglass-outline', activeColor: '#3b82f6' };
 
 export default function CaptainOrdersScreen() {
   const { colors } = useTheme();
@@ -30,6 +32,10 @@ export default function CaptainOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Reject order modal state
+  const [rejectModal, setRejectModal] = useState<{ visible: boolean; orderId: string; token: string }>({ visible: false, orderId: '', token: '' });
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -59,9 +65,47 @@ export default function CaptainOrdersScreen() {
     setRefreshing(false);
   };
 
-  const filteredOrders = shopOrders
-    .filter(o => o.status === filter)
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()); // FIFO
+  const partiallyReadyCount = useMemo(() => shopOrders.filter(o => o.status === 'partially_ready').length, [shopOrders]);
+
+  // Dynamic filters — partially_ready tab only visible when there are partially_ready orders
+  const filters = useMemo(() => {
+    if (partiallyReadyCount > 0) {
+      const idx = BASE_FILTERS.findIndex(f => f.key === 'ready');
+      const arr = [...BASE_FILTERS];
+      arr.splice(idx, 0, PARTIAL_READY_FILTER);
+      return arr;
+    }
+    return BASE_FILTERS;
+  }, [partiallyReadyCount]);
+
+  // Split view: partially_ready orders appear in BOTH preparing + partially_ready tabs
+  const filteredOrders = useMemo(() => {
+    let orders: Order[];
+    if (filter === 'partially_ready') {
+      orders = shopOrders
+        .filter(o => o.status === 'partially_ready')
+        .map(o => ({
+          ...o,
+          _splitView: 'ready' as const,
+          items: o.items.map((item, i) => ({ ...item, _originalIdx: i })).filter(i => (i.itemStatus || 'preparing') === 'ready'),
+        }))
+        .filter(o => o.items.length > 0);
+    } else if (filter === 'preparing') {
+      const normal = shopOrders.filter(o => o.status === 'preparing');
+      const splitPreparing = shopOrders
+        .filter(o => o.status === 'partially_ready')
+        .map(o => ({
+          ...o,
+          _splitView: 'preparing' as const,
+          items: o.items.map((item, i) => ({ ...item, _originalIdx: i })).filter(i => (i.itemStatus || 'preparing') === 'preparing'),
+        }))
+        .filter(o => o.items.length > 0);
+      orders = [...normal, ...splitPreparing];
+    } else {
+      orders = shopOrders.filter(o => o.status === filter);
+    }
+    return orders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }, [shopOrders, filter]);
 
   const getCounts = (status: FilterStatus) => shopOrders.filter(o => o.status === status).length;
 
@@ -109,16 +153,17 @@ export default function CaptainOrdersScreen() {
           </View>
         </View>
 
-        {/* Items - with delivery checkboxes for preparing/partially_delivered */}
+        {/* Items - with delivery checkboxes for preparing/partially_ready/partially_delivered */}
         <View style={styles.itemsList}>
           {order.items.map((item, idx) => {
             const isDelivered = item.delivered ?? false;
-            const showCheckbox = order.status === 'preparing' || order.status === 'partially_delivered';
+            const showCheckbox = order.status === 'preparing' || order.status === 'partially_ready' || order.status === 'partially_delivered';
+            const apiIdx = (item as any)._originalIdx ?? idx;
             return (
-              <View key={idx} style={styles.itemRow}>
+              <View key={apiIdx} style={styles.itemRow}>
                 {showCheckbox && (
                   <TouchableOpacity
-                    onPress={() => !isDelivered && handleItemDelivered(order.id, idx)}
+                    onPress={() => !isDelivered && handleItemDelivered(order.id, apiIdx)}
                     style={{ marginRight: 8 }}
                     disabled={isDelivered}
                     accessibilityLabel={isDelivered ? `${item.name} delivered` : `Mark ${item.name} delivered`}
@@ -150,8 +195,14 @@ export default function CaptainOrdersScreen() {
 
         {/* Total */}
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>Rs.{order.total}</Text>
+          <Text style={styles.totalLabel}>
+            {(order as any)._splitView ? `Subtotal (${order.items.length} item${order.items.length !== 1 ? 's' : ''})` : 'Total'}
+          </Text>
+          <Text style={styles.totalValue}>
+            Rs.{(order as any)._splitView
+              ? order.items.reduce((sum, i) => sum + (i.offerPrice || i.price) * i.quantity, 0)
+              : order.total}
+          </Text>
         </View>
 
         {/* Action Buttons */}
@@ -160,7 +211,7 @@ export default function CaptainOrdersScreen() {
             <>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => Alert.alert('Reject Order', 'Are you sure you want to reject this order?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reject', style: 'destructive', onPress: () => handleStatusUpdate(order.id, 'cancelled') }])}
+                onPress={() => setRejectModal({ visible: true, orderId: order.id, token: order.pickupToken })}
                 disabled={isUpdating}
                 accessibilityLabel="Reject order"
                 accessibilityRole="button"
@@ -250,7 +301,7 @@ export default function CaptainOrdersScreen() {
     <View style={styles.container}>
       {/* Filter tabs */}
       <View style={styles.filterRow}>
-        {FILTERS.map(f => {
+        {filters.map(f => {
           const count = getCounts(f.key);
           const isActive = filter === f.key;
           return (
@@ -275,7 +326,7 @@ export default function CaptainOrdersScreen() {
 
       <FlatList
         data={filteredOrders}
-        keyExtractor={item => item.id}
+        keyExtractor={item => `${item.id}-${(item as any)._splitView || 'full'}`}
         renderItem={renderOrder}
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
@@ -288,6 +339,44 @@ export default function CaptainOrdersScreen() {
         }
       />
     </View>
+
+    {/* Reject Order Modal */}
+    <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
+      <TouchableOpacity style={styles.rejectOverlay} activeOpacity={1} onPress={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
+        <TouchableOpacity activeOpacity={1} style={styles.rejectDialog}>
+          <View style={styles.rejectIconWrap}>
+            <Icon name="close-circle" size={28} color="#ef4444" />
+          </View>
+          <Text style={styles.rejectTitle}>Reject Order</Text>
+          <Text style={styles.rejectMessage}>
+            Are you sure you want to reject order #{rejectModal.token}? The amount will be refunded to the student's wallet.
+          </Text>
+          <View style={styles.rejectActions}>
+            <TouchableOpacity style={styles.rejectCancelBtn} onPress={() => setRejectModal(prev => ({ ...prev, visible: false }))} disabled={rejectLoading} activeOpacity={0.7}>
+              <Text style={styles.rejectCancelText}>CANCEL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.rejectConfirmBtn}
+              onPress={async () => {
+                setRejectLoading(true);
+                await handleStatusUpdate(rejectModal.orderId, 'cancelled');
+                setRejectLoading(false);
+                setRejectModal(prev => ({ ...prev, visible: false }));
+              }}
+              disabled={rejectLoading}
+              activeOpacity={0.7}
+            >
+              {rejectLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.rejectConfirmText}>REJECT</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+
     </ScreenWrapper>
   );
 }
@@ -356,4 +445,35 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 80, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.foreground },
   emptySubtitle: { fontSize: 13, color: colors.mutedForeground },
+
+  // Reject modal
+  rejectOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  rejectDialog: {
+    width: '100%', maxWidth: 320, backgroundColor: colors.card,
+    borderRadius: 20, padding: 24, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 24,
+    elevation: 16,
+  },
+  rejectIconWrap: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(239,68,68,0.15)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 16,
+  },
+  rejectTitle: { fontSize: 18, fontWeight: '700', color: colors.foreground, marginBottom: 8, textAlign: 'center' },
+  rejectMessage: { fontSize: 14, color: colors.mutedForeground, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  rejectActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  rejectCancelBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 14,
+    backgroundColor: colors.muted, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  rejectCancelText: { fontSize: 14, fontWeight: '700', color: colors.foreground, letterSpacing: 0.5 },
+  rejectConfirmBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 14,
+    backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center',
+  },
+  rejectConfirmText: { fontSize: 14, fontWeight: '700', color: '#fff', letterSpacing: 0.5 },
 });
