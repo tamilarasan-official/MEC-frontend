@@ -75,36 +75,34 @@ export default function OwnerHomeScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Re-fetch active orders every time the screen regains focus (e.g. tab switch)
+  // Fetch orders on focus and poll every 30s while focused, pausing when backgrounded
   useFocusEffect(
     useCallback(() => {
       dispatch(fetchActiveShopOrders());
+      let interval: ReturnType<typeof setInterval> | null = null;
+      const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
+      const startPolling = () => { stopPolling(); interval = setInterval(() => dispatch(fetchActiveShopOrders()), 30000); };
+      startPolling();
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') startPolling(); else stopPolling();
+      });
+      return () => { stopPolling(); sub.remove(); };
     }, [dispatch])
   );
 
-  // Auto-refresh every 30 seconds, pause when app is backgrounded
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
-    const startPolling = () => { stopPolling(); interval = setInterval(() => dispatch(fetchActiveShopOrders()), 30000); };
-    startPolling();
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') startPolling(); else stopPolling();
-    });
-    return () => { stopPolling(); sub.remove(); };
-  }, [dispatch]);
-
-  // Auto-refresh wallet balance every 30 seconds (backup for socket events)
-  useEffect(() => {
-    let walletInterval: ReturnType<typeof setInterval> | null = null;
-    const stopWalletPolling = () => { if (walletInterval) { clearInterval(walletInterval); walletInterval = null; } };
-    const startWalletPolling = () => { stopWalletPolling(); walletInterval = setInterval(() => dispatch(fetchWalletBalance()), 30000); };
-    startWalletPolling();
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') startWalletPolling(); else stopWalletPolling();
-    });
-    return () => { stopWalletPolling(); sub.remove(); };
-  }, [dispatch]);
+  // Poll wallet balance every 30s while focused, pausing when backgrounded
+  useFocusEffect(
+    useCallback(() => {
+      let walletInterval: ReturnType<typeof setInterval> | null = null;
+      const stopWalletPolling = () => { if (walletInterval) { clearInterval(walletInterval); walletInterval = null; } };
+      const startWalletPolling = () => { stopWalletPolling(); walletInterval = setInterval(() => dispatch(fetchWalletBalance()), 30000); };
+      startWalletPolling();
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') startWalletPolling(); else stopWalletPolling();
+      });
+      return () => { stopWalletPolling(); sub.remove(); };
+    }, [dispatch])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -373,7 +371,7 @@ export default function OwnerHomeScreen() {
                 : `Hand over "${confirmModal.itemName}" to the student?`}
             </Text>
             <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.confirmCancelBtn} onPress={handleDismissConfirm} disabled={confirmLoading} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.confirmCancelBtn} onPress={handleDismissConfirm} disabled={confirmLoading} activeOpacity={0.7} accessibilityLabel="Cancel" accessibilityRole="button">
                 <Text style={styles.confirmCancelText}>CANCEL</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -381,6 +379,8 @@ export default function OwnerHomeScreen() {
                 onPress={handleConfirmAction}
                 disabled={confirmLoading}
                 activeOpacity={0.7}
+                accessibilityLabel={confirmModal.type === 'ready' ? 'Confirm item ready' : 'Confirm deliver item'}
+                accessibilityRole="button"
               >
                 {confirmLoading ? (
                   <ActivityIndicator size="small" color="#fff" />
@@ -413,6 +413,8 @@ export default function OwnerHomeScreen() {
               style={styles.partialDismissBtn}
               onPress={() => setPartialPickupOverlay({ visible: false, token: '' })}
               activeOpacity={0.8}
+              accessibilityLabel="Dismiss partial pickup notification"
+              accessibilityRole="button"
             >
               <Text style={styles.partialDismissText}>GOT IT</Text>
             </TouchableOpacity>

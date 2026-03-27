@@ -121,6 +121,7 @@ export default function CaptainTabs() {
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
@@ -180,6 +181,7 @@ export default function CaptainTabs() {
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
             borderTopColor: colors.border,

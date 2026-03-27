@@ -1,12 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Animated,
+  View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Animated, DeviceEventEmitter,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Icon from './Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
+import { useAppSelector, useAppDispatch } from '../../store';
+import { fetchMyActiveOrders, fetchMyOrders } from '../../store/slices/ordersSlice';
 import { Order } from '../../types';
+import { ORDER_STATUS_POPUP_EVENT } from '../../constants/events';
+import orderService from '../../services/orderService';
 
 interface OrderQRCardProps {
   order: Order;
@@ -16,6 +20,7 @@ interface OrderQRCardProps {
 export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const dispatch = useAppDispatch();
   const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = useMemo(() => ({
     pending: { label: 'Order Placed', icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
     preparing: { label: 'Preparing', icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
@@ -28,10 +33,96 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   const [showDetails, setShowDetails] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(order.status);
   const slideAnim = useState(new Animated.Value(300))[0];
+  const prevStatusRef = useRef(order.status);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
+  // Sync status from prop changes
   useEffect(() => {
-    setCurrentStatus(order.status);
+    if (order.status !== currentStatus) {
+      setCurrentStatus(order.status);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.status]);
+
+  // Subscribe to Redux for real-time status updates
+  const activeOrders = useAppSelector(s => s.orders.activeOrders);
+  const reduxOrders = useAppSelector(s => s.orders.orders);
+  useEffect(() => {
+    const updated = activeOrders.find(o => o.id === order.id) || reduxOrders.find(o => o.id === order.id);
+    if (updated && updated.status !== currentStatus) {
+      setCurrentStatus(updated.status);
+    }
+  }, [activeOrders, reduxOrders, order.id, currentStatus]);
+
+  // Track currentStatus in a ref for polling closures
+  const currentStatusRef = useRef(currentStatus);
+  useEffect(() => { currentStatusRef.current = currentStatus; }, [currentStatus]);
+
+  // When status changes: close the drawer so the popup (rendered as an
+  // absolute View in RootNavigator) can show unblocked. No delay needed —
+  // React batches state updates so the popup renders after unmount.
+  useEffect(() => {
+    if (currentStatus === prevStatusRef.current) return;
+    prevStatusRef.current = currentStatus;
+
+    // Refresh both order lists for screens behind the modal
+    dispatch(fetchMyOrders());
+    dispatch(fetchMyActiveOrders());
+    // Close the drawer so the full-screen popup can show unblocked
+    onCloseRef.current();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStatus, dispatch]);
+
+  // Poll for order status updates every 8 seconds while the modal is open
+  useEffect(() => {
+    let mounted = true;
+
+    const pollStatus = async () => {
+      try {
+        const fresh = await orderService.getOrderById(order.id);
+        if (mounted && fresh && fresh.status !== currentStatusRef.current) {
+          setCurrentStatus(fresh.status);
+        }
+      } catch {
+        // Silently ignore — poll will retry
+      }
+    };
+
+    const interval = setInterval(pollStatus, 8000);
+    pollStatus();
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, [order.id]);
+
+  // Listen for ORDER_STATUS_POPUP_EVENT — close the drawer whenever ANY order
+  // status popup fires so the full-screen popup (rendered as an absolute View
+  // in RootNavigator) is always visible and not hidden behind this Modal.
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: { status: string; orderNumber: string }) => {
+      // Update status if it's for THIS order
+      const orderNum = order.orderNumber || order.pickupToken || order.id.slice(-6);
+      if (data.orderNumber === orderNum || data.orderNumber === order.pickupToken) {
+        setCurrentStatus(data.status as Order['status']);
+      }
+      // Always close — any popup should be visible, not blocked by this Modal
+      dispatch(fetchMyOrders());
+      dispatch(fetchMyActiveOrders());
+      onCloseRef.current();
+    });
+    return () => subscription.remove();
+  }, [order.orderNumber, order.pickupToken, order.id, dispatch]);
+
+  // Periodically refresh Redux so screens behind the modal stay updated
+  useEffect(() => {
+    const interval = setInterval(() => {
+      dispatch(fetchMyActiveOrders());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [dispatch]);
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: 0, friction: 8, useNativeDriver: true }).start();
@@ -39,11 +130,10 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   }, []);
 
   const status = statusMeta[currentStatus] || statusMeta.pending;
-  const isReady = currentStatus === 'ready';
+  const isReady = currentStatus === 'ready' || currentStatus === 'partially_ready' || currentStatus === 'partially_delivered';
 
   const qrValue = useMemo(() => {
     try {
-      // Encode order info for QR code (JSON string is sufficient for QR)
       return JSON.stringify({
         order_id: order.id,
         pickup_token: order.pickupToken,
@@ -81,7 +171,6 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
 
           {/* QR + Token side by side */}
           <View style={styles.qrRow}>
-            {/* QR */}
             <View style={styles.qrWrapper}>
               <View style={styles.qrGradientBorder}>
                 <View style={styles.qrInner}>
@@ -90,7 +179,6 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
               </View>
             </View>
 
-            {/* Token */}
             <View style={styles.tokenInfo}>
               <Text style={styles.tokenLabel}>PICKUP TOKEN</Text>
               <Text style={styles.tokenValue}>
@@ -184,7 +272,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   qrWrapper: {},
   qrGradientBorder: {
     padding: 3, borderRadius: 16,
-    backgroundColor: '#3b82f6', // blue gradient border
+    backgroundColor: '#3b82f6',
   },
   qrInner: { backgroundColor: '#fff', borderRadius: 13, padding: 10 },
   tokenInfo: { flex: 1 },

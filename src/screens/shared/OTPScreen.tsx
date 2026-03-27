@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Image,
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Image, Keyboard,
+  DeviceEventEmitter,
 } from 'react-native';
 import { mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -11,11 +12,13 @@ import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { loginWithOtp, registerWithOtp, sendOtp, clearError } from '../../store/slices/authSlice';
 import Icon from '../../components/common/Icon';
+import { LOGIN_SUCCESS_EVENT } from '../../constants/events';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'OTP'>;
 
 const OTP_LENGTH = 6;
 const RESEND_COOLDOWN = 30;
+
 
 export default function OTPScreen({ navigation, route }: Props) {
   const { phone, sessionId: initialSessionId, isExistingUser, userName } = route.params;
@@ -119,10 +122,16 @@ export default function OTPScreen({ navigation, route }: Props) {
       let result;
       if (isExistingUser) {
         result = await dispatch(loginWithOtp({ phone, otp: otpString, sessionId }));
-        if (loginWithOtp.fulfilled.match(result)) successHaptic();
+        if (loginWithOtp.fulfilled.match(result)) {
+          successHaptic();
+          DeviceEventEmitter.emit(LOGIN_SUCCESS_EVENT, { name: result.payload.name, role: result.payload.role });
+        }
       } else {
         result = await dispatch(registerWithOtp({ name: name.trim(), phone, otp: otpString, sessionId }));
-        if (registerWithOtp.fulfilled.match(result)) successHaptic();
+        if (registerWithOtp.fulfilled.match(result)) {
+          successHaptic();
+          DeviceEventEmitter.emit(LOGIN_SUCCESS_EVENT, { name: result.payload.name, role: result.payload.role });
+        }
       }
     } finally {
       submittingRef.current = false;
@@ -141,6 +150,21 @@ export default function OTPScreen({ navigation, route }: Props) {
       }
       autoFilledRef.current = false;
       handleVerify();
+    }
+  }, [otp, handleVerify, isExistingUser, name]);
+
+  // Auto-verify when user manually completes all 6 digits
+  useEffect(() => {
+    const code = otp.join('');
+    if (code.length === OTP_LENGTH && !submittingRef.current && !autoFilledRef.current) {
+      // For new users, only auto-verify if name is already entered
+      if (!isExistingUser && name.trim().length < 2) return;
+      // Small delay so the last digit renders before triggering verification
+      const timer = setTimeout(() => {
+        Keyboard.dismiss();
+        handleVerify();
+      }, 300);
+      return () => clearTimeout(timer);
     }
   }, [otp, handleVerify, isExistingUser, name]);
 
@@ -306,6 +330,7 @@ export default function OTPScreen({ navigation, route }: Props) {
           <Text style={styles.footerText}>CampusOne</Text>
         </View>
       </KeyboardAvoidingView>
+
     </LinearGradient>
   );
 }

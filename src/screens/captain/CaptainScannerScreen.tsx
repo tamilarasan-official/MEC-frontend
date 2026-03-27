@@ -27,6 +27,7 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
   const scanCooldown = useRef(false);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineAnim = useRef(new Animated.Value(0)).current;
+  const lineAnimRef = useRef<Animated.CompositeAnimation | null>(null);
 
   const device = useCameraDevice('back');
 
@@ -68,15 +69,23 @@ export default function CaptainScannerScreen({ visible, onClose, onOrderUpdated 
 
   // Scanning line animation
   useEffect(() => {
-    if (!visible) return;
-    const loop = Animated.loop(
+    if (!visible) {
+      lineAnimRef.current?.stop();
+      lineAnimRef.current = null;
+      return;
+    }
+    const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(lineAnim, { toValue: 1, duration: 2200, useNativeDriver: true }),
         Animated.timing(lineAnim, { toValue: 0, duration: 2200, useNativeDriver: true }),
       ]),
     );
-    loop.start();
-    return () => loop.stop();
+    lineAnimRef.current = anim;
+    anim.start();
+    return () => {
+      anim.stop();
+      lineAnimRef.current = null;
+    };
   }, [lineAnim, visible]);
 
   useEffect(() => { return () => { if (errorTimerRef.current !== null) clearTimeout(errorTimerRef.current); }; }, []);

@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator,
+  Animated, Easing,
 } from 'react-native';
 import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -36,6 +37,63 @@ function formatOrderDate(dateStr: string): string {
   return `${day} ${month} ${year}, ${time}`;
 }
 
+/** Animated empty state for first-time users / no active orders */
+const EmptyOrdersState = React.memo(({ colors, styles: s, onStartOrdering }: { colors: any; styles: any; onStartOrdering: () => void }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const arrowBounce = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(arrowBounce, { toValue: 8, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(arrowBounce, { toValue: 0, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    ).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.View style={[s.empty, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <Animated.View style={[s.emptyIconOuter, { transform: [{ scale: pulseAnim }] }]}>
+        <View style={s.emptyIconInner}>
+          <Icon name="bag-handle-outline" size={40} color={colors.accent} />
+        </View>
+      </Animated.View>
+
+      <Text style={s.emptyTitle}>No active orders</Text>
+      <Text style={s.emptySub}>
+        Your orders will appear here once you{'\n'}place one from the menu
+      </Text>
+
+      <TouchableOpacity style={s.startBtn} onPress={onStartOrdering} activeOpacity={0.85} accessibilityLabel="Start ordering" accessibilityRole="button">
+        <Text style={s.startBtnText}>Start Ordering</Text>
+        <Animated.View style={{ transform: [{ translateX: arrowBounce }] }}>
+          <Icon name="arrow-forward" size={18} color="#fff" />
+        </Animated.View>
+      </TouchableOpacity>
+
+      <View style={s.emptyHintRow}>
+        <Icon name="flash-outline" size={14} color={colors.textMuted} />
+        <Text style={s.emptyHint}>Orders are tracked in real-time</Text>
+      </View>
+    </Animated.View>
+  );
+});
+
 export default function OrdersScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -48,10 +106,14 @@ export default function OrdersScreen() {
   const selectedOrder = useMemo(() => selectedOrderId ? (myOrders ?? []).find(o => o.id === selectedOrderId) ?? null : null, [selectedOrderId, myOrders]);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
-  // Auto-refresh orders every time this screen gains focus
+  // Auto-refresh orders on focus and every 15 seconds while focused
   useFocusEffect(
     useCallback(() => {
       dispatch(fetchMyOrders());
+      const interval = setInterval(() => {
+        dispatch(fetchMyOrders());
+      }, 15000);
+      return () => clearInterval(interval);
     }, [dispatch])
   );
 
@@ -101,13 +163,7 @@ export default function OrdersScreen() {
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}>
         {displayOrders.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <Icon name="cube-outline" size={36} color={colors.textMuted} />
-            </View>
-            <Text style={styles.emptyTitle}>No active orders</Text>
-            <Text style={styles.emptySub}>Place an order to get started</Text>
-          </View>
+          <EmptyOrdersState colors={colors} styles={styles} onStartOrdering={() => navigation.getParent()?.navigate('Home')} />
         ) : (
           displayOrders.map(order => {
             const sc = statusConfig[order.status] || statusConfig.pending;
@@ -204,12 +260,12 @@ export default function OrdersScreen() {
         {/* View Order History */}
         <TouchableOpacity
           style={styles.historyBtn}
-          activeOpacity={0.8}
+          activeOpacity={0.7}
           onPress={() => navigation.navigate('Home', { screen: 'OrderHistory' })}
           accessibilityLabel="View order history"
           accessibilityRole="button">
-          <Icon name="time-outline" size={18} color={colors.textMuted} />
-          <Text style={styles.historyBtnText}>View Order History</Text>
+          <Icon name="time-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.historyBtnText}>Order History</Text>
         </TouchableOpacity>
 
         <View style={styles.bottomSpacer} />
@@ -241,13 +297,31 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   list: { padding: 16, paddingTop: 0 },
 
   // Empty
-  empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyIcon: {
-    width: 64, height: 64, borderRadius: 20,
-    backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+  empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 20, gap: 6 },
+  emptyIconOuter: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: colors.accent + '10',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 20,
+    borderWidth: 2, borderColor: colors.accent + '20', borderStyle: 'dashed',
   },
-  emptyTitle: { fontSize: 15, fontWeight: '600', color: colors.textMuted },
-  emptySub: { fontSize: 13, color: colors.textMuted },
+  emptyIconInner: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: colors.accent + '15',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  emptySub: { fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  startBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.accent, paddingHorizontal: 28, paddingVertical: 14,
+    borderRadius: 16,
+  },
+  startBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  emptyHintRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 20,
+    opacity: 0.5,
+  },
+  emptyHint: { fontSize: 12, color: colors.textMuted },
 
   // Order Card
   orderCard: {
@@ -323,10 +397,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // History Button
   historyBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 16, borderRadius: 16, marginTop: 4,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, marginTop: 12,
+    alignSelf: 'center',
   },
-  historyBtnText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  historyBtnText: { fontSize: 12, fontWeight: '500', color: colors.textMuted },
   bottomSpacer: { height: 100 },
 });

@@ -96,6 +96,15 @@ export default function CaptainEatScreen() {
 
   const canteenShop = shops.find(s => s.category === 'canteen');
 
+  // Sync successOrder with Redux when socket/FCM triggers a refetch
+  useEffect(() => {
+    if (!successOrder) return;
+    const updated = activeOrders.find(o => o.id === successOrder.id);
+    if (updated && updated.status !== successOrder.status) {
+      setSuccessOrder(updated);
+    }
+  }, [activeOrders, successOrder]);
+
   const loadData = useCallback(async () => {
     await Promise.all([
       dispatch(fetchShops()),

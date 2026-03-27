@@ -240,7 +240,15 @@ const ordersSlice = createSlice({
     // Fetch active orders
     builder
       .addCase(fetchMyActiveOrders.pending, (s) => { s.error = null; })
-      .addCase(fetchMyActiveOrders.fulfilled, (s, a) => { s.activeOrders = a.payload; })
+      .addCase(fetchMyActiveOrders.fulfilled, (s, a) => {
+        s.activeOrders = a.payload;
+        // Cross-update: keep `orders` array in sync so screens/modals
+        // reading from `orders` also reflect real-time status changes
+        for (const active of a.payload) {
+          const idx = s.orders.findIndex(x => x.id === active.id);
+          if (idx >= 0) s.orders[idx] = active;
+        }
+      })
       .addCase(fetchMyActiveOrders.rejected, (s, a) => { s.error = a.payload as string; });
     // Fetch shop orders
     builder

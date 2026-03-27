@@ -354,19 +354,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.card,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingBottom: 36,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: 20, paddingBottom: 40,
     maxHeight: '85%',
   },
 
   handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingTop: 8, paddingBottom: 20,
+    paddingTop: 8, paddingBottom: 24,
   },
-  title: { fontSize: 20, fontWeight: '800', color: colors.text },
+  title: { fontSize: 22, fontWeight: '900', color: colors.text },
   subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   closeBtn: {
     width: 34, height: 34, borderRadius: 17,
@@ -375,41 +375,42 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   balanceCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, borderRadius: 14,
+    padding: 16, borderRadius: 16,
     backgroundColor: 'rgba(59,130,246,0.08)',
     borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)', marginBottom: 20,
   },
   balanceIcon: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(59,130,246,0.15)',
+    width: 40, height: 40, borderRadius: 14, backgroundColor: 'rgba(59,130,246,0.15)',
     justifyContent: 'center', alignItems: 'center',
   },
   balanceLabel: { fontSize: 12, color: colors.textMuted },
-  balanceValue: { fontSize: 20, fontWeight: '800', color: '#3b82f6' },
+  balanceValue: { fontSize: 22, fontWeight: '900', color: '#3b82f6' },
 
-  inputLabel: { fontSize: 13, fontWeight: '500', color: colors.textMuted, marginBottom: 8 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: colors.textMuted, marginBottom: 8 },
   input: {
-    borderWidth: 1.5, borderColor: colors.border, borderRadius: 14,
-    paddingHorizontal: 16, paddingVertical: 14, fontSize: 20, fontWeight: '600',
+    borderWidth: 1, borderColor: colors.border, borderRadius: 16,
+    paddingHorizontal: 16, paddingVertical: 16, fontSize: 22, fontWeight: '700',
     color: colors.text, backgroundColor: colors.surface, marginBottom: 14,
+    textAlign: 'center',
   },
 
-  quickRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  quickRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
   quickBtn: {
-    flex: 1, paddingVertical: 11, borderRadius: 12,
+    flex: 1, paddingVertical: 12, borderRadius: 14,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
     alignItems: 'center',
   },
   quickBtnActive: { borderColor: colors.primary, backgroundColor: 'rgba(16,185,129,0.1)' },
-  quickBtnText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  quickBtnText: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
   quickBtnTextActive: { color: colors.primary },
 
   errorText: { fontSize: 12, color: colors.error, marginBottom: 10, textAlign: 'center' },
 
   submitBtn: {
-    paddingVertical: 16, borderRadius: 16, backgroundColor: '#1e3a5f', alignItems: 'center',
+    paddingVertical: 17, borderRadius: 18, backgroundColor: '#3b82f6', alignItems: 'center',
     marginBottom: 12,
   },
   submitBtnDisabled: { opacity: 0.6 },
-  submitText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  helpText: { fontSize: 11, color: colors.textMuted, textAlign: 'center' },
+  submitText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  helpText: { fontSize: 12, color: colors.textMuted, textAlign: 'center', marginTop: 4 },
 });

@@ -45,6 +45,15 @@ export default function CaptainEatOrdersScreen() {
 
   useEffect(() => { dispatch(fetchMyOrders()); }, [dispatch]);
 
+  // Sync selectedOrder with Redux when socket/FCM triggers order updates
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const updated = myOrders.find(o => o.id === selectedOrder.id);
+    if (updated && updated.status !== selectedOrder.status) {
+      setSelectedOrder(updated);
+    }
+  }, [myOrders, selectedOrder]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await dispatch(fetchMyOrders());

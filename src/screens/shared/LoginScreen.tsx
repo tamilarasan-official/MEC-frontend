@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Image,
-  Modal, FlatList,
+  Modal, FlatList, Keyboard,
 } from 'react-native';
 import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -101,6 +101,7 @@ export default function LoginScreen({ navigation }: Props) {
   const handleSendOtp = useCallback(async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
+    Keyboard.dismiss();
     try {
       mediumHaptic();
       const fullPhone = selectedCountry.code === '+91' ? phone : `${selectedCountry.code}${phone}`;
@@ -113,6 +114,13 @@ export default function LoginScreen({ navigation }: Props) {
       submittingRef.current = false;
     }
   }, [dispatch, phone, selectedCountry, navigation]);
+
+  // Auto-send OTP when phone number is complete
+  useEffect(() => {
+    if (phone.length === selectedCountry.maxLen && !submittingRef.current) {
+      handleSendOtp();
+    }
+  }, [phone, selectedCountry.maxLen, handleSendOtp]);
 
   return (
     <LinearGradient colors={['#4c1d95', '#2e1065', '#1a0a3e']} style={styles.gradient}>

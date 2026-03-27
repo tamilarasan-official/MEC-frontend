@@ -346,12 +346,11 @@ export type CaptainTabParamList = {
 };
 
 export type OwnerTabParamList = {
-  Home: undefined;
+  Dashboard: undefined;
   PrepList: undefined;
   Menu: undefined;
   History: undefined;
   Analytics: undefined;
-  StationeryDashboard: undefined;
   EatFood: undefined;
   EatOrders: undefined;
   EatScanner: undefined;

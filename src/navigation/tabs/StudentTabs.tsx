@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StudentTabParamList } from '../../types';
@@ -11,46 +11,42 @@ import { useTheme } from '../../theme/ThemeContext';
 
 const Tab = createBottomTabNavigator<StudentTabParamList>();
 
-// Reusable pill wrapper — active tabs get a themed capsule background
-const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => {
-  const { colors: c } = useTheme();
+interface TabItemProps {
+  focused: boolean;
+  color: string;
+  icon: string;
+  iconFocused: string;
+  label: string;
+}
+
+const TabItem = ({ focused, color, icon, iconFocused, label }: TabItemProps) => {
+  const { colors } = useTheme();
   return (
-    <View style={[styles.pill, focused && { backgroundColor: c.accent + '26' }]}>
-      {children}
+    <View style={styles.tabItem}>
+      <View style={[styles.iconWrap, focused && { backgroundColor: colors.accent + '18' }]}>
+        <Icon name={focused ? iconFocused : icon} size={20} color={color} />
+      </View>
+      <Text style={[styles.tabLabel, { color: focused ? colors.accent : colors.mutedForeground }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 };
 
 const HomeIcon = ({ focused, color }: { focused: boolean; color: string }) => (
-  <TabPill focused={focused}>
-    <Icon name={focused ? 'home' : 'home-outline'} size={22} color={color} />
-  </TabPill>
+  <TabItem focused={focused} color={color} icon="home-outline" iconFocused="home" label="Home" />
 );
-
 const OrdersIcon = ({ focused, color }: { focused: boolean; color: string }) => (
-  <TabPill focused={focused}>
-    <Icon name={focused ? 'clipboard' : 'clipboard-outline'} size={22} color={color} />
-  </TabPill>
+  <TabItem focused={focused} color={color} icon="receipt-outline" iconFocused="receipt" label="Orders" />
 );
-
 const ScannerIcon = ({ focused, color }: { focused: boolean; color: string }) => (
-  <TabPill focused={focused}>
-    <Icon name={focused ? 'qr-code' : 'qr-code-outline'} size={22} color={color} />
-  </TabPill>
+  <TabItem focused={focused} color={color} icon="scan-outline" iconFocused="scan" label="Scan" />
 );
-
-const styles = StyleSheet.create({
-  pill: {
-    width: 56, height: 32, borderRadius: 16,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  // pillActive color is now applied inline via theme
-});
 
 export default function StudentTabs() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = 56 + Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
+  const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
 
   return (
     <Tab.Navigator
@@ -58,35 +54,50 @@ export default function StudentTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarHideOnKeyboard: true,
+        tabBarShowLabel: false,
         tabBarStyle: {
           backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: tabBarHeight,
-          paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
+          borderTopWidth: 0,
+          elevation: 0,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.06,
+          shadowRadius: 12,
+          height: 60 + bottomPad,
+          paddingBottom: bottomPad,
+          paddingTop: 10,
         },
       }}
     >
       <Tab.Screen
         name="Home"
         component={StudentHomeStack}
-        options={{ tabBarLabel: 'Home', tabBarIcon: HomeIcon }}
+        options={{ tabBarIcon: HomeIcon }}
       />
       <Tab.Screen
         name="Orders"
         component={OrdersScreen}
-        options={{ tabBarLabel: 'Orders', tabBarIcon: OrdersIcon }}
+        options={{ tabBarIcon: OrdersIcon }}
       />
       <Tab.Screen
         name="Scanner"
         component={ScannerScreen}
-        options={{ tabBarLabel: 'Scanner', tabBarIcon: ScannerIcon }}
+        options={{ tabBarIcon: ScannerIcon }}
       />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  tabItem: {
+    alignItems: 'center', justifyContent: 'center', gap: 3, minWidth: 56,
+  },
+  iconWrap: {
+    width: 44, height: 30, borderRadius: 15,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  tabLabel: {
+    fontSize: 10, fontWeight: '600', letterSpacing: 0.3,
+  },
+});

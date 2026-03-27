@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
-  Image,
+  Image, DeviceEventEmitter,
 } from 'react-native';
 import { mediumHaptic, successHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -13,6 +13,7 @@ import { AuthStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { sendOtp, registerWithOtp, clearError } from '../../store/slices/authSlice';
 import Icon from '../../components/common/Icon';
+import { LOGIN_SUCCESS_EVENT } from '../../constants/events';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
@@ -137,7 +138,7 @@ export default function RegisterScreen({ navigation }: Props) {
       const result = await dispatch(registerWithOtp({ name: name.trim(), phone, otp: otpString, sessionId }));
       if (registerWithOtp.fulfilled.match(result)) {
         successHaptic();
-        // isAuthenticated=true triggers RootNavigator auto-redirect
+        DeviceEventEmitter.emit(LOGIN_SUCCESS_EVENT, { name: result.payload.name, role: result.payload.role });
       }
     } finally {
       submittingRef.current = false;

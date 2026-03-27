@@ -195,11 +195,13 @@ export default function ProfileDropdown({
         <TouchableOpacity style={styles.signOutOverlay} activeOpacity={1} onPress={() => setShowSignOut(false)}>
           <Animated.View style={[styles.signOutDialog, { transform: [{ scale: signOutScale }] }]}>
             <View style={styles.signOutIconWrap}>
-              <Icon name="log-out-outline" size={28} color={colors.error} />
+              <View style={styles.signOutIconInner}>
+                <Icon name="log-out-outline" size={26} color="#dc2626" />
+              </View>
             </View>
             <Text style={styles.signOutTitle}>Sign Out</Text>
             <Text style={styles.signOutMessage}>
-              Are you sure you want to sign out? You'll need to log in again to access your account.
+              Are you sure? You'll need to log in again to access your account.
             </Text>
             <View style={styles.signOutActions}>
               <TouchableOpacity
@@ -291,40 +293,45 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   signOutDialog: {
     width: '100%', maxWidth: 300, backgroundColor: colors.card,
-    borderRadius: 20, padding: 24, alignItems: 'center',
-    borderWidth: 1, borderColor: colors.border,
+    borderRadius: 24, padding: 28, alignItems: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 24,
     elevation: 16,
   },
   signOutIconWrap: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(239,68,68,0.12)',
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderWidth: 2, borderColor: 'rgba(239,68,68,0.15)',
     justifyContent: 'center', alignItems: 'center', marginBottom: 16,
   },
+  signOutIconInner: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    justifyContent: 'center', alignItems: 'center',
+  },
   signOutTitle: {
-    fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 8,
+    fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 8,
   },
   signOutMessage: {
-    fontSize: 14, color: colors.textMuted, textAlign: 'center',
-    lineHeight: 20, marginBottom: 24,
+    fontSize: 13, color: colors.textMuted, textAlign: 'center',
+    lineHeight: 19, marginBottom: 24,
   },
   signOutActions: {
     flexDirection: 'row', gap: 12, width: '100%',
   },
   signOutCancelBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: 12,
+    flex: 1, paddingVertical: 13, borderRadius: 14,
     backgroundColor: colors.surface, alignItems: 'center',
     borderWidth: 1, borderColor: colors.border,
   },
   signOutCancelText: {
-    fontSize: 14, fontWeight: '600', color: colors.text,
+    fontSize: 14, fontWeight: '700', color: colors.text,
   },
   signOutConfirmBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: colors.error, alignItems: 'center',
+    flex: 1, paddingVertical: 13, borderRadius: 14,
+    backgroundColor: '#dc2626', alignItems: 'center',
     flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
   signOutConfirmText: {
-    fontSize: 14, fontWeight: '600', color: '#fff',
+    fontSize: 14, fontWeight: '700', color: '#fff',
   },
 });

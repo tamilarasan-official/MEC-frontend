@@ -168,6 +168,7 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
               data={sections}
               keyExtractor={(s) => s.label}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               contentContainerStyle={styles.listContent}
               renderItem={({ item: section }) => (
                 <View>
@@ -254,7 +255,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingVertical: 48,
   },
   emptyText: { fontSize: 14, color: colors.textMuted },
-  listContent: { paddingHorizontal: 16, paddingBottom: 40 },
+  listContent: { paddingHorizontal: 16, paddingBottom: 80 },
   sectionLabel: {
     fontSize: 11, fontWeight: '700', color: colors.textMuted,
     letterSpacing: 1, marginTop: 16, marginBottom: 8,

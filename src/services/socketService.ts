@@ -3,7 +3,7 @@ import { DeviceEventEmitter } from 'react-native';
 import { getAccessToken, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance, fetchQRPayments } from '../store/slices/userSlice';
-import { fetchMyActiveOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
+import { fetchMyActiveOrders, fetchMyOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
 import { updateShopStatus } from '../store/slices/menuSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 import {
@@ -25,6 +25,7 @@ export interface OrderUpdatePayload {
   status: string;
   previousStatus?: string;
   updatedAt: string;
+  pickupToken?: string;
   notification?: { title: string; body: string };
   items?: { name: string; quantity: number }[];
 }
@@ -118,65 +119,74 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     try {
       const status = payload.status as 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
 
-      // Dedup: skip entirely if this orderId+status was already processed
+      // Always re-fetch orders so UI reflects the new status — even if popup/notification
+      // was already shown by FCM. Fetch both active orders (for Dashboard) and all
+      // orders (for Orders page) so every screen updates in real-time.
+      if (userRole === 'student' || userMode === 'eat') {
+        dispatch(fetchMyActiveOrders());
+        dispatch(fetchMyOrders());
+      } else {
+        dispatch(fetchActiveShopOrders());
+      }
+
+      // Dedup: skip popup/notification if this orderId+status was already processed
       // (from the other room delivery, or from FCM arriving first)
       const dedupKey = `${payload.orderId}:${status}`;
       if (isDuplicate(dedupKey)) return;
 
       // Show popup for students and eat-mode users (captain/owner ordering food)
       const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
+      const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
+      const itemsSummary = itemNames.length > 0 ? itemNames.join(', ') : '';
+
       if (isStudentOrEatMode && ['preparing', 'partially_ready', 'ready', 'partially_delivered', 'completed', 'cancelled'].includes(status)) {
-        const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
         if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber, itemNames);
         DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
           status,
           orderNumber: payload.orderNumber || payload.orderId.slice(-6),
-          itemNames: (status === 'partially_ready' || status === 'partially_delivered') ? itemNames : undefined,
+          itemNames,
+          pickupToken: payload.pickupToken || '',
         });
       }
 
       // Only show order status notifications to the customer (student or eat-mode user)
       // Captain/owner in work mode manages orders — they don't need "Your order is completed" messages
       if (isStudentOrEatMode) {
-        const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
-        const itemsSuffix = itemNames.length > 0 ? ` — ${itemNames.join(', ')}` : '';
         const statusLabels: Record<string, string> = {
-          preparing: `Your order is being prepared${itemsSuffix}`,
+          preparing: itemsSummary
+            ? `Your ${itemsSummary} is being prepared!`
+            : 'Your order is being prepared!',
           partially_ready: itemNames.length > 0
-            ? `${itemNames.join(', ')} ready for pickup!`
+            ? `${itemsSummary} ready for pickup!`
             : 'Some items are ready for partial pickup!',
           partially_delivered: 'Some items have been handed over. Remaining items coming soon!',
-          ready: `All items are ready for pickup!${itemsSuffix}`,
-          completed: `Your order has been completed${itemsSuffix}`,
-          cancelled: `Your order has been cancelled${itemsSuffix}`,
+          ready: itemsSummary
+            ? `Your ${itemsSummary} is ready for pickup!`
+            : 'All items are ready for pickup!',
+          completed: itemsSummary
+            ? `Your ${itemsSummary} has been delivered. Enjoy!`
+            : 'Your order has been completed!',
+          cancelled: itemsSummary
+            ? `Your ${itemsSummary} has been cancelled.`
+            : 'Your order has been cancelled.',
         };
-        const orderNum = payload.orderNumber || payload.orderId.slice(-6);
-        const title = payload.notification?.title || (status === 'partially_ready'
-          ? `Order #${orderNum} — Items Ready!`
-          : status === 'partially_delivered'
-          ? `Order #${orderNum} — Partial Pickup`
-          : `Order #${orderNum}`);
-        const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
+        const notifTitle = payload.notification?.title || (itemsSummary || `Order #${payload.orderNumber || payload.orderId.slice(-6)}`);
+        const pickupToken = payload.pickupToken || '';
+        const statusMsg = statusLabels[status] || `Status updated to ${status}`;
+        const notifMessage = payload.notification?.body || (statusMsg + (pickupToken ? ` • Pickup ID: ${pickupToken}` : ''));
 
         dispatch(addNotification({
           id: `notif-${Date.now()}`,
           type: 'order',
-          title,
-          message,
-          data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
+          title: notifTitle,
+          message: notifMessage,
+          data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status, pickupToken, itemNames: itemsSummary },
           createdAt: payload.updatedAt,
           read: false,
         }));
 
         const channelId = (status === 'ready' || status === 'partially_ready' || status === 'partially_delivered') ? CHANNEL_ORDER_READY : CHANNEL_ORDER_UPDATES;
-        displayLocalNotification(title, message, { orderId: payload.orderId, status }, channelId);
-      }
-
-      // Re-fetch orders so the UI reflects the new status immediately
-      if (userRole === 'student' || userMode === 'eat') {
-        dispatch(fetchMyActiveOrders());
-      } else {
-        dispatch(fetchActiveShopOrders());
+        displayLocalNotification(notifTitle, notifMessage, { orderId: payload.orderId, status, pickupToken }, channelId);
       }
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in order:status_changed handler:', e);

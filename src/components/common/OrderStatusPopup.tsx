@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Easing, Vibration, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Animated, Easing, Vibration, Platform, StatusBar,
 } from 'react-native';
 import Sound from 'react-native-sound';
 import Icon from './Icon';
@@ -12,49 +12,71 @@ interface OrderStatusPopupProps {
   status: 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
   orderNumber: string;
   itemNames?: string[];
+  pickupToken?: string;
   onDismiss: () => void;
 }
 
-const statusConfig: Record<string, { icon: string; label: string; message: string; bgColors: string[] }> = {
+const statusConfig: Record<string, { icon: string; label: string; bgColors: string[] }> = {
   preparing: {
     icon: 'restaurant-outline',
-    label: 'Preparing Your Order',
-    message: 'Your order has been confirmed and is being prepared!',
+    label: 'Getting Ready',
     bgColors: ['#f59e0b', '#eab308'],
   },
   partially_ready: {
     icon: 'git-branch-outline',
-    label: 'Item Ready for Pickup!',
-    message: 'Some items from your order are ready. Head to the counter to collect them!',
+    label: 'Ready for Pickup!',
     bgColors: ['#8b5cf6', '#7c3aed'],
   },
   partially_delivered: {
     icon: 'cube-outline',
     label: 'Partial Pickup Done',
-    message: 'Some items have been handed over. Remaining items will be ready soon!',
     bgColors: ['#3b82f6', '#2563eb'],
   },
   ready: {
     icon: 'cube-outline',
     label: 'Ready for Pickup!',
-    message: 'Head to the counter now to collect your order!',
     bgColors: ['#f97316', '#ea580c'],
   },
   completed: {
     icon: 'checkmark-circle',
-    label: 'Order Delivered',
-    message: 'Your order has been delivered. Enjoy your meal!',
+    label: 'Delivered!',
     bgColors: ['#22c55e', '#16a34a'],
   },
   cancelled: {
     icon: 'close-circle',
-    label: 'Order Cancelled',
-    message: 'Your order has been cancelled. The amount will be refunded to your wallet.',
+    label: 'Cancelled',
     bgColors: ['#ef4444', '#dc2626'],
   },
 };
 
-export function OrderStatusPopup({ status, orderNumber, itemNames, onDismiss }: OrderStatusPopupProps) {
+function getStatusMessage(status: string, itemsSummary: string): string {
+  switch (status) {
+    case 'preparing':
+      return itemsSummary
+        ? `Your ${itemsSummary} is being prepared!`
+        : 'Your order has been confirmed and is being prepared!';
+    case 'partially_ready':
+      return itemsSummary
+        ? `Your ${itemsSummary} is ready! Head to the counter to collect.`
+        : 'Some items from your order are ready. Head to the counter!';
+    case 'partially_delivered':
+      return 'Some items have been handed over. Remaining items will be ready soon!';
+    case 'ready':
+      return itemsSummary
+        ? `Your ${itemsSummary} is ready! Head to the counter now.`
+        : 'All items are ready. Head to the counter now!';
+    case 'completed':
+      return itemsSummary
+        ? `Your ${itemsSummary} has been delivered. Enjoy your meal!`
+        : 'Your order has been delivered. Enjoy your meal!';
+    case 'cancelled':
+      return 'Your order has been cancelled. The amount will be refunded to your wallet.';
+    default:
+      return 'Your order status has been updated.';
+  }
+}
+
+export function OrderStatusPopup({ status, orderNumber, itemNames, pickupToken, onDismiss }: OrderStatusPopupProps) {
   const config = statusConfig[status] || statusConfig.preparing;
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
@@ -64,7 +86,12 @@ export function OrderStatusPopup({ status, orderNumber, itemNames, onDismiss }: 
   const bounceAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(1)).current;
 
+  const itemsSummary = useMemo(() => (itemNames || []).join(', '), [itemNames]);
+  const message = useMemo(() => getStatusMessage(status, itemsSummary), [status, itemsSummary]);
+
   useEffect(() => {
+    StatusBar.setBarStyle('light-content', true);
+
     // Haptic feedback
     Vibration.vibrate(100);
 
@@ -96,12 +123,15 @@ export function OrderStatusPopup({ status, orderNumber, itemNames, onDismiss }: 
     Animated.timing(progressAnim, { toValue: 0, duration: 5000, easing: Easing.linear, useNativeDriver: false }).start();
 
     const timer = setTimeout(stableDismiss, 5000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      StatusBar.setBarStyle('default', true);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={stableDismiss}>
+    <View style={styles.absoluteFill} pointerEvents="auto">
       <TouchableOpacity
         style={[styles.overlay, { backgroundColor: config.bgColors[0] }]}
         activeOpacity={1}
@@ -119,19 +149,24 @@ export function OrderStatusPopup({ status, orderNumber, itemNames, onDismiss }: 
             <Icon name={config.icon} size={56} color="#fff" />
           </Animated.View>
 
-          {/* Order number */}
-          <Text style={styles.orderNumber}>Order #{orderNumber}</Text>
+          {/* Food items as headline (or fallback to order number) */}
+          <Text style={styles.itemsHeadline} numberOfLines={2}>
+            {itemsSummary || `Order #${orderNumber}`}
+          </Text>
 
           {/* Status label */}
           <Text style={styles.label}>{config.label}</Text>
 
           {/* Message */}
-          <Text style={styles.message}>{config.message}</Text>
+          <Text style={styles.message}>{message}</Text>
 
-          {/* Item names for partial delivery */}
-          {itemNames && itemNames.length > 0 && (
-            <Text style={styles.itemNames}>{itemNames.join(', ')}</Text>
-          )}
+          {/* Pickup token */}
+          {pickupToken ? (
+            <View style={styles.tokenContainer}>
+              <Text style={styles.tokenLabel}>PICKUP TOKEN</Text>
+              <Text style={styles.tokenValue}>{pickupToken}</Text>
+            </View>
+          ) : null}
 
           {/* Dismiss hint */}
           <Text style={styles.dismissHint}>Tap anywhere to dismiss</Text>
@@ -152,11 +187,14 @@ export function OrderStatusPopup({ status, orderNumber, itemNames, onDismiss }: 
           </View>
         </Animated.View>
       </TouchableOpacity>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  absoluteFill: {
+    ...StyleSheet.absoluteFillObject, zIndex: 9999, elevation: 9999,
+  },
   overlay: {
     flex: 1, justifyContent: 'center', alignItems: 'center',
   },
@@ -171,9 +209,9 @@ const styles = StyleSheet.create({
     width: 112, height: 112, borderRadius: 56,
     backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 32,
   },
-  orderNumber: {
-    fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)',
-    textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8,
+  itemsHeadline: {
+    fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center', marginBottom: 8, maxWidth: 280,
   },
   label: {
     fontSize: 32, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 16,
@@ -181,9 +219,17 @@ const styles = StyleSheet.create({
   message: {
     fontSize: 16, color: 'rgba(255,255,255,0.9)', textAlign: 'center', maxWidth: 280, lineHeight: 22,
   },
-  itemNames: {
-    fontSize: 15, fontWeight: '700', color: '#fff', textAlign: 'center', marginTop: 12,
-    maxWidth: 280, lineHeight: 22,
+  tokenContainer: {
+    marginTop: 20, alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 14,
+    paddingHorizontal: 24, paddingVertical: 12,
+  },
+  tokenLabel: {
+    fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 2, textTransform: 'uppercase',
+  },
+  tokenValue: {
+    fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: 6, marginTop: 2,
   },
   dismissHint: {
     fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '500', marginTop: 40,

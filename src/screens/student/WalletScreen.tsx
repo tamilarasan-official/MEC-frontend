@@ -104,6 +104,7 @@ export default function WalletScreen({ navigation }: Props) {
         <FlatList
           data={transactions}
           keyExtractor={tx => tx.id}
+          keyboardDismissMode="on-drag"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={

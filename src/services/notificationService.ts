@@ -18,6 +18,7 @@ import api from './api';
 import { getDeviceId } from '../store/slices/authSlice';
 import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance } from '../store/slices/userSlice';
+import { fetchMyActiveOrders, fetchMyOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
 import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
 
 // ── Deduplication ───────────────────────────────────────────────
@@ -75,10 +76,14 @@ export async function createChannels(): Promise<void> {
 export async function displayOrderReadyNotification(
   orderNumber: string,
   orderId: string,
+  itemsSummary?: string,
 ): Promise<void> {
+  const body = itemsSummary
+    ? `Your ${itemsSummary} is ready for pickup!`
+    : `Order #${orderNumber} is ready for pickup!`;
   await notifee.displayNotification({
-    title: 'Order Ready for Pickup!',
-    body: `Order #${orderNumber} is ready for pickup!`,
+    title: itemsSummary || 'Order Ready for Pickup!',
+    body,
     data: { type: 'order', orderId, orderNumber, status: 'ready' },
     android: {
       channelId: CHANNEL_ORDER_READY,
@@ -88,6 +93,15 @@ export async function displayOrderReadyNotification(
       fullScreenAction: { id: 'default' },
       pressAction: { id: 'default' },
       vibrationPattern: [300, 500, 300, 500],
+    },
+    ios: {
+      foregroundPresentationOptions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      sound: 'default',
+      interruptionLevel: 'timeSensitive',
     },
   });
 }
@@ -121,6 +135,15 @@ export async function displayOrderStatusFullScreen(
       lights: ['#3b82f6', 300, 600],
       autoCancel: true,
     },
+    ios: {
+      foregroundPresentationOptions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      sound: 'default',
+      interruptionLevel: 'timeSensitive',
+    },
   });
 }
 
@@ -142,6 +165,14 @@ export async function displayLocalNotification(
     android: {
       channelId,
       pressAction: { id: 'default' },
+    },
+    ios: {
+      foregroundPresentationOptions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      sound: 'default',
     },
   });
 }
@@ -218,42 +249,84 @@ export function handleForegroundMessage(
     dispatch(fetchWalletBalance());
   }
 
+  // Re-fetch orders so UI reflects the new status (covers cases where
+  // the socket event gets deduped because FCM arrived first)
+  if (type === 'order' && status) {
+    if (userRole === 'student' || userMode === 'eat') {
+      dispatch(fetchMyActiveOrders());
+      dispatch(fetchMyOrders());
+    } else if (userRole === 'captain' || userRole === 'owner') {
+      dispatch(fetchActiveShopOrders());
+    }
+  }
+
   // Determine channel and display strategy
   if (type === 'order' && ['preparing', 'partially_ready', 'ready', 'partially_delivered', 'completed', 'cancelled'].includes(status)) {
-    // Show full-screen popup for all order status changes
     const itemNamesRaw = data?.itemNames as string;
     const itemNamesList = itemNamesRaw ? itemNamesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const itemsSummary = itemNamesList.join(', ');
+    const pickupToken = (data?.pickupToken as string) || '';
+
+    // Emit full-screen popup event
     if (__DEV__) console.log('[FCM] Emitting ORDER_STATUS_POPUP_EVENT:', status, orderNumber, itemNamesList);
     DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
       status,
       orderNumber: orderNumber || orderId?.slice(-6) || '',
-      itemNames: (status === 'partially_ready' || status === 'partially_delivered') ? itemNamesList : undefined,
+      itemNames: itemNamesList,
+      pickupToken,
     });
+
+    // Build notification text with food item names + pickup token
+    const statusMessages: Record<string, string> = {
+      preparing: itemsSummary ? `Your ${itemsSummary} is being prepared!` : 'Your order is being prepared!',
+      partially_ready: itemsSummary ? `Your ${itemsSummary} is ready for pickup!` : 'Some items are ready for pickup!',
+      partially_delivered: 'Some items have been handed over. Remaining items coming soon!',
+      ready: itemsSummary ? `Your ${itemsSummary} is ready for pickup!` : 'All items are ready for pickup!',
+      completed: itemsSummary ? `Your ${itemsSummary} has been delivered. Enjoy!` : 'Your order has been delivered!',
+      cancelled: itemsSummary ? `Your ${itemsSummary} has been cancelled.` : 'Your order has been cancelled.',
+    };
+    const notifTitle = itemsSummary || title || `Order #${orderNumber || orderId?.slice(-6) || ''}`;
+    const notifBody = (statusMessages[status] || body) + (pickupToken ? ` • Pickup ID: ${pickupToken}` : '');
+
+    // Show a local notification so the user sees food items + pickup token
+    // (the system APN banner uses the backend's generic text)
+    const channelId = ['ready', 'partially_ready', 'partially_delivered'].includes(status) ? CHANNEL_ORDER_READY : CHANNEL_ORDER_UPDATES;
+    displayLocalNotification(notifTitle, notifBody, { orderId: orderId || '', status, pickupToken }, channelId, `order-${orderId}-${status}`);
+
+    // Dispatch to Redux for in-app notification list
+    dispatch(addNotification({
+      id: remoteMessage.messageId || `fcm-${Date.now()}`,
+      title: notifTitle,
+      message: notifBody,
+      type: 'order',
+      read: false,
+      createdAt: new Date().toISOString(),
+      data: { orderId, orderNumber, status, pickupToken, itemNames: itemsSummary },
+    }));
   } else {
     const channelId =
       type === 'order' ? CHANNEL_ORDER_UPDATES :
       type === 'wallet' ? CHANNEL_WALLET :
       CHANNEL_GENERAL;
-    // Use unique notification IDs so Android doesn't silently squelch sounds on stacked notifications
     const itemNamesStr = data?.itemNames as string;
-    const notifId = orderId ? 
+    const notifId = orderId ?
       (status === 'item_ready' && itemNamesStr ? `order-${orderId}-${status}-${itemNamesStr}` : `order-${orderId}-${status}`) :
       (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') ? `wallet-${(data?.transactionId as string) || Date.now()}` :
       (type === 'payment_received') ? `pr-${(data?.transactionId as string) || Date.now()}` :
       undefined;
     displayLocalNotification(title, body, (data as Record<string, string>) || {}, channelId, notifId);
-  }
 
-  // Dispatch to Redux for in-app notification list
-  dispatch(addNotification({
-    id: remoteMessage.messageId || `fcm-${Date.now()}`,
-    title,
-    message: body,
-    type: type as 'order' | 'wallet' | 'announcement' | 'system',
-    read: false,
-    createdAt: new Date().toISOString(),
-    data: data as Record<string, unknown>,
-  }));
+    // Dispatch to Redux for in-app notification list
+    dispatch(addNotification({
+      id: remoteMessage.messageId || `fcm-${Date.now()}`,
+      title,
+      message: body,
+      type: type as 'order' | 'wallet' | 'announcement' | 'system',
+      read: false,
+      createdAt: new Date().toISOString(),
+      data: data as Record<string, unknown>,
+    }));
+  }
 }
 
 // ── Handle background FCM message ───────────────────────────────

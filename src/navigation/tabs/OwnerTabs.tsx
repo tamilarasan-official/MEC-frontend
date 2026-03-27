@@ -144,6 +144,7 @@ export default function OwnerTabs() {
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
@@ -204,6 +205,7 @@ export default function OwnerTabs() {
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
             borderTopColor: colors.border,
@@ -219,9 +221,8 @@ export default function OwnerTabs() {
         }}
       >
         <Tab.Screen
-          name={isNonFoodShop ? 'StationeryDashboard' : 'Home'}
+          name="Dashboard"
           component={isNonFoodShop ? StationeryHomeScreen : OwnerHomeScreen}
-          key={isNonFoodShop ? 'stationery' : 'home'}
           options={{
             tabBarLabel: 'Home',
             tabBarIcon: HomeIcon,

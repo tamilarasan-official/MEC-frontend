@@ -88,7 +88,7 @@ export default function CartScreen({ navigation }: Props) {
         errorMessage={orderError}
         onComplete={() => {
           if (orderStatus === 'success') {
-            navigation.getParent()?.navigate('Orders');
+            navigation.navigate('Orders' as any);
           }
           setOrderStatus('idle');
           setOrderError('');
@@ -134,7 +134,7 @@ export default function CartScreen({ navigation }: Props) {
                   <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.cartImage} accessibilityLabel={`${c.item.name} image`} />
                 ) : (
                   <View style={[styles.cartImage, styles.cartImagePlaceholder]}>
-                    <Icon name="restaurant-outline" size={24} color={colors.textMuted} />
+                    <Icon name="restaurant-outline" size={24} color="#3b82f6" />
                   </View>
                 )}
                 <View style={styles.cartInfo}>
@@ -224,7 +224,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 10,
   },
   cartImage: { width: 72, height: 72, borderRadius: 16 },
-  cartImagePlaceholder: { backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
+  cartImagePlaceholder: { backgroundColor: 'rgba(59,130,246,0.15)', justifyContent: 'center', alignItems: 'center' },
   cartInfo: { flex: 1 },
   cartTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cartName: { fontSize: 14, fontWeight: '600', color: colors.text, flex: 1 },

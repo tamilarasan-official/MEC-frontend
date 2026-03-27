@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Modal, Animated, Easing, Dimensions, TouchableOpacity, ScrollView, Platform,
+  View, Text, StyleSheet, Modal, Animated, Easing, Dimensions, TouchableOpacity, ScrollView, Platform, StatusBar,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Sound from 'react-native-sound';
@@ -45,7 +45,8 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
   const iconScale = useMemo(() => new Animated.Value(0.4), []);
   const iconOpacity = useMemo(() => new Animated.Value(0), []);
   const contentOpacity = useMemo(() => new Animated.Value(0), []);
-  const toastSlide = useMemo(() => new Animated.Value(60), []);
+  const toastSlide = useMemo(() => new Animated.Value(100), []);
+  const toastOpacity = useMemo(() => new Animated.Value(0), []);
 
   // Failure animations
   const shakeAnim = useMemo(() => new Animated.Value(0), []);
@@ -57,6 +58,8 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
   const soundRef = useRef<Sound | null>(null);
 
   useEffect(() => {
+    StatusBar.setBarStyle('light-content', true);
+
     if (type === 'success') {
       // Play notification sound
       const fileName = Platform.OS === 'android' ? 'notification_sound' : 'notification_sound.wav';
@@ -75,12 +78,18 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
         Animated.timing(iconOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
       ]).start();
 
-      // Fade in content after 300ms
+      // Fade in content after brief delay
       progressTimerRef.current = setTimeout(() => {
-        Animated.timing(contentOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-        // Slide up toast
-        Animated.spring(toastSlide, { toValue: 0, friction: 6, useNativeDriver: true }).start();
-      }, 400);
+        Animated.timing(contentOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+      }, 250);
+
+      // Slide up "Money Deducted" toast after content appears
+      setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(toastSlide, { toValue: 0, duration: 350, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.timing(toastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        ]).start();
+      }, 500);
 
       // Progress bar (non-native driver, separate from above)
       animRef.current = Animated.timing(progressAnim, {
@@ -113,6 +122,7 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
       if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
       animRef.current?.stop();
       soundRef.current?.release();
+      StatusBar.setBarStyle('default', true);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type]);
@@ -191,7 +201,7 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
             </ScrollView>
 
             {/* Money Deducted toast */}
-            <Animated.View style={[styles.moneyToast, { transform: [{ translateY: toastSlide }] }]}>
+            <Animated.View style={[styles.moneyToast, { opacity: toastOpacity, transform: [{ translateY: toastSlide }] }]}>
               <View style={styles.moneyToastIconWrap}>
                 <Icon name="card" size={20} color="#10b981" />
               </View>
@@ -260,7 +270,7 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
           </Animated.View>
 
           {/* Money Deducted toast */}
-          <Animated.View style={[styles.moneyToast, { transform: [{ translateY: toastSlide }] }]}>
+          <Animated.View style={[styles.moneyToast, { opacity: toastOpacity, transform: [{ translateY: toastSlide }] }]}>
             <View style={styles.moneyToastIconWrap}>
               <Icon name="card" size={20} color="#10b981" />
             </View>

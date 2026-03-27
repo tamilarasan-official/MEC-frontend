@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState, Platform, Linking } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState, Platform, Linking, Animated, Easing, StatusBar } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
@@ -10,7 +10,8 @@ import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } fro
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/colors';
-import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
+import { ORDER_STATUS_POPUP_EVENT, LOGIN_SUCCESS_EVENT } from '../constants/events';
+import Icon from '../components/common/Icon';
 import { OrderStatusPopup } from '../components/common/OrderStatusPopup';
 import AuthStack from './AuthStack';
 import StudentTabs from './tabs/StudentTabs';
@@ -30,10 +31,81 @@ import { PermissionDrawer } from '../components/common/PermissionDrawer';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/* ── Login Success Overlay ── */
+function LoginSuccessOverlay({ name, role, onDone }: { name: string; role: string; onDone: () => void }) {
+  const checkScale = useRef(new Animated.Value(0)).current;
+  const titleOpacity = useRef(new Animated.Value(0)).current;
+  const nameOpacity = useRef(new Animated.Value(0)).current;
+  const roleOpacity = useRef(new Animated.Value(0)).current;
+  const welcomeOpacity = useRef(new Animated.Value(0)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    StatusBar.setBarStyle('light-content', true);
+
+    Animated.spring(checkScale, { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }).start();
+
+    const fade = (anim: Animated.Value, delay: number) =>
+      Animated.timing(anim, { toValue: 1, duration: 400, delay, easing: Easing.out(Easing.ease), useNativeDriver: true });
+
+    Animated.stagger(0, [
+      fade(titleOpacity, 300),
+      fade(nameOpacity, 500),
+      fade(roleOpacity, 500),
+      fade(welcomeOpacity, 700),
+      fade(taglineOpacity, 900),
+    ]).start();
+
+    const timer = setTimeout(() => {
+      StatusBar.setBarStyle('default', true);
+      onDone();
+    }, 3000);
+    return () => { clearTimeout(timer); StatusBar.setBarStyle('default', true); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const displayRole = role ? role.charAt(0).toUpperCase() + role.slice(1).toLowerCase() : 'User';
+
+  return (
+    <View style={loginOverlay.container}>
+      <Animated.View style={[loginOverlay.checkCircle, { transform: [{ scale: checkScale }] }]}>
+        <Icon name="checkmark-circle" size={80} color="#fff" />
+      </Animated.View>
+      <Animated.Text style={[loginOverlay.title, { opacity: titleOpacity }]}>Login Successful</Animated.Text>
+      <Animated.Text style={[loginOverlay.userName, { opacity: nameOpacity }]}>{name}</Animated.Text>
+      <Animated.View style={[loginOverlay.roleBadge, { opacity: roleOpacity }]}>
+        <Text style={loginOverlay.roleText}>{displayRole}</Text>
+      </Animated.View>
+      <Animated.Text style={[loginOverlay.welcome, { opacity: welcomeOpacity }]}>Welcome to CampusOne</Animated.Text>
+      <Animated.Text style={[loginOverlay.tagline, { opacity: taglineOpacity }]}>Start using it and you'll never stop!</Animated.Text>
+    </View>
+  );
+}
+
+const loginOverlay = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject, zIndex: 9999, elevation: 9999,
+    backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+  },
+  checkCircle: {
+    width: 120, height: 120, borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 28,
+  },
+  title: { fontSize: 22, fontWeight: '700', color: '#fff', marginBottom: 12 },
+  userName: { fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 12, textAlign: 'center' },
+  roleBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, marginBottom: 28,
+  },
+  roleText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  welcome: { fontSize: 16, color: 'rgba(255,255,255,0.85)', marginBottom: 8 },
+  tagline: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
+});
+
 interface PopupData {
   status: 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
   orderNumber: string;
   itemNames?: string[];
+  pickupToken?: string;
 }
 
 export default function RootNavigator() {
@@ -48,6 +120,15 @@ export default function RootNavigator() {
   const [popup, setPopup] = useState<PopupData | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [permissionsHandled, setPermissionsHandled] = useState(false);
+  const [loginSuccessData, setLoginSuccessData] = useState<{ name: string; role: string } | null>(null);
+
+  // Listen for login success event (emitted from OTPScreen after auth succeeds)
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(LOGIN_SUCCESS_EVENT, (data: { name: string; role: string }) => {
+      setLoginSuccessData(data);
+    });
+    return () => sub.remove();
+  }, []);
 
   // Listen for order status popup events (from socket + FCM)
   useEffect(() => {
@@ -269,6 +350,7 @@ export default function RootNavigator() {
           status={popup.status}
           orderNumber={popup.orderNumber}
           itemNames={popup.itemNames}
+          pickupToken={popup.pickupToken}
           onDismiss={dismissPopup}
         />
       )}
@@ -290,6 +372,15 @@ export default function RootNavigator() {
       {/* Permission drawer — shown once on first app launch, only when authenticated */}
       {isAuthenticated && !permissionsHandled && (
         <PermissionDrawer onComplete={() => setPermissionsHandled(true)} />
+      )}
+
+      {/* Login success animation — rendered at root level so it survives the Auth→Main navigation swap */}
+      {loginSuccessData && (
+        <LoginSuccessOverlay
+          name={loginSuccessData.name}
+          role={loginSuccessData.role}
+          onDone={() => setLoginSuccessData(null)}
+        />
       )}
     </>
   );
