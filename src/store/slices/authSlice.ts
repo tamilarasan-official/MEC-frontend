@@ -81,7 +81,8 @@ export const sendOtp = createAsyncThunk(
       const serverMsg = error.response?.data?.error?.message || error.response?.data?.message;
       let msg = 'Failed to send OTP. Please try again.';
       if (!error.response) {
-        msg = 'Network error. Please check your connection.';
+        const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+        msg = isTimeout ? 'Request timed out. Please check your connection and try again.' : 'Network error. Please check your connection.';
       } else if (status === 409) {
         msg = serverMsg || 'An account with this phone number already exists. Please login instead.';
       } else if (status === 429) {
@@ -109,13 +110,23 @@ export const loginWithOtp = createAsyncThunk(
       await setTokens(tokens.accessToken, tokens.refreshToken);
       return user;
     } catch (error: any) {
+      if (!error.response) {
+        // Network error or timeout — no server response received
+        const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+        return rejectWithValue(isTimeout
+          ? 'Request timed out. Please check your connection and try again.'
+          : 'Network error. Please check your internet connection.');
+      }
       const status = error.response?.status;
       const errorCode = error.response?.data?.error?.code;
       const serverMsg = error.response?.data?.error?.message || error.response?.data?.message;
       if (status === 403 && errorCode === 'ACCOUNT_DEACTIVATED') {
         return rejectWithValue('Your account has been deactivated. Please contact administration.');
       }
-      return rejectWithValue(serverMsg || 'OTP verification failed');
+      if (status === 429) {
+        return rejectWithValue('Too many attempts. Please wait a moment and try again.');
+      }
+      return rejectWithValue(serverMsg || 'OTP verification failed. Please try again.');
     }
   },
 );
@@ -153,7 +164,8 @@ export const registerWithOtp = createAsyncThunk(
       const serverMsg = error.response?.data?.error?.message || error.response?.data?.message;
       let msg = 'Registration failed. Please try again.';
       if (!error.response) {
-        msg = 'Network error. Please check your connection.';
+        const isTimeout = error.code === 'ECONNABORTED' || error.message?.includes('timeout');
+        msg = isTimeout ? 'Request timed out. Please check your connection and try again.' : 'Network error. Please check your connection.';
       } else if (status === 401) {
         msg = 'Invalid or expired OTP. Please try again.';
       } else if (status === 409) {
