@@ -34,6 +34,7 @@ export interface User {
   institution?: string;
   userTag?: 'Student' | 'Staff' | 'Faculty' | 'MEC ADMIN' | 'Owner' | 'Accountant' | 'Officials';
   staffId?: string;
+  isPinSetup?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -343,6 +344,7 @@ export type CaptainTabParamList = {
   EatScanner: undefined;
   Wallet: undefined;
   TransactionDetail: { transactionId: string };
+  TransactionPIN: undefined;
 };
 
 export type OwnerTabParamList = {
@@ -358,6 +360,7 @@ export type OwnerTabParamList = {
   EatScanner: undefined;
   Wallet: undefined;
   TransactionDetail: { transactionId: string };
+  TransactionPIN: undefined;
 };
 
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, RefreshControl,
+  View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
   Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -111,6 +111,9 @@ export default function StudentDashboard({ navigation }: Props) {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const submittingRef = useRef(false);
   const paymentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
   // Check both activeOrders and allOrders — completed/cancelled orders get removed from
@@ -130,6 +133,21 @@ export default function StudentDashboard({ navigation }: Props) {
       setSuccessOrder(fresh);
     }
   }, [activeOrders, allOrders, successOrder]);
+
+  // Same sync for selectedOrder (carousel QR tap)
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const fresh = activeOrders.find(o => o.id === selectedOrder.id)
+      || allOrders.find(o => o.id === selectedOrder.id);
+    if (!fresh) return;
+    const statusChanged = fresh.status !== selectedOrder.status;
+    const itemsChanged = fresh.items.some((item, i) =>
+      selectedOrder.items[i] && item.itemStatus !== selectedOrder.items[i].itemStatus
+    );
+    if (statusChanged || itemsChanged) {
+      setSelectedOrder(fresh);
+    }
+  }, [activeOrders, allOrders, selectedOrder]);
 
   useEffect(() => {
     return () => {
@@ -318,7 +336,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const statusConfig: Record<string, { bg: string; color: string; label: string }> = {
     pending: { bg: 'rgba(234,179,8,0.15)', color: '#eab308', label: 'Ordered' },
     preparing: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Preparing' },
-    partially_ready: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partially Ready' },
+    partially_ready: { bg: 'rgba(139,92,246,0.15)', color: '#8b5cf6', label: 'Partially Ready' },
     ready: { bg: 'rgba(16,185,129,0.15)', color: '#10b981', label: 'Ready' },
     partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial' },
   };
@@ -437,6 +455,7 @@ export default function StudentDashboard({ navigation }: Props) {
         keyExtractor={keyExtractor}
         renderItem={renderFoodCard}
         contentContainerStyle={styles.listContent}
+        keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         initialNumToRender={8}
         maxToRenderPerBatch={6}
@@ -497,37 +516,59 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Active Orders */}
+            {/* Active Orders — Swipeable Carousel */}
             {activeOrders.length > 0 && (
               <View style={styles.section}>
-                {activeOrders.map(order => {
-                  const sc = statusConfig[order.status] || statusConfig.pending;
-                  return (
-                    <TouchableOpacity
-                      key={order.id}
-                      style={styles.activeOrderCard}
-                      onPress={() => navigation.getParent()?.navigate('Orders')}
-                      activeOpacity={0.8}
-                      accessibilityLabel="View active order"
-                      accessibilityRole="button">
-                      <View style={styles.activeOrderIcon}>
-                        <Icon name="cube-outline" size={24} color="#3b82f6" />
-                      </View>
-                      <View style={styles.activeOrderInfo}>
-                        <Text style={styles.activeOrderItems} numberOfLines={1}>
-                          {order.items.map(i => i.name).join(', ')}
-                        </Text>
-                        <View style={styles.activeOrderMeta}>
-                          <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-                            <Text style={[styles.statusText, { color: sc.color }]}>{sc.label}</Text>
+                <FlatList
+                  data={activeOrders}
+                  keyExtractor={o => o.id}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={screenWidth + 8}
+                  decelerationRate="fast"
+                  onScroll={(e) => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / (screenWidth + 8));
+                    setCarouselIndex(idx);
+                  }}
+                  scrollEventThrottle={16}
+                  renderItem={({ item: order }) => {
+                    const sc = statusConfig[order.status] || statusConfig.pending;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.carouselCard, { width: screenWidth }]}
+                        onPress={() => { mediumHaptic(); setSelectedOrder(order); }}
+                        activeOpacity={0.85}
+                        accessibilityLabel="Show order QR"
+                        accessibilityRole="button">
+                        <View style={styles.carouselRow}>
+                          <OrderPulseIcon color={sc.color} />
+                          <View style={styles.carouselInfo}>
+                            <Text style={styles.carouselItems} numberOfLines={1}>
+                              {order.items.map(i => i.name).join(', ')}
+                            </Text>
+                            <View style={styles.carouselMeta}>
+                              <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+                                <View style={[styles.statusDot, { backgroundColor: sc.color }]} />
+                                <Text style={[styles.statusText, { color: sc.color }]}>{sc.label}</Text>
+                              </View>
+                              <Text style={styles.tokenText}>#{order.pickupToken}</Text>
+                            </View>
                           </View>
-                          <Text style={styles.tokenText}>#{order.pickupToken}</Text>
+                          <Icon name="chevron-forward" size={20} color={colors.textMuted} />
                         </View>
-                      </View>
-                      <Icon name="chevron-forward" size={20} color="#3b82f6" />
-                    </TouchableOpacity>
-                  );
-                })}
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+                {/* Dot indicators */}
+                {activeOrders.length > 1 && (
+                  <View style={styles.dotsRow}>
+                    {activeOrders.map((_, i) => (
+                      <View key={i} style={[styles.dot, i === carouselIndex && styles.dotActive]} />
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
@@ -727,6 +768,11 @@ export default function StudentDashboard({ navigation }: Props) {
         />
       )}
 
+      {/* QR Card from carousel tap */}
+      {selectedOrder && (
+        <OrderQRCard order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      )}
+
       {/* Payment Confirmation Modal */}
       <Modal visible={showConfirmModal} animationType="fade" transparent statusBarTranslucent>
         <View style={styles.modalOverlay}>
@@ -838,6 +884,41 @@ export default function StudentDashboard({ navigation }: Props) {
   );
 }
 
+/* ─── Pulsing Ring Icon for Carousel ─── */
+function OrderPulseIcon({ color }: { color: string }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(0.6)).current;
+  useEffect(() => {
+    Animated.loop(Animated.parallel([
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.8, duration: 1500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 0, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.timing(opacityAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0.6, duration: 0, useNativeDriver: true }),
+      ]),
+    ])).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View style={{ width: 48, height: 48, justifyContent: 'center', alignItems: 'center' }}>
+      <Animated.View style={{
+        position: 'absolute', width: 48, height: 48, borderRadius: 24,
+        borderWidth: 2, borderStyle: 'dashed', borderColor: color,
+        transform: [{ scale: pulseAnim }], opacity: opacityAnim,
+      }} />
+      <View style={{
+        width: 32, height: 32, borderRadius: 16,
+        borderWidth: 1.5, borderColor: color + '40', borderStyle: 'dotted',
+        justifyContent: 'center', alignItems: 'center',
+      }}>
+        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+      </View>
+    </View>
+  );
+}
+
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // ── Header ──
   headerBar: {
@@ -902,18 +983,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   lowBalanceText: { fontSize: 11, color: '#f97316', marginTop: 8 },
 
   // ── Active Orders ──
-  activeOrderCard: {
-    flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, marginBottom: 8,
-    backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
+  // Carousel card
+  carouselCard: {
+    padding: 16, borderRadius: 18, marginRight: 8,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  activeOrderIcon: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(59,130,246,0.15)',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  activeOrderInfo: { flex: 1 },
-  activeOrderItems: { fontSize: 14, fontWeight: '600', color: colors.text },
-  activeOrderMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  carouselRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  carouselInfo: { flex: 1 },
+  carouselItems: { fontSize: 14, fontWeight: '600', color: colors.text },
+  carouselMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
+  dotActive: { width: 18, backgroundColor: colors.accent, borderRadius: 3 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '600' },
   tokenText: { fontSize: 12, color: colors.textMuted },
 

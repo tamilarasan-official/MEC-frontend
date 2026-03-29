@@ -16,6 +16,7 @@ import CaptainScannerScreen from '../../screens/captain/CaptainScannerScreen';
 import ScannerScreen from '../../screens/student/ScannerScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
 import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
+import TransactionPINScreen from '../../screens/shared/TransactionPINScreen';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -121,10 +122,15 @@ export default function CaptainTabs() {
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
+            borderTopWidth: 0,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 8,
             height: tabBarHeight,
             paddingBottom: tabBarPaddingBottom,
             paddingTop: 4,
@@ -169,6 +175,11 @@ export default function CaptainTabs() {
           component={TransactionDetailScreen}
           options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
         />
+        <Tab.Screen
+          name="TransactionPIN"
+          component={TransactionPINScreen}
+          options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
+        />
       </Tab.Navigator>
     );
   }
@@ -180,10 +191,15 @@ export default function CaptainTabs() {
           headerShown: false,
           tabBarActiveTintColor: colors.accent,
           tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
+            borderTopWidth: 0,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 8,
             height: tabBarHeight,
             paddingBottom: tabBarPaddingBottom,
             paddingTop: 4,

@@ -18,7 +18,7 @@ const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'partially_ready', 'rea
 const statusConfig: Record<string, { icon: string; label: string; bg: string; color: string }> = {
   pending: { icon: 'time-outline', label: 'Ordered', bg: 'rgba(234,179,8,0.12)', color: '#eab308' },
   preparing: { icon: 'flame-outline', label: 'Preparing', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
-  partially_ready: { icon: 'hourglass-outline', label: 'Partially Ready', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+  partially_ready: { icon: 'hourglass-outline', label: 'Partially Ready', bg: 'rgba(139,92,246,0.12)', color: '#8b5cf6' },
   ready: { icon: 'checkmark-circle-outline', label: 'Ready for Pickup', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
   partially_delivered: { icon: 'checkmark-circle-outline', label: 'Partial Delivery', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   completed: { icon: 'checkmark-done-outline', label: 'Delivered', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },

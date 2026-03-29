@@ -7,6 +7,7 @@ import Icon from './Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { Order } from '../../types';
+import { useSecureScreen } from '../../utils/useSecureScreen';
 
 interface OrderQRCardProps {
   order: Order;
@@ -14,6 +15,7 @@ interface OrderQRCardProps {
 }
 
 export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
+  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = useMemo(() => ({
@@ -89,7 +91,18 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
             <View style={styles.qrWrapper}>
               <View style={styles.qrGradientBorder}>
                 <View style={styles.qrInner}>
-                  <QRCode value={qrValue} size={120} backgroundColor="#fff" color="#000" />
+                  <QRCode
+                    value={qrValue}
+                    size={120}
+                    backgroundColor="#fff"
+                    color="#000"
+                    ecl="M"
+                    logo={require('../../assets/icons/appicon.png')}
+                    logoSize={28}
+                    logoBackgroundColor="#fff"
+                    logoBorderRadius={8}
+                    logoMargin={2}
+                  />
                 </View>
               </View>
             </View>

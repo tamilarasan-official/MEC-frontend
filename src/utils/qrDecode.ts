@@ -25,8 +25,22 @@ export interface QRPaymentData {
 export function decodeQrPaymentData(scanned: string): QRPaymentData | null {
   try {
     const parsed = JSON.parse(scanned.trim());
+    if (!parsed) return null;
+
+    // New compact format: { t: 'qp', p: paymentId, a: amount, s: shopId }
+    if (parsed.t === 'qp' && typeof parsed.p === 'string' && typeof parsed.a === 'number') {
+      return {
+        type: 'shop_qr_payment',
+        paymentId: parsed.p,
+        title: '',
+        amount: parsed.a,
+        shopId: parsed.s || '',
+        shopName: '',
+      };
+    }
+
+    // Legacy full format: { type: 'shop_qr_payment', paymentId, amount, ... }
     if (
-      parsed &&
       parsed.type === 'shop_qr_payment' &&
       typeof parsed.paymentId === 'string' &&
       typeof parsed.amount === 'number'

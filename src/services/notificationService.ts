@@ -17,7 +17,7 @@ import api from './api';
 import { getDeviceId } from '../store/slices/authSlice';
 import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance } from '../store/slices/userSlice';
-import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
+import { ORDER_STATUS_POPUP_EVENT, FORCE_LOGOUT_EVENT } from '../constants/events';
 
 // ── Deduplication ───────────────────────────────────────────────
 // Prevents double display when both Socket.IO and FCM deliver the same event
@@ -157,13 +157,24 @@ export function handleForegroundMessage(
   // Skip if there's no meaningful content to display
   if (!title.trim() && !body.trim()) return;
   const type = (data?.type as string) || 'system';
+
+  // Force logout — emit event and skip normal notification flow
+  if (type === 'force_logout') {
+    if (__DEV__) console.log('[FCM] Force logout received via push');
+    DeviceEventEmitter.emit(FORCE_LOGOUT_EVENT, { reason: 'logged_in_elsewhere' });
+    return;
+  }
+
   const orderId = data?.orderId as string;
   const status = data?.status as string;
   const orderNumber = data?.orderNumber as string;
 
   // Dedup: skip if already shown (e.g. socket delivered first, or duplicate FCM tokens)
   // Use content-based key so duplicate FCM messages (from stale tokens) are caught
-  if (orderId && status) {
+  if (type === 'payment_received') {
+    const paymentId = data?.paymentRequestId as string || '';
+    if (isDuplicate(`payment:${paymentId}`)) return;
+  } else if (orderId && status) {
     if (isDuplicate(`${orderId}:${status}`)) return;
   } else if (type === 'wallet_credit' || type === 'wallet') {
     // Use a stable key with 10-second window to catch duplicate FCM messages

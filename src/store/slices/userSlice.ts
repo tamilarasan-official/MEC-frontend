@@ -111,8 +111,13 @@ export const fetchQRPayments = createAsyncThunk('user/fetchQRPayments', async (_
   try {
     const res = await api.get('/owner/qr-payments');
     const data = res.data.data;
-    return (data?.payments || data || []) as QRPayment[];
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+    const payments = (data?.payments || data || []) as QRPayment[];
+    if (__DEV__) console.log('[fetchQRPayments] got', payments.length, 'payments');
+    return payments;
+  } catch (e: any) {
+    if (__DEV__) console.error('[fetchQRPayments] FAILED:', e.response?.status, e.response?.data?.message || e.message);
+    return rejectWithValue(e.response?.data?.message || 'Failed');
+  }
 });
 
 export const createQRPayment = createAsyncThunk(
@@ -181,7 +186,17 @@ const userSlice = createSlice({
     builder.addCase(fetchQRPayments.pending, (s) => { s.qrPaymentsLoading = true; });
     builder.addCase(fetchQRPayments.fulfilled, (s, a) => { s.qrPayments = a.payload; s.qrPaymentsLoading = false; });
     builder.addCase(fetchQRPayments.rejected, (s) => { s.qrPaymentsLoading = false; });
-    builder.addCase(createQRPayment.fulfilled, (s, a) => { s.qrPayments.unshift(a.payload); });
+    builder.addCase(createQRPayment.fulfilled, (s, a) => {
+      // Merge defaults for fields not returned by the create API
+      s.qrPayments.unshift({
+        ...a.payload,
+        status: a.payload.status || 'active',
+        paidCount: a.payload.paidCount || 0,
+        totalCollected: a.payload.totalCollected || 0,
+        payers: a.payload.payers || [],
+        description: a.payload.description || '',
+      });
+    });
   },
 });
 

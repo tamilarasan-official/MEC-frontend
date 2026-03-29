@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StudentTabParamList } from '../../types';
@@ -15,7 +15,7 @@ const Tab = createBottomTabNavigator<StudentTabParamList>();
 const TabPill = ({ focused, children }: { focused: boolean; children: React.ReactNode }) => {
   const { colors: c } = useTheme();
   return (
-    <View style={[styles.pill, focused && { backgroundColor: c.accent + '26' }]}>
+    <View style={[styles.pill, focused && { backgroundColor: c.accent + '17' }]}>
       {children}
     </View>
   );
@@ -23,34 +23,33 @@ const TabPill = ({ focused, children }: { focused: boolean; children: React.Reac
 
 const HomeIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
-    <Icon name={focused ? 'home' : 'home-outline'} size={22} color={color} />
+    <Icon name={focused ? 'home' : 'home-outline'} size={20} color={color} />
   </TabPill>
 );
 
 const OrdersIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
-    <Icon name={focused ? 'clipboard' : 'clipboard-outline'} size={22} color={color} />
+    <Icon name={focused ? 'receipt' : 'receipt-outline'} size={20} color={color} />
   </TabPill>
 );
 
 const ScannerIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
-    <Icon name={focused ? 'qr-code' : 'qr-code-outline'} size={22} color={color} />
+    <Icon name={focused ? 'scan' : 'scan-outline'} size={20} color={color} />
   </TabPill>
 );
 
 const styles = StyleSheet.create({
   pill: {
-    width: 56, height: 32, borderRadius: 16,
+    width: 44, height: 30, borderRadius: 15,
     justifyContent: 'center', alignItems: 'center',
   },
-  // pillActive color is now applied inline via theme
 });
 
 export default function StudentTabs() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = 56 + Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
+  const tabBarHeight = 60 + Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
 
   return (
     <Tab.Navigator
@@ -58,17 +57,23 @@ export default function StudentTabs() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: colors.card,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
+          borderTopWidth: 0,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 8,
           height: tabBarHeight,
           paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 4,
+          paddingTop: 10,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '600',
+          letterSpacing: 0.3,
         },
       }}
     >

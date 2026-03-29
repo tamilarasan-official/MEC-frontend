@@ -12,8 +12,10 @@ import { decodeQrData, decodeQrPaymentData } from '../../utils/qrDecode';
 import type { QRPaymentData } from '../../utils/qrDecode';
 import { useAppDispatch } from '../../store';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
+import { useSecureScreen } from '../../utils/useSecureScreen';
 
 export default function ScannerScreen() {
+  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [permission, setPermission] = useState<CameraPermissionStatus | null>(null);
@@ -23,8 +25,11 @@ export default function ScannerScreen() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [torch, setTorch] = useState(false);
+  const [zoom, setZoom] = useState(3);
+  const [showMoveCloser, setShowMoveCloser] = useState(false);
   const scanCooldown = useRef(false);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const moveCloserTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lineAnim = useRef(new Animated.Value(0)).current;
 
   const device = useCameraDevice('back');
@@ -32,10 +37,11 @@ export default function ScannerScreen() {
   useEffect(() => {
     (async () => {
       const cached = Camera.getCameraPermissionStatus();
-      if (cached === 'granted' || cached === 'denied') {
+      if (cached === 'granted') {
         setPermission(cached);
         return;
       }
+      // Request permission (works for 'not-determined' and 'denied' on Android)
       const status = await Camera.requestCameraPermission();
       setPermission(status);
     })();
@@ -75,14 +81,17 @@ export default function ScannerScreen() {
 
     scanCooldown.current = true;
     Vibration.vibrate(100);
+    setShowMoveCloser(false);
+    if (moveCloserTimer.current !== null) clearTimeout(moveCloserTimer.current);
 
     // Check if it's a QR payment code first
     const paymentData = decodeQrPaymentData(raw);
     if (paymentData) {
-      dispatch(fetchWalletBalance());
       setScannedPayment(paymentData);
       setScanError(null);
       setIsActive(false);
+      // Refresh balance in background (non-blocking — modal shows instantly)
+      dispatch(fetchWalletBalance());
       return;
     }
 
@@ -103,8 +112,20 @@ export default function ScannerScreen() {
   useEffect(() => {
     return () => {
       if (errorTimerRef.current !== null) clearTimeout(errorTimerRef.current);
+      if (moveCloserTimer.current !== null) clearTimeout(moveCloserTimer.current);
     };
   }, []);
+
+  // "Move closer" hint — show after 3 seconds of no scan
+  useEffect(() => {
+    if (isActive) {
+      setShowMoveCloser(false);
+      moveCloserTimer.current = setTimeout(() => setShowMoveCloser(true), 3000);
+    } else {
+      setShowMoveCloser(false);
+      if (moveCloserTimer.current !== null) clearTimeout(moveCloserTimer.current);
+    }
+  }, [isActive]);
 
   const codeScanner = useCodeScanner({
     codeTypes: ['qr'],
@@ -114,6 +135,7 @@ export default function ScannerScreen() {
   const handleModalClose = useCallback(() => {
     setScannedOrderId(null);
     setIsActive(true);
+    setZoom(3);
     scanCooldown.current = false;
   }, []);
 
@@ -191,6 +213,8 @@ export default function ScannerScreen() {
         isActive={isActive}
         codeScanner={codeScanner}
         torch={torch ? 'on' : 'off'}
+        zoom={zoom}
+        enableZoomGesture={true}
       />
 
       {/* Overlay */}
@@ -238,16 +262,44 @@ export default function ScannerScreen() {
       {/* Title bar */}
       <View style={styles.titleBar}>
         <Text style={styles.titleText}>Scan QR Code</Text>
-        <TouchableOpacity
-          style={[styles.torchBtn, torch && { backgroundColor: 'rgba(255,255,255,0.25)' }]}
-          onPress={() => setTorch(t => !t)}
-          activeOpacity={0.7}
-          accessibilityLabel={torch ? 'Turn off flashlight' : 'Turn on flashlight'}
-          accessibilityRole="button"
-        >
-          <Icon name={torch ? 'flash' : 'flash-off-outline'} size={22} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.titleControls}>
+          {/* Zoom controls */}
+          <TouchableOpacity
+            style={styles.controlBtn}
+            onPress={() => setZoom(z => Math.max(1, z - 0.5))}
+            activeOpacity={0.7}
+            accessibilityLabel="Zoom out"
+          >
+            <Icon name="remove" size={18} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.zoomText}>{zoom.toFixed(1)}x</Text>
+          <TouchableOpacity
+            style={styles.controlBtn}
+            onPress={() => setZoom(z => Math.min(5, z + 0.5))}
+            activeOpacity={0.7}
+            accessibilityLabel="Zoom in"
+          >
+            <Icon name="add" size={18} color="#fff" />
+          </TouchableOpacity>
+          {/* Torch */}
+          <TouchableOpacity
+            style={[styles.controlBtn, torch && { backgroundColor: 'rgba(255,255,255,0.25)' }]}
+            onPress={() => setTorch(t => !t)}
+            activeOpacity={0.7}
+            accessibilityLabel={torch ? 'Turn off flashlight' : 'Turn on flashlight'}
+          >
+            <Icon name={torch ? 'flash' : 'flash-off-outline'} size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Move closer hint */}
+      {showMoveCloser && (
+        <View style={styles.moveCloserHint}>
+          <Icon name="arrow-down-outline" size={16} color="#fff" />
+          <Text style={styles.moveCloserText}>Move closer to the QR code or pinch to zoom</Text>
+        </View>
+      )}
 
       {/* Scanned Order Modal */}
       {scannedOrderId && (
@@ -426,10 +478,10 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     left: 0,
     right: 0,
     paddingTop: Platform.OS === 'ios' ? 56 : 44,
-    paddingBottom: 16,
+    paddingBottom: 12,
     paddingHorizontal: 16,
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
@@ -438,15 +490,44 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
-  torchBtn: {
-    position: 'absolute',
-    right: 16,
-    top: Platform.OS === 'ios' ? 56 : 44,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  titleControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  controlBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 6,
+  },
+  zoomText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+    marginHorizontal: 4,
+    minWidth: 30,
+    textAlign: 'center',
+  },
+  moveCloserHint: {
+    position: 'absolute',
+    bottom: 160,
+    left: 40,
+    right: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  moveCloserText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });

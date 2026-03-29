@@ -14,6 +14,7 @@ const KEYCHAIN_DEVICE_ID_SERVICE = 'com.campusone.deviceid';
 // API key for mobile app verification — loaded from .env via react-native-config
 // Hardcoded fallback ensures the app works even if Config fails to inject at build time
 const APP_API_KEY = Config.APP_API_KEY || '272183449088151d1938eca9e9de6cd2cb7a7001ad073cc050352117c1b52ca3';
+const APP_VERSION: string = require('../../package.json').version;
 
 // Session inactivity limit — 3 days in milliseconds
 const SESSION_MAX_INACTIVE_MS = 3 * 24 * 60 * 60 * 1000;
@@ -28,6 +29,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
     'X-App-Key': APP_API_KEY,
+    'X-App-Version': APP_VERSION,
   },
 });
 
@@ -108,7 +110,7 @@ const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 // ── Device ID (stable per-install, for per-device rate limiting) ──────────
 // Sent as X-Device-Id header so the backend can key rate limits per device
 // instead of per IP — prevents MEC WiFi users from sharing one rate-limit bucket.
-async function getOrCreateDeviceId(): Promise<string> {
+export async function getOrCreateDeviceId(): Promise<string> {
   try {
     const stored = await Keychain.getGenericPassword({ service: KEYCHAIN_DEVICE_ID_SERVICE });
     if (stored) return stored.password;
@@ -149,6 +151,13 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 api.interceptors.response.use(
   (r) => r,
   async (error: AxiosError) => {
+    // 426 Upgrade Required — app version too old, force update
+    if (error.response?.status === 426) {
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit('FORCE_UPDATE_REQUIRED', error.response.data);
+      return Promise.reject(error);
+    }
+
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     const isAuthRoute = original.url?.includes('/auth/login') || original.url?.includes('/auth/register') || original.url?.includes('/auth/verify-otp') || original.url?.includes('/auth/register-with-otp');
     if (error.response?.status === 401 && !original._retry && !isAuthRoute) {

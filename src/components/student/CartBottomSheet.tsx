@@ -13,6 +13,7 @@ import type { ThemeColors } from '../../theme/colors';
 import Icon from '../common/Icon';
 import { Order, CreateOrderResult } from '../../types';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import PINVerifyModal from '../common/PINVerifyModal';
 
 interface CartBottomSheetProps {
   visible: boolean;
@@ -76,6 +77,17 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
     ]).start(() => { unstable_batchedUpdates(() => { if (!skipClose) onClose(); callback(); }); });
   }, [slideAnim, backdropAnim, onClose]);
 
+  const [showPinModal, setShowPinModal] = useState(false);
+
+  const handlePayPress = () => {
+    if (isShopClosed || !hasBalance || !shopId || cartItems.length === 0) return;
+    if (user?.isPinSetup) {
+      setShowPinModal(true);
+    } else {
+      handlePay();
+    }
+  };
+
   const handlePay = async () => {
     if (isShopClosed || !hasBalance || !shopId || cartItems.length === 0) return;
     const savedTotal = cartTotal;
@@ -124,6 +136,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   };
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
       <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close cart" accessibilityRole="button" />
@@ -254,7 +267,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                 Insufficient balance. Add Rs.{cartTotal - balance} to proceed.
               </Text>
             )}
-            <TouchableOpacity onPress={() => { mediumHaptic(); handlePay(); }} disabled={isShopClosed || !hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`} accessibilityRole="button">
+            <TouchableOpacity onPress={() => { mediumHaptic(); handlePayPress(); }} disabled={isShopClosed || !hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`} accessibilityRole="button">
               <LinearGradient
                 colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
                 start={{ x: 0, y: 0 }}
@@ -273,6 +286,14 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
         )}
       </Animated.View>
     </Modal>
+    <PINVerifyModal
+      visible={showPinModal}
+      amount={cartTotal}
+      title={cartItems.map(c => c.item.name).join(', ')}
+      onVerified={() => { setShowPinModal(false); handlePay(); }}
+      onCancel={() => setShowPinModal(false)}
+    />
+    </>
   );
 }
 

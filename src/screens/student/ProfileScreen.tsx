@@ -128,6 +128,7 @@ export default function ProfileScreen({ navigation }: Props) {
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
+          keyboardDismissMode="on-drag"
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }>
@@ -240,6 +241,7 @@ export default function ProfileScreen({ navigation }: Props) {
           {[
             { icon: 'time-outline', label: 'Order History', subtitle: 'View past completed orders', onPress: () => navigation.navigate('OrderHistory') },
             { icon: 'lock-closed-outline', label: 'Change Password', subtitle: 'Update your account password', onPress: () => navigation.navigate('ChangePassword') },
+            { icon: 'keypad-outline', label: 'Transaction PIN', subtitle: 'Change or reset your payment PIN', onPress: () => navigation.navigate('TransactionPIN' as any) },
             { icon: 'notifications-outline', label: 'Notifications', subtitle: 'Manage your notifications', onPress: () => navigation.navigate('NotificationSettings') },
             { icon: 'shield-checkmark-outline', label: 'Privacy & Security', subtitle: 'Account security settings', onPress: () => navigation.navigate('PrivacySecurity') },
             { icon: 'help-circle-outline', label: 'Help & Support', subtitle: 'Get help with your orders', onPress: () => navigation.navigate('HelpSupport') },
@@ -460,26 +462,27 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   modalCard: {
     width: '100%', maxWidth: 320, backgroundColor: c.card,
-    borderRadius: 24, padding: 24, alignItems: 'center',
-    borderWidth: 1, borderColor: c.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 24, elevation: 16,
+    borderRadius: 28, padding: 28, alignItems: 'center',
+    borderColor: c.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 24, elevation: 16,
   },
   modalIconWrap: {
-    width: 60, height: 60, borderRadius: 30,
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: 'rgba(245,158,11,0.12)',
     justifyContent: 'center', alignItems: 'center', marginBottom: 14,
+    borderWidth: 2, borderColor: 'rgba(239,68,68,0.18)',
   },
-  modalIconRed: { backgroundColor: 'rgba(239,68,68,0.12)' },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: c.text, marginBottom: 8, textAlign: 'center' },
-  modalBalanceAmount: { fontSize: 28, fontWeight: '800', color: '#f59e0b', marginBottom: 2 },
+  modalIconRed: { backgroundColor: 'rgba(239,68,68,0.08)' },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: c.text, marginBottom: 8, textAlign: 'center' },
+  modalBalanceAmount: { fontSize: 32, fontWeight: '900', color: '#f59e0b', marginBottom: 2 },
   modalBalanceLabel: { fontSize: 13, color: c.textSecondary, marginBottom: 16 },
   modalWarningBox: {
     backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
-    borderRadius: 14, padding: 14, marginBottom: 20, width: '100%',
+    borderRadius: 16, padding: 14, marginBottom: 20, width: '100%',
   },
   modalWarningText: { fontSize: 13, color: '#b45309', lineHeight: 20, textAlign: 'center' },
   modalGotItBtn: {
-    width: '100%', paddingVertical: 13, borderRadius: 14,
+    width: '100%', paddingVertical: 13, borderRadius: 16,
     backgroundColor: '#f59e0b', alignItems: 'center',
   },
   modalGotItText: { fontSize: 15, fontWeight: '700', color: '#fff' },
@@ -487,15 +490,15 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   modalBold: { fontWeight: '700', color: c.text },
   modalActions: { flexDirection: 'row', gap: 12, width: '100%' },
   modalCancelBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 14,
+    flex: 1, paddingVertical: 13, borderRadius: 16,
     backgroundColor: c.muted, alignItems: 'center',
     borderWidth: 1, borderColor: c.border,
   },
-  modalCancelText: { fontSize: 14, fontWeight: '600', color: c.text },
+  modalCancelText: { fontSize: 14, fontWeight: '700', color: c.text },
   modalDeleteBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 14,
-    backgroundColor: '#ef4444', alignItems: 'center',
+    flex: 1, paddingVertical: 13, borderRadius: 16,
+    backgroundColor: '#dc2626', alignItems: 'center',
     flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
-  modalDeleteText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  modalDeleteText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });

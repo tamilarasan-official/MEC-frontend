@@ -68,13 +68,22 @@ const initialState: OrdersState = {
 export const createOrder = createAsyncThunk(
   'orders/createOrder',
   async (data: { shopId: string; items: Array<{ foodItemId: string; quantity: number }>; notes?: string }, { rejectWithValue }) => {
+    // Step 1: Make the API call — if this fails, the order was NOT created
+    let res: any;
     try {
       const payload = {
         shopId: data.shopId,
         items: data.items.map(i => ({ foodItemId: i.foodItemId, quantity: i.quantity })),
         ...(data.notes ? { special_instructions: data.notes } : {}),
       };
-      const res = await api.post('/orders', payload);
+      res = await api.post('/orders', payload);
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.message || 'Failed to create order');
+    }
+
+    // Step 2: Map the response — if this fails, the order WAS created so
+    // we must still return success to avoid showing "Order Failed" falsely
+    try {
       const d = res.data.data;
 
       // Handle split orders (mixed instant + regular items)
@@ -95,17 +104,26 @@ export const createOrder = createAsyncThunk(
         wasSplit: false,
         newBalance: d?.newBalance,
       } as CreateOrderResult;
-    } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to create order');
+    } catch {
+      // Mapping failed but order exists — return a minimal success result
+      const d = res.data?.data;
+      const fallbackOrder = mapOrder(d?.order || d || {});
+      return {
+        order: fallbackOrder,
+        wasSplit: false,
+        newBalance: d?.newBalance,
+      } as CreateOrderResult;
     }
   },
 );
 
 export const fetchMyOrders = createAsyncThunk(
   'orders/fetchMyOrders',
-  async (_, { rejectWithValue }) => {
+  async (params: { serviceType?: string } | undefined, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my', { params: { limit: 100 } });
+      const qp: any = { limit: 100 };
+      if (params?.serviceType) qp.serviceType = params.serviceType;
+      const res = await api.get('/orders/my', { params: qp });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch orders');

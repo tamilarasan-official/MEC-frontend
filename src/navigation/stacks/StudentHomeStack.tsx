@@ -16,6 +16,7 @@ import HelpSupportScreen from '../../screens/student/HelpSupportScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
 import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
 import ChangePasswordScreen from '../../screens/shared/ChangePasswordScreen';
+import TransactionPINScreen from '../../screens/shared/TransactionPINScreen';
 
 const Stack = createNativeStackNavigator<StudentHomeStackParamList>();
 
@@ -42,6 +43,7 @@ export default function StudentHomeStack() {
       <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen name="TransactionPIN" component={TransactionPINScreen} />
     </Stack.Navigator>
   );
 }

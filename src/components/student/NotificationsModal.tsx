@@ -76,6 +76,12 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
             {!item.read && <View style={styles.unreadDot} />}
           </View>
           <Text style={styles.notifMessage} numberOfLines={2}>{item.message}</Text>
+          {item.type === 'order' && item.data?.pickupToken && (
+            <View style={styles.pickupIdRow}>
+              <Icon name="qr-code-outline" size={12} color="#3b82f6" />
+              <Text style={styles.pickupIdText}>Pickup ID: {String(item.data.pickupToken)}</Text>
+            </View>
+          )}
           <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
         </View>
       </TouchableOpacity>
@@ -206,6 +212,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   notifTitleUnread: { fontWeight: '700' },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' },
   notifMessage: { fontSize: 13, color: colors.mutedForeground, lineHeight: 18, marginBottom: 4 },
+  pickupIdRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  pickupIdText: { fontSize: 12, fontWeight: '700', color: '#3b82f6' },
   notifTime: { fontSize: 11, color: colors.mutedForeground },
 
   // Empty

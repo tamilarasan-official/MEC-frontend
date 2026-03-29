@@ -5,7 +5,7 @@ import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance, fetchTransactions, fetchDashboardStats, fetchQRPayments } from '../store/slices/userSlice';
 import { fetchMyActiveOrders, fetchActiveShopOrders, patchOrderStatus } from '../store/slices/ordersSlice';
 import { updateShopStatus } from '../store/slices/menuSlice';
-import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
+import { ORDER_STATUS_POPUP_EVENT, FORCE_LOGOUT_EVENT } from '../constants/events';
 import {
   isDuplicate,
   displayLocalNotification,
@@ -22,6 +22,7 @@ export interface OrderUpdatePayload {
   orderId: string;
   orderNumber: string;
   status: string;
+  pickupToken?: string;
   previousStatus?: string;
   updatedAt: string;
   notification?: { title: string; body: string };
@@ -99,6 +100,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   socket.removeAllListeners('notification');
   socket.removeAllListeners('shop:status_changed');
   socket.removeAllListeners('payment:received');
+  socket.removeAllListeners('force_logout');
 
   // Order status changed
   // NOTE: Captain/owner sockets are in BOTH user:userId AND shop:shopId rooms,
@@ -135,9 +137,12 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
       if (isStudentOrEatMode && ['preparing', 'partially_ready', 'ready', 'completed', 'cancelled'].includes(status)) {
         if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
+        const popupItemNames = (payload.items || []).map(i => i.name).filter(Boolean);
         DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {
           status,
           orderNumber: payload.orderNumber || payload.orderId.slice(-6),
+          pickupToken: payload.pickupToken,
+          itemNames: popupItemNames,
         });
       }
 
@@ -160,7 +165,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         type: 'order',
         title,
         message,
-        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status },
+        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status, pickupToken: payload.pickupToken },
         createdAt: payload.updatedAt,
         read: false,
       }));
@@ -318,9 +323,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       // Validate required payload fields
       if (!payload || !payload.paymentRequestId || !payload.amount || !payload.studentName) return;
 
-      // Dedup: prevent duplicate payment notifications on socket reconnect
-      const dedupKey = `payment:${payload.paymentRequestId}:${payload.paidCount}`;
-      if (isDuplicate(dedupKey)) return;
+      // Dedup: prevent duplicate payment notifications (socket reconnect + FCM)
+      // Uses paymentRequestId so both socket and FCM handlers share the same key
+      if (isDuplicate(`payment:${payload.paymentRequestId}`)) return;
 
       if (__DEV__) console.log('[Socket] Payment received:', payload);
 
@@ -348,6 +353,12 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in payment:received handler:', e);
     }
+  });
+
+  // Force logout — another device logged in with this account
+  socket.on('force_logout', (payload: { reason: string }) => {
+    if (__DEV__) console.log('[Socket] Force logout received:', payload.reason);
+    DeviceEventEmitter.emit(FORCE_LOGOUT_EVENT, { reason: payload.reason });
   });
 };
 

@@ -18,6 +18,7 @@ import walletService from '../../services/walletService';
 import { DietFilter } from '../../types';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 import ChangePasswordScreen from '../../screens/shared/ChangePasswordScreen';
+import TransactionPINScreen from '../../screens/shared/TransactionPINScreen';
 
 const DIET_OPTIONS: { label: string; value: DietFilter }[] = [
   { label: 'All', value: 'all' },
@@ -40,6 +41,7 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
   const roleLabel = (user?.role || 'captain').charAt(0).toUpperCase() + (user?.role || 'captain').slice(1);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showTransactionPIN, setShowTransactionPIN] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
   const signOutScale = useRef(new Animated.Value(0.9)).current;
 
@@ -184,6 +186,17 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
             <Text style={styles.menuItemText}>Change Password</Text>
           </TouchableOpacity>
 
+          {/* Transaction PIN (eat mode) */}
+          {userMode === 'eat' && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { onClose(); setTimeout(() => setShowTransactionPIN(true), 100); }}
+              activeOpacity={0.7}>
+              <Icon name="keypad-outline" size={18} color="#f59e0b" />
+              <Text style={styles.menuItemText}>Transaction PIN</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Help & Support */}
           <TouchableOpacity
             style={styles.menuItem}
@@ -250,6 +263,11 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
     {/* Change Password Modal */}
     <Modal visible={showChangePassword} animationType="slide" statusBarTranslucent onRequestClose={() => setShowChangePassword(false)}>
       <ChangePasswordScreen onClose={() => setShowChangePassword(false)} />
+    </Modal>
+
+    {/* Transaction PIN Modal */}
+    <Modal visible={showTransactionPIN} animationType="slide" statusBarTranslucent onRequestClose={() => setShowTransactionPIN(false)}>
+      <TransactionPINScreen onClose={() => setShowTransactionPIN(false)} />
     </Modal>
 
     {/* Sign Out Confirmation Modal */}

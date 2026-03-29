@@ -30,7 +30,7 @@ const BASE_FILTERS: { key: FilterKey; label: string; icon: string; color: string
   { key: 'ready', label: 'Ready', icon: 'cube-outline', color: '#3b82f6' },
 ];
 
-const PARTIAL_READY_FILTER = { key: 'partially_ready' as FilterKey, label: 'Partial Ready', icon: 'hourglass-outline', color: '#3b82f6' };
+const PARTIAL_READY_FILTER = { key: 'partially_ready' as FilterKey, label: 'Partial Ready', icon: 'hourglass-outline', color: '#8b5cf6' };
 
 export default function OwnerHomeScreen() {
   const { colors } = useTheme();
@@ -206,7 +206,9 @@ export default function OwnerHomeScreen() {
     try {
       await dispatch(updateOrderStatus({ orderId, status: newStatus })).unwrap();
     } catch {
-      Alert.alert('Error', 'Failed to update order status');
+      // Silently refresh — order likely already moved by another captain or auto-transition
+      dispatch(fetchActiveShopOrders());
+      dispatch(fetchDashboardStats());
     }
     setUpdatingId(null);
   };
@@ -494,7 +496,7 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
     switch (order.status) {
       case 'pending': return { bg: 'rgba(249,115,22,0.1)', iconBg: 'rgba(249,115,22,0.2)', iconColor: '#f97316', icon: 'time' };
       case 'preparing': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'restaurant' };
-      case 'partially_ready': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'hourglass' };
+      case 'partially_ready': return { bg: 'rgba(139,92,246,0.1)', iconBg: 'rgba(139,92,246,0.2)', iconColor: '#8b5cf6', icon: 'hourglass' };
       case 'ready': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'checkmark-circle' };
       default: return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'time' };
     }
@@ -513,172 +515,115 @@ const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdat
   };
   const badge = getBadgeColor();
 
+  const displayTotal = (order as any)._splitView
+    ? order.items.reduce((sum, i) => sum + (i.offerPrice || i.price) * i.quantity, 0)
+    : order.total;
+
   return (
-    <View style={styles.orderCard}>
-      {/* Card Header */}
-      <View style={[styles.cardHeader, { backgroundColor: headerStyle.bg }]}>
-        <View style={styles.cardHeaderLeft}>
-          <View style={[styles.statusIconCircle, { backgroundColor: headerStyle.iconBg }]}>
-            <Icon name={headerStyle.icon} size={18} color={headerStyle.iconColor} />
+    <View style={[styles.orderCard, (order.isReadyServe || order.status === 'ready') && styles.orderCardWithTick]}>
+      <View style={styles.cardContent}>
+        {/* Header: token + time + customer + status + total */}
+        <View style={styles.cardHeader}>
+          <Text style={styles.tokenText}>#{order.pickupToken}</Text>
+          <Text style={styles.timeText}>{timeSince}</Text>
+          <Text style={styles.customerName} numberOfLines={1}>{order.userName || '—'}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
+            <Text style={[styles.statusBadgeText, { color: badge.text }]}>{getBadgeLabel()}</Text>
           </View>
-          <View>
-            <Text style={styles.tokenText}>#{order.pickupToken}</Text>
-            <Text style={styles.timeText}>{timeSince}</Text>
-          </View>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
-          <Text style={[styles.statusBadgeText, { color: badge.text }]}>{getBadgeLabel()}</Text>
-        </View>
-      </View>
-
-      {/* Card Body */}
-      <View style={styles.cardBody}>
-        {/* Customer */}
-        <View style={styles.customerRow}>
-          <Icon name="person-outline" size={14} color={colors.mutedForeground} />
-          <Text style={styles.customerName}>{order.userName || 'Unknown'}</Text>
+          <Text style={styles.totalValue}>₹{displayTotal}</Text>
         </View>
 
-        {/* Items */}
-        <View style={styles.itemsList}>
-          {order.items?.map((item, idx) => {
-            const iStatus = item.itemStatus || 'preparing';
-            const isReady = iStatus === 'ready';
-            const isItemDelivered = iStatus === 'delivered';
-            const iconName = isItemDelivered ? 'checkmark-done-circle' : isReady ? 'checkbox' : 'square-outline';
-            const iconColor = isItemDelivered ? '#22c55e' : isReady ? '#3b82f6' : colors.mutedForeground;
-            const apiIdx = (item as any)._originalIdx ?? idx;
-            return (
-              <View key={apiIdx} style={styles.itemRow}>
-                {canCheckDeliver && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (iStatus === 'preparing') onItemDelivered(order.id, apiIdx);
-                      else if (iStatus === 'ready') onItemDelivered(order.id, apiIdx);
-                    }}
-                    style={styles.checkboxBtn}
-                    disabled={isItemDelivered}
-                    accessibilityLabel={
-                      isItemDelivered ? `${item.name} delivered` :
-                      isReady ? `Deliver ${item.name}` :
-                      `Mark ${item.name} ready`
-                    }
-                    accessibilityRole="button"
-                  >
-                    <Icon name={iconName} size={20} color={iconColor} />
-                  </TouchableOpacity>
-                )}
-                {resolveImageUrl(item.image) ? (
-                  <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} accessibilityLabel={`${item.name} image`} />
-                ) : (
-                  <View style={styles.itemImgPlaceholder}>
-                    <Icon name="restaurant-outline" size={14} color={colors.mutedForeground} />
-                  </View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={[
-                    styles.itemName,
-                    isItemDelivered && { textDecorationLine: 'line-through', color: colors.mutedForeground },
-                  ]}>
-                    {item.name}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.itemMeta}>
-                      <Text style={{ color: colors.accent, fontWeight: '600' }}>{item.quantity}x</Text>
-                      {' '}@ Rs. {item.offerPrice || item.price}
-                    </Text>
-                    {isReady && <Text style={{ fontSize: 10, fontWeight: '700', color: '#3b82f6' }}>READY</Text>}
-                    {isItemDelivered && <Text style={{ fontSize: 10, fontWeight: '700', color: '#22c55e' }}>DELIVERED</Text>}
-                  </View>
-                </View>
-                <Text style={styles.itemTotal}>Rs. {(item.offerPrice || item.price) * item.quantity}</Text>
+      {/* Items */}
+      {order.items?.map((item, idx) => {
+        const iStatus = item.itemStatus || 'preparing';
+        const isReady = iStatus === 'ready';
+        const isItemDelivered = iStatus === 'delivered';
+        const apiIdx = (item as any)._originalIdx ?? idx;
+        return (
+          <View key={apiIdx} style={styles.itemRow}>
+            {canCheckDeliver && (
+              <TouchableOpacity
+                onPress={() => { onItemDelivered(order.id, apiIdx); }}
+                style={styles.checkboxBtn}
+                disabled={isItemDelivered}
+              >
+                <Icon
+                  name={isItemDelivered ? 'checkmark-circle' : isReady ? 'checkbox' : 'square-outline'}
+                  size={16}
+                  color={isItemDelivered ? '#22c55e' : isReady ? '#3b82f6' : colors.mutedForeground}
+                />
+              </TouchableOpacity>
+            )}
+            {resolveImageUrl(item.image) ? (
+              <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} />
+            ) : (
+              <View style={styles.itemImgPlaceholder}>
+                <Icon name="restaurant-outline" size={10} color={colors.mutedForeground} />
               </View>
-            );
-          })}
-        </View>
+            )}
+            <Text style={[styles.itemName, isItemDelivered && styles.itemDone]} numberOfLines={1}>
+              {item.quantity}x {item.name}
+            </Text>
+            {isReady && <Text style={styles.readyTag}>READY</Text>}
+            {isItemDelivered && <Text style={styles.doneTag}>DONE</Text>}
+            <Text style={styles.itemPrice}>₹{(item.offerPrice || item.price) * item.quantity}</Text>
+          </View>
+        );
+      })}
 
-        {/* Total */}
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>
-            {(order as any)._splitView ? `Subtotal (${order.items.length} item${order.items.length !== 1 ? 's' : ''})` : 'Total'}
-          </Text>
-          <Text style={styles.totalValue}>
-            Rs. {(order as any)._splitView
-              ? order.items.reduce((sum, i) => sum + (i.offerPrice || i.price) * i.quantity, 0)
-              : order.total}
-          </Text>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionRow}>
-          {order.status === 'pending' && (
-            <>
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 2 }]}
-                onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'preparing'); }}
-                disabled={isUpdating}
-                activeOpacity={0.7}
-                accessibilityLabel="Start preparing"
-                accessibilityRole="button"
-              >
-                {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
-                  <>
-                    <Icon name="restaurant-outline" size={16} color="#fff" />
-                    <Text style={[styles.actionText, { color: '#fff' }]}>Start Preparing</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => { mediumHaptic(); onReject(order.id, order.pickupToken); }}
-                disabled={isUpdating}
-                activeOpacity={0.7}
-                accessibilityLabel="Reject order"
-                accessibilityRole="button"
-              >
-                <Icon name="close-circle" size={18} color={colors.destructive} />
-              </TouchableOpacity>
-            </>
-          )}
-          {/* No "Mark Ready" button in preparing — items auto-move the order when all checked ready */}
-          {(order.status === 'ready' || order.isReadyServe) && (
+      {/* Action Buttons */}
+      <View style={styles.actionRow}>
+        {order.status === 'pending' && (
+          <>
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: order.isReadyServe ? '#f97316' : colors.accent, flex: 1 }]}
-              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
+              style={[styles.actionBtn, styles.startBtn]}
+              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'preparing'); }}
               disabled={isUpdating}
               activeOpacity={0.7}
-              accessibilityLabel={order.isReadyServe ? 'Mark delivered' : 'Complete order'}
-              accessibilityRole="button"
             >
-              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
-                <>
-                  <Icon name="checkmark-done" size={18} color="#fff" />
-                  <Text style={[styles.actionText, { color: '#fff', fontWeight: '700' }]}>
-                    {order.isReadyServe ? 'Delivered' : 'Complete Order'}
-                  </Text>
-                </>
-              )}
+              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> :
+                <Text style={styles.startBtnText}>Start Preparing</Text>}
             </TouchableOpacity>
-          )}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.rejectBtn]}
+              onPress={() => { mediumHaptic(); onReject(order.id, order.pickupToken); }}
+              disabled={isUpdating}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.rejectText}>Reject</Text>
+            </TouchableOpacity>
+          </>
+        )}
+        {/* Ready orders use tick strip — no button needed here */
+        false && (
+          <View />
+        )}
           {order.status === 'partially_delivered' && (
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: colors.accent, flex: 1 }]}
+              style={[styles.actionBtn, styles.completeBtn]}
               onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
               disabled={isUpdating}
               activeOpacity={0.7}
-              accessibilityLabel="Complete all items"
-              accessibilityRole="button"
             >
-              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> : (
-                <>
-                  <Icon name="checkmark-done" size={18} color="#fff" />
-                  <Text style={[styles.actionText, { color: '#fff', fontWeight: '700' }]}>Complete All</Text>
-                </>
-              )}
+              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> :
+                <Text style={styles.completeBtnText}>Complete All</Text>}
             </TouchableOpacity>
           )}
         </View>
       </View>
+
+      {/* Tick strip for ready-to-serve and ready orders */}
+      {(order.isReadyServe || order.status === 'ready') && (
+        <TouchableOpacity
+          style={styles.tickStrip}
+          onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
+          disabled={isUpdating}
+          activeOpacity={0.7}
+        >
+          {isUpdating ? <ActivityIndicator size="small" color="#fff" /> :
+            <Icon name="checkmark" size={20} color="#fff" />}
+        </TouchableOpacity>
+      )}
     </View>
   );
 });
@@ -719,66 +664,62 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   filterLabel: { fontSize: 12, fontWeight: '600', color: colors.mutedForeground },
 
   // Order card
+  // ── Compact order card ──
   orderCard: {
-    borderRadius: 20, overflow: 'hidden',
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-    marginBottom: 12,
+    backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+    marginBottom: 6, overflow: 'hidden',
+  },
+  orderCardWithTick: {
+    flexDirection: 'row',
+  },
+  cardContent: {
+    flex: 1, paddingHorizontal: 10, paddingVertical: 6,
   },
   cardHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', marginBottom: 3,
   },
-  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statusIconCircle: {
-    width: 40, height: 40, borderRadius: 20,
+  tokenText: { fontSize: 16, fontWeight: '800', color: colors.foreground, marginRight: 4 },
+  timeText: { fontSize: 11, color: colors.mutedForeground, marginRight: 6 },
+  customerName: { flex: 1, fontSize: 13, color: colors.mutedForeground, marginRight: 4 },
+  statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginRight: 4 },
+  statusBadgeText: { fontSize: 11, fontWeight: '700' },
+  totalValue: { fontSize: 15, fontWeight: '800', color: colors.accent },
+  tickStrip: {
+    width: 40, backgroundColor: '#22c55e',
     justifyContent: 'center', alignItems: 'center',
   },
-  tokenText: { fontSize: 22, fontWeight: '800', color: colors.foreground },
-  timeText: { fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
-  statusBadgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
-
-  // Card body
-  cardBody: { padding: 16, paddingTop: 12 },
-  customerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-  customerName: { fontSize: 14, color: colors.foreground },
 
   // Items
-  itemsList: { marginBottom: 12 },
   itemRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 3,
   },
-  checkboxBtn: { marginRight: 8 },
-  itemImg: {
-    width: 40, height: 40, borderRadius: 12, marginRight: 10,
-  },
+  checkboxBtn: { marginRight: 5 },
+  itemImg: { width: 24, height: 24, borderRadius: 6, marginRight: 6 },
   itemImgPlaceholder: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: colors.muted,
-    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+    width: 24, height: 24, borderRadius: 6, backgroundColor: colors.muted,
+    justifyContent: 'center', alignItems: 'center', marginRight: 6,
   },
-  itemName: { fontSize: 13, fontWeight: '500', color: colors.foreground },
-  itemMeta: { fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
-  itemTotal: { fontSize: 13, fontWeight: '600', color: colors.foreground },
-
-  // Total
-  totalRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
-  },
-  totalLabel: { fontSize: 14, fontWeight: '600', color: colors.foreground },
-  totalValue: { fontSize: 16, fontWeight: '800', color: colors.accent },
+  itemName: { flex: 1, fontSize: 14, fontWeight: '500', color: colors.foreground },
+  itemDone: { textDecorationLine: 'line-through', color: colors.mutedForeground },
+  readyTag: { fontSize: 10, fontWeight: '700', color: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginLeft: 4 },
+  doneTag: { fontSize: 10, fontWeight: '700', color: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, marginLeft: 4 },
+  itemPrice: { fontSize: 13, fontWeight: '600', color: colors.mutedForeground, marginLeft: 6 },
 
   // Actions
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actionRow: { flexDirection: 'row', marginTop: 4, gap: 4 },
   actionBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 12, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 7, borderRadius: 8,
   },
+  startBtn: { backgroundColor: colors.accent, flex: 1 },
+  startBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
   rejectBtn: {
-    width: 48, borderWidth: 1, borderColor: colors.destructive,
-    backgroundColor: 'transparent', borderRadius: 14,
+    paddingHorizontal: 14, borderWidth: 1, borderColor: colors.destructive,
+    backgroundColor: 'transparent', borderRadius: 8,
   },
+  rejectText: { fontSize: 14, fontWeight: '700', color: colors.destructive },
+  completeBtn: { backgroundColor: '#22c55e', paddingHorizontal: 14 },
+  completeBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   actionText: { fontSize: 13, fontWeight: '600' },
 
   // Empty

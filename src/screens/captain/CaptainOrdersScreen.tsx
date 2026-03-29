@@ -21,7 +21,7 @@ const BASE_FILTERS: { key: FilterStatus; label: string; icon: string; activeColo
   { key: 'partially_delivered', label: 'Partial', icon: 'checkmark-done-outline', activeColor: '#60a5fa' },
 ];
 
-const PARTIAL_READY_FILTER = { key: 'partially_ready' as FilterStatus, label: 'Partial Ready', icon: 'hourglass-outline', activeColor: '#3b82f6' };
+const PARTIAL_READY_FILTER = { key: 'partially_ready' as FilterStatus, label: 'Partial Ready', icon: 'hourglass-outline', activeColor: '#8b5cf6' };
 
 export default function CaptainOrdersScreen() {
   const { colors } = useTheme();
@@ -114,7 +114,7 @@ export default function CaptainOrdersScreen() {
     try {
       await dispatch(updateOrderStatus({ orderId, status: newStatus })).unwrap();
     } catch {
-      Alert.alert('Error', 'Failed to update order status');
+      dispatch(fetchActiveShopOrders());
     }
     setUpdatingId(null);
   };

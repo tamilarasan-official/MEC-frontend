@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator, Animated, Easing,
 } from 'react-native';
 import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -20,7 +20,7 @@ const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'partially_ready', 'rea
 const statusConfig: Record<string, { icon: string; label: string; bg: string; color: string }> = {
   pending: { icon: 'time-outline', label: 'Ordered', bg: 'rgba(234,179,8,0.12)', color: '#eab308' },
   preparing: { icon: 'flame-outline', label: 'Preparing', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
-  partially_ready: { icon: 'hourglass-outline', label: 'Partially Ready', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
+  partially_ready: { icon: 'hourglass-outline', label: 'Partially Ready', bg: 'rgba(139,92,246,0.12)', color: '#8b5cf6' },
   ready: { icon: 'checkmark-circle-outline', label: 'Ready for Pickup', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
   partially_delivered: { icon: 'checkmark-circle-outline', label: 'Partial Delivery', bg: 'rgba(59,130,246,0.12)', color: '#3b82f6' },
   completed: { icon: 'checkmark-done-outline', label: 'Delivered', bg: 'rgba(16,185,129,0.12)', color: '#10b981' },
@@ -115,13 +115,7 @@ export default function OrdersScreen() {
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}>
         {displayOrders.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <Icon name="cube-outline" size={36} color={colors.textMuted} />
-            </View>
-            <Text style={styles.emptyTitle}>No active orders</Text>
-            <Text style={styles.emptySub}>Place an order to get started</Text>
-          </View>
+          <AnimatedEmptyState colors={colors} styles={styles} onStartOrdering={() => navigation.getParent()?.navigate('Home')} />
         ) : (
           displayOrders.map(order => {
             const sc = statusConfig[order.status] || statusConfig.pending;
@@ -226,13 +220,13 @@ export default function OrdersScreen() {
 
         {/* View Order History */}
         <TouchableOpacity
-          style={styles.historyBtn}
-          activeOpacity={0.8}
+          style={styles.historyLink}
+          activeOpacity={0.6}
           onPress={() => navigation.navigate('Home', { screen: 'OrderHistory' })}
           accessibilityLabel="View order history"
           accessibilityRole="button">
-          <Icon name="time-outline" size={18} color={colors.textMuted} />
-          <Text style={styles.historyBtnText}>View Order History</Text>
+          <Icon name="time-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.historyLinkText}>View Order History</Text>
         </TouchableOpacity>
 
         <View style={styles.bottomSpacer} />
@@ -244,6 +238,56 @@ export default function OrdersScreen() {
       )}
     </View>
     </ScreenWrapper>
+  );
+}
+
+/* ─── Animated Empty State ─── */
+function AnimatedEmptyState({ colors, styles, onStartOrdering }: { colors: any; styles: any; onStartOrdering: () => void }) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const arrowAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(arrowAnim, { toValue: 6, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(arrowAnim, { toValue: 0, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.View style={[styles.empty, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <Animated.View style={[styles.emptyPulseOuter, { transform: [{ scale: pulseAnim }] }]}>
+        <View style={styles.emptyPulseInner}>
+          <Icon name="bag-handle-outline" size={32} color={colors.accent} />
+        </View>
+      </Animated.View>
+      <Text style={styles.emptyTitle}>No active orders</Text>
+      <Text style={styles.emptySub}>Your orders will appear here once you place one from the menu</Text>
+      <TouchableOpacity style={styles.startOrderBtn} onPress={onStartOrdering} activeOpacity={0.8}>
+        <Text style={styles.startOrderText}>Start Ordering</Text>
+        <Animated.View style={{ transform: [{ translateX: arrowAnim }] }}>
+          <Icon name="arrow-forward" size={18} color="#fff" />
+        </Animated.View>
+      </TouchableOpacity>
+      <View style={styles.hintRow}>
+        <Icon name="flash-outline" size={14} color={colors.textMuted} />
+        <Text style={styles.hintText}>Orders are tracked in real-time</Text>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -263,14 +307,28 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   list: { padding: 16, paddingTop: 0 },
 
-  // Empty
-  empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyIcon: {
-    width: 64, height: 64, borderRadius: 20,
-    backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+  // Empty — animated
+  empty: { alignItems: 'center', paddingTop: 50, gap: 10, paddingHorizontal: 20 },
+  emptyPulseOuter: {
+    width: 96, height: 96, borderRadius: 48,
+    borderWidth: 2, borderStyle: 'dashed', borderColor: colors.accent + '40',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 8,
   },
-  emptyTitle: { fontSize: 15, fontWeight: '600', color: colors.textMuted },
-  emptySub: { fontSize: 13, color: colors.textMuted },
+  emptyPulseInner: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: colors.accent + '15',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+  emptySub: { fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20, maxWidth: 260 },
+  startOrderBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.accent, paddingHorizontal: 28, paddingVertical: 14,
+    borderRadius: 16, marginTop: 8,
+  },
+  startOrderText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, opacity: 0.5 },
+  hintText: { fontSize: 12, color: colors.textMuted },
 
   // Order Card
   orderCard: {
@@ -354,12 +412,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   flex1: { flex: 1 },
 
-  // History Button
-  historyBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    padding: 16, borderRadius: 16, marginTop: 4,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+  // History Link
+  historyLink: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 14, marginTop: 4,
   },
-  historyBtnText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  historyLinkText: { fontSize: 12, fontWeight: '500', color: colors.textMuted },
   bottomSpacer: { height: 100 },
 });
