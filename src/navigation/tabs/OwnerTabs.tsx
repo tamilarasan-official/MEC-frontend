@@ -11,6 +11,8 @@ import { OwnerTabParamList } from '../../types';
 import OwnerHomeScreen from '../../screens/owner/OwnerHomeScreen';
 import OwnerMenuScreen from '../../screens/owner/OwnerMenuScreen';
 import OwnerAnalyticsScreen from '../../screens/owner/OwnerAnalyticsScreen';
+import OldStationeryAnalyticsScreen from '../../screens/owner/StationeryAnalyticsScreen';
+import StationeryAnalyticsScreen from '../../screens/stationery_owner/StationeryAnalyticsScreen';
 import CaptainPrepListScreen from '../../screens/captain/CaptainPrepListScreen';
 import OwnerHistoryScreen from '../../screens/owner/OwnerHistoryScreen';
 import CaptainEatScreen from '../../screens/captain/CaptainEatScreen';
@@ -18,8 +20,10 @@ import CaptainEatOrdersScreen from '../../screens/captain/CaptainEatOrdersScreen
 import CaptainScannerScreen from '../../screens/captain/CaptainScannerScreen';
 import ScannerScreen from '../../screens/student/ScannerScreen';
 import StationeryHomeScreen from '../../screens/stationery_owner/StationeryHomeScreen';
+import StationeryHistoryScreen from '../../screens/stationery_owner/StationeryHistoryScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
 import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
+import TransactionPINScreen from '../../screens/shared/TransactionPINScreen';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -50,6 +54,12 @@ const PrepListIcon = ({ focused, color }: { focused: boolean; color: string }) =
 const MenuIcon = ({ focused, color }: { focused: boolean; color: string }) => (
   <TabPill focused={focused}>
     <Icon name={focused ? 'restaurant' : 'restaurant-outline'} size={22} color={color} />
+  </TabPill>
+);
+
+const AnalyticsIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+  <TabPill focused={focused}>
+    <Icon name={focused ? 'bar-chart' : 'bar-chart-outline'} size={22} color={color} />
   </TabPill>
 );
 
@@ -147,8 +157,12 @@ export default function OwnerTabs() {
           tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
+            borderTopWidth: 0,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 8,
             height: tabBarHeight,
             paddingBottom: tabBarPaddingBottom,
             paddingTop: 4,
@@ -193,6 +207,11 @@ export default function OwnerTabs() {
           component={TransactionDetailScreen}
           options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
         />
+        <Tab.Screen
+          name="TransactionPIN"
+          component={TransactionPINScreen}
+          options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }}
+        />
       </Tab.Navigator>
     );
   }
@@ -208,8 +227,12 @@ export default function OwnerTabs() {
           tabBarHideOnKeyboard: true,
           tabBarStyle: {
             backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
+            borderTopWidth: 0,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 8,
             height: tabBarHeight,
             paddingBottom: tabBarPaddingBottom,
             paddingTop: 4,
@@ -250,15 +273,34 @@ export default function OwnerTabs() {
         )}
         <Tab.Screen
           name="History"
-          component={OwnerHistoryScreen}
+          component={isNonFoodShop ? StationeryHistoryScreen : OwnerHistoryScreen}
           options={{
             tabBarLabel: 'History',
             tabBarIcon: HistoryIcon,
           }}
         />
+        {isNonFoodShop && (
+          <Tab.Screen
+            name="StationeryAnalytics"
+            component={StationeryAnalyticsScreen}
+            options={{
+              tabBarLabel: 'Analytics',
+              tabBarIcon: AnalyticsIcon,
+            }}
+          />
+        )}
+        {/* Hidden screens (food shop analytics + old stationery analytics for navigation compat) */}
         <Tab.Screen
           name="Analytics"
           component={OwnerAnalyticsScreen}
+          options={{
+            tabBarButton: () => null,
+            tabBarItemStyle: { display: 'none' },
+          }}
+        />
+        <Tab.Screen
+          name="OldStationeryAnalytics"
+          component={OldStationeryAnalyticsScreen}
           options={{
             tabBarButton: () => null,
             tabBarItemStyle: { display: 'none' },

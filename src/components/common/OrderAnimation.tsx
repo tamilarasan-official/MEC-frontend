@@ -45,7 +45,7 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
   const iconScale = useMemo(() => new Animated.Value(0.4), []);
   const iconOpacity = useMemo(() => new Animated.Value(0), []);
   const contentOpacity = useMemo(() => new Animated.Value(0), []);
-  const toastSlide = useMemo(() => new Animated.Value(100), []);
+  const toastSlide = useMemo(() => new Animated.Value(60), []);
   const toastOpacity = useMemo(() => new Animated.Value(0), []);
 
   // Failure animations
@@ -62,6 +62,8 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
 
     if (type === 'success') {
       // Play notification sound
+      // Android: loads from res/raw/ by name (no extension, no basePath)
+      // iOS: loads from main bundle with extension
       const fileName = Platform.OS === 'android' ? 'notification_sound' : 'notification_sound.wav';
       const basePath = Platform.OS === 'android' ? undefined : Sound.MAIN_BUNDLE;
       const sound = new Sound(fileName, basePath, (error) => {
@@ -83,10 +85,10 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
         Animated.timing(contentOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start();
       }, 250);
 
-      // Slide up "Money Deducted" toast after content appears
+      // Slide up toast with fade in
       setTimeout(() => {
         Animated.parallel([
-          Animated.timing(toastSlide, { toValue: 0, duration: 350, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          Animated.spring(toastSlide, { toValue: 0, friction: 6, useNativeDriver: true }),
           Animated.timing(toastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
         ]).start();
       }, 500);
@@ -229,7 +231,7 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
     return (
       <Modal visible transparent animationType="fade" statusBarTranslucent>
         <TouchableOpacity activeOpacity={1} onPress={handleDismiss} style={styles.overlay}>
-          {/* Gradient background — fills entire screen including notch/cutout */}
+          {/* Gradient background -- fills entire screen including notch/cutout */}
           <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFill} />
 
           {/* Animated icon */}
@@ -448,7 +450,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Money Deducted toast
   moneyToast: {
-    position: 'absolute', bottom: 32, left: 20, right: 20,
+    position: 'absolute', bottom: 100, left: 20, right: 20,
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: '#0f0f14', borderRadius: 18,
     padding: 16,

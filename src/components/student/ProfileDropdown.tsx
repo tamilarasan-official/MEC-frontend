@@ -196,7 +196,7 @@ export default function ProfileDropdown({
           <Animated.View style={[styles.signOutDialog, { transform: [{ scale: signOutScale }] }]}>
             <View style={styles.signOutIconWrap}>
               <View style={styles.signOutIconInner}>
-                <Icon name="log-out-outline" size={26} color="#dc2626" />
+                <Icon name="log-out-outline" size={28} color={colors.error} />
               </View>
             </View>
             <Text style={styles.signOutTitle}>Sign Out</Text>
@@ -300,7 +300,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   signOutIconWrap: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: 'rgba(239,68,68,0.08)',
-    borderWidth: 2, borderColor: 'rgba(239,68,68,0.15)',
+    borderWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(239,68,68,0.15)',
     justifyContent: 'center', alignItems: 'center', marginBottom: 16,
   },
   signOutIconInner: {
@@ -313,7 +313,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   signOutMessage: {
     fontSize: 13, color: colors.textMuted, textAlign: 'center',
-    lineHeight: 19, marginBottom: 24,
+    lineHeight: 20, marginBottom: 24,
   },
   signOutActions: {
     flexDirection: 'row', gap: 12, width: '100%',

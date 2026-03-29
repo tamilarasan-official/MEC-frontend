@@ -68,6 +68,8 @@ const initialState: OrdersState = {
 export const createOrder = createAsyncThunk(
   'orders/createOrder',
   async (data: { shopId: string; items: Array<{ foodItemId: string; quantity: number }>; notes?: string; mode?: 'eat' | 'work' }, { rejectWithValue }) => {
+    // Step 1: Make the API call — if this fails, the order was NOT created
+    let res: any;
     try {
       const payload = {
         shopId: data.shopId,
@@ -76,7 +78,14 @@ export const createOrder = createAsyncThunk(
         ...(data.mode === 'eat' ? { mode: 'eat' } : {}),
       };
       if (__DEV__) console.log('[createOrder] payload:', JSON.stringify(payload));
-      const res = await api.post('/orders', payload);
+      res = await api.post('/orders', payload);
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.message || 'Failed to create order');
+    }
+
+    // Step 2: Map the response — if this fails, the order WAS created so
+    // we must still return success to avoid showing "Order Failed" falsely
+    try {
       const d = res.data.data;
 
       // Handle split orders (mixed instant + regular items)
@@ -97,17 +106,26 @@ export const createOrder = createAsyncThunk(
         wasSplit: false,
         newBalance: d?.newBalance,
       } as CreateOrderResult;
-    } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to create order');
+    } catch {
+      // Mapping failed but order exists — return a minimal success result
+      const d = res.data?.data;
+      const fallbackOrder = mapOrder(d?.order || d || {});
+      return {
+        order: fallbackOrder,
+        wasSplit: false,
+        newBalance: d?.newBalance,
+      } as CreateOrderResult;
     }
   },
 );
 
 export const fetchMyOrders = createAsyncThunk(
   'orders/fetchMyOrders',
-  async (_, { rejectWithValue }) => {
+  async (params: { serviceType?: string } | undefined, { rejectWithValue }) => {
     try {
-      const res = await api.get('/orders/my', { params: { limit: 100 } });
+      const qp: any = { limit: 100 };
+      if (params?.serviceType) qp.serviceType = params.serviceType;
+      const res = await api.get('/orders/my', { params: qp });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to fetch orders');
@@ -212,6 +230,37 @@ const ordersSlice = createSlice({
     addNewOrder: (state, action: PayloadAction<Order>) => {
       state.shopOrders.unshift(action.payload);
     },
+    // Patch order status + item statuses in-place — used by socket handler so QR modal
+    // reflects real-time updates even for terminal statuses (completed/cancelled)
+    // that get dropped from activeOrders on the next refetch.
+    patchOrderStatus: (state, action: PayloadAction<{
+      orderId: string;
+      status: Order['status'];
+      items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
+    }>) => {
+      const { orderId, status, items } = action.payload;
+      const patchOrder = (order: Order) => {
+        order.status = status;
+        // Patch per-item statuses if provided by socket payload
+        if (items && items.length > 0 && order.items.length === items.length) {
+          for (let i = 0; i < items.length; i++) {
+            if (items[i].itemStatus) {
+              order.items[i] = { ...order.items[i], itemStatus: items[i].itemStatus as any };
+            }
+            if (items[i].delivered !== undefined) {
+              order.items[i] = { ...order.items[i], delivered: items[i].delivered };
+            }
+          }
+        }
+      };
+      for (const list of [state.orders, state.activeOrders, state.shopOrders]) {
+        const idx = list.findIndex(o => o.id === orderId);
+        if (idx >= 0) patchOrder(list[idx]);
+      }
+      if (state.currentOrder?.id === orderId) {
+        patchOrder(state.currentOrder);
+      }
+    },
     resetOrders: () => initialState,
   },
   extraReducers: (builder) => {
@@ -303,5 +352,5 @@ const ordersSlice = createSlice({
   },
 });
 
-export const { clearError, setCurrentOrder, updateOrderInList, addNewOrder, resetOrders } = ordersSlice.actions;
+export const { clearError, setCurrentOrder, updateOrderInList, addNewOrder, patchOrderStatus, resetOrders } = ordersSlice.actions;
 export default ordersSlice.reducer;

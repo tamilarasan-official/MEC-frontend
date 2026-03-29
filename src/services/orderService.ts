@@ -65,7 +65,7 @@ const orderService = {
     return mapOrders(res.data.data || res.data);
   },
   getMyActiveOrders: async (): Promise<Order[]> => {
-    const res = await api.get('/orders/my', { params: { status: 'pending,preparing,ready', limit: 50 } });
+    const res = await api.get('/orders/my', { params: { status: 'pending,preparing,partially_ready,ready,partially_delivered', limit: 50 } });
     return mapOrders(res.data.data || res.data);
   },
   getShopOrders: async (status?: string): Promise<Order[]> => {

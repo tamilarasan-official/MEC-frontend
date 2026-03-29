@@ -1,9 +1,11 @@
-import api, { setTokens, clearTokens } from './api';
+import api, { setTokens, clearTokens, getOrCreateDeviceId } from './api';
+import { Platform } from 'react-native';
 import { User, LoginResponse, RegisterData } from '../types';
 
 const authService = {
   login: async (username: string, password: string): Promise<LoginResponse> => {
-    const res = await api.post('/auth/login', { username, password, deviceId: `mobile-${Date.now()}`, deviceInfo: { platform: 'react-native' } });
+    const deviceId = await getOrCreateDeviceId();
+    const res = await api.post('/auth/login', { username, password, deviceId, deviceInfo: { platform: Platform.OS } });
     return res.data.data;
   },
   sendOtp: async (phone: string): Promise<{ sessionId: string }> => {
@@ -11,7 +13,8 @@ const authService = {
     return res.data.data;
   },
   verifyOtp: async (phone: string, otp: string, sessionId: string): Promise<LoginResponse> => {
-    const res = await api.post('/auth/verify-otp', { phone, sessionId, otp, deviceId: `mobile-${Date.now()}` });
+    const deviceId = await getOrCreateDeviceId();
+    const res = await api.post('/auth/verify-otp', { phone, sessionId, otp, deviceId });
     return res.data.data;
   },
   register: async (data: RegisterData): Promise<{ user: User; message: string }> => {

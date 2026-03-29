@@ -89,6 +89,11 @@ export function OrderStatusPopup({ status, orderNumber, itemNames, pickupToken, 
   const itemsSummary = useMemo(() => (itemNames || []).join(', '), [itemNames]);
   const message = useMemo(() => getStatusMessage(status, itemsSummary), [status, itemsSummary]);
 
+  // Show food item names as headline (or fall back to order number)
+  const headline = itemNames && itemNames.length > 0
+    ? itemNames.slice(0, 3).join(', ') + (itemNames.length > 3 ? ` +${itemNames.length - 3} more` : '')
+    : `Order #${orderNumber}`;
+
   useEffect(() => {
     StatusBar.setBarStyle('light-content', true);
 
@@ -150,23 +155,23 @@ export function OrderStatusPopup({ status, orderNumber, itemNames, pickupToken, 
           </Animated.View>
 
           {/* Food items as headline (or fallback to order number) */}
-          <Text style={styles.itemsHeadline} numberOfLines={2}>
-            {itemsSummary || `Order #${orderNumber}`}
+          <Text style={styles.headline} numberOfLines={2}>
+            {headline}
           </Text>
+
+          {/* Pickup token pill */}
+          {pickupToken && (
+            <View style={styles.tokenPill}>
+              <Text style={styles.tokenPillLabel}>PICKUP</Text>
+              <Text style={styles.tokenPillValue}>{pickupToken}</Text>
+            </View>
+          )}
 
           {/* Status label */}
           <Text style={styles.label}>{config.label}</Text>
 
           {/* Message */}
           <Text style={styles.message}>{message}</Text>
-
-          {/* Pickup token */}
-          {pickupToken ? (
-            <View style={styles.tokenContainer}>
-              <Text style={styles.tokenLabel}>PICKUP TOKEN</Text>
-              <Text style={styles.tokenValue}>{pickupToken}</Text>
-            </View>
-          ) : null}
 
           {/* Dismiss hint */}
           <Text style={styles.dismissHint}>Tap anywhere to dismiss</Text>
@@ -207,29 +212,28 @@ const styles = StyleSheet.create({
   content: { alignItems: 'center', paddingHorizontal: 32 },
   iconCircle: {
     width: 112, height: 112, borderRadius: 56,
-    backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 32,
+    backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 24,
   },
-  itemsHeadline: {
-    fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.85)',
-    textAlign: 'center', marginBottom: 8, maxWidth: 280,
+  headline: {
+    fontSize: 18, fontWeight: '700', color: '#fff', textAlign: 'center',
+    maxWidth: 300, marginBottom: 12,
+  },
+  tokenPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 8, marginBottom: 16,
+  },
+  tokenPillLabel: {
+    fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.7)', letterSpacing: 1.5,
+  },
+  tokenPillValue: {
+    fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 3,
   },
   label: {
-    fontSize: 32, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 16,
+    fontSize: 28, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 12,
   },
   message: {
-    fontSize: 16, color: 'rgba(255,255,255,0.9)', textAlign: 'center', maxWidth: 280, lineHeight: 22,
-  },
-  tokenContainer: {
-    marginTop: 20, alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 14,
-    paddingHorizontal: 24, paddingVertical: 12,
-  },
-  tokenLabel: {
-    fontSize: 10, fontWeight: '600', color: 'rgba(255,255,255,0.6)',
-    letterSpacing: 2, textTransform: 'uppercase',
-  },
-  tokenValue: {
-    fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: 6, marginTop: 2,
+    fontSize: 15, color: 'rgba(255,255,255,0.9)', textAlign: 'center', maxWidth: 280, lineHeight: 22,
   },
   dismissHint: {
     fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '500', marginTop: 40,

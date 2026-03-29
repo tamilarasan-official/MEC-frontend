@@ -19,7 +19,7 @@ import { getDeviceId } from '../store/slices/authSlice';
 import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance } from '../store/slices/userSlice';
 import { fetchMyActiveOrders, fetchMyOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
-import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
+import { ORDER_STATUS_POPUP_EVENT, FORCE_LOGOUT_EVENT } from '../constants/events';
 
 // ── Deduplication ───────────────────────────────────────────────
 // Prevents double display when both Socket.IO and FCM deliver the same event
@@ -215,13 +215,24 @@ export function handleForegroundMessage(
   }
 
   const type = (data?.type as string) || 'system';
+
+  // Force logout — emit event and skip normal notification flow (Android feature)
+  if (type === 'force_logout') {
+    if (__DEV__) console.log('[FCM] Force logout received via push');
+    DeviceEventEmitter.emit(FORCE_LOGOUT_EVENT, { reason: 'logged_in_elsewhere' });
+    return;
+  }
+
   const orderId = data?.orderId as string;
   const status = data?.status as string;
   const orderNumber = data?.orderNumber as string;
 
   // Dedup: skip if already shown (e.g. socket delivered first, or duplicate FCM tokens)
   // Use content-based key so duplicate FCM messages (from stale tokens) are caught
-  if (orderId && status) {
+  if (type === 'payment_received') {
+    const paymentId = data?.paymentRequestId as string || '';
+    if (isDuplicate(`payment:${paymentId}`)) return;
+  } else if (orderId && status) {
     const itemNamesStr = data?.itemNames as string;
     const orderDedupKey = itemNamesStr && status === 'item_ready' ? `${orderId}:${status}:${itemNamesStr}` : `${orderId}:${status}`;
     if (isDuplicate(orderDedupKey)) return;
@@ -233,10 +244,6 @@ export function handleForegroundMessage(
       dispatch(fetchWalletBalance());
       return;
     }
-  } else if (type === 'payment_received') {
-    const txId = (data?.transactionId as string) || '';
-    const prDedupKey = txId ? `pr:tx:${txId}` : `pr:${data?.paymentRequestId || ''}:${Math.floor(Date.now() / 10000)}`;
-    if (isDuplicate(prDedupKey)) return;
   } else {
     // Content-based dedup for all other notifications (prevents duplicates from stale FCM tokens)
     const contentKey = `${type}:${title}:${body}:${Math.floor(Date.now() / 30000)}`;
@@ -383,7 +390,7 @@ export async function handleBackgroundMessage(
       type === 'wallet' ? CHANNEL_WALLET :
       CHANNEL_GENERAL;
     const itemNamesStr = data?.itemNames as string;
-    const notifId = orderId ? 
+    const notifId = orderId ?
       (status === 'item_ready' && itemNamesStr ? `order-${orderId}-${status}-${itemNamesStr}` : `order-${orderId}-${status}`) :
       (type === 'wallet_credit' || type === 'wallet' || type === 'wallet_debit') ? `wallet-${(data?.transactionId as string) || Date.now()}` :
       (type === 'payment_received') ? `pr-${(data?.transactionId as string) || Date.now()}` :
@@ -398,9 +405,9 @@ async function getIosApnsToken(): Promise<string | null> {
   // In production (TestFlight), the APNs token might not be immediately available.
   // First, getting the FCM token forces Firebase to wait for the APNs token under the hood.
   try { await getToken(getMessaging()); } catch { /* ignore */ }
-  
+
   let apnsToken = await getAPNSToken(getMessaging());
-  
+
   // Fallback polling if still null
   let retries = 5;
   while (!apnsToken && retries > 0) {

@@ -2,10 +2,10 @@ import { io, Socket } from 'socket.io-client';
 import { DeviceEventEmitter } from 'react-native';
 import { getAccessToken, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
-import { addNotification, fetchWalletBalance, fetchQRPayments } from '../store/slices/userSlice';
-import { fetchMyActiveOrders, fetchMyOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
+import { addNotification, fetchWalletBalance, fetchTransactions, fetchDashboardStats, fetchQRPayments } from '../store/slices/userSlice';
+import { fetchMyActiveOrders, fetchMyOrders, fetchActiveShopOrders, patchOrderStatus } from '../store/slices/ordersSlice';
 import { updateShopStatus } from '../store/slices/menuSlice';
-import { ORDER_STATUS_POPUP_EVENT } from '../constants/events';
+import { ORDER_STATUS_POPUP_EVENT, FORCE_LOGOUT_EVENT } from '../constants/events';
 import {
   isDuplicate,
   displayLocalNotification,
@@ -23,11 +23,11 @@ export interface OrderUpdatePayload {
   orderId: string;
   orderNumber: string;
   status: string;
+  pickupToken?: string;
   previousStatus?: string;
   updatedAt: string;
-  pickupToken?: string;
   notification?: { title: string; body: string };
-  items?: { name: string; quantity: number }[];
+  items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
 }
 
 export const connectSocket = async (userId: string, role: string, shopId?: string, userMode: string = 'work') => {
@@ -109,6 +109,7 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   socket.removeAllListeners('notification');
   socket.removeAllListeners('shop:status_changed');
   socket.removeAllListeners('payment:received');
+  socket.removeAllListeners('force_logout');
 
   // Order status changed
   // NOTE: Captain/owner sockets are in BOTH user:userId AND shop:shopId rooms,
@@ -119,18 +120,28 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
     try {
       const status = payload.status as 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
 
+      // ALWAYS patch Redux immediately so item-level status tags update in real-time
+      // (e.g. 2nd item marked ready while order is still partially_ready).
+      // This must happen BEFORE dedup check — dedup only gates notifications/popups.
+      dispatch(patchOrderStatus({ orderId: payload.orderId, status, items: payload.items }));
+
       // Always re-fetch orders so UI reflects the new status — even if popup/notification
       // was already shown by FCM. Fetch both active orders (for Dashboard) and all
       // orders (for Orders page) so every screen updates in real-time.
       if (userRole === 'student' || userMode === 'eat') {
         dispatch(fetchMyActiveOrders());
         dispatch(fetchMyOrders());
+        if (status === 'cancelled' || status === 'completed') {
+          dispatch(fetchWalletBalance());
+        }
       } else {
         dispatch(fetchActiveShopOrders());
+        dispatch(fetchDashboardStats());
       }
 
-      // Dedup: skip popup/notification if this orderId+status was already processed
-      // (from the other room delivery, or from FCM arriving first)
+      // Dedup: only skip notification + popup if this orderId+status was already processed
+      // (from the other room delivery, or from FCM arriving first).
+      // Redux patch + refetch above always run regardless.
       const dedupKey = `${payload.orderId}:${status}`;
       if (isDuplicate(dedupKey)) return;
 
@@ -214,8 +225,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         read: false,
       }));
 
-      // Re-fetch orders so the UI reflects the new order immediately
+      // Refetch order list + dashboard stats so new order appears immediately
       dispatch(fetchActiveShopOrders());
+      dispatch(fetchDashboardStats());
 
       displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES, `new-order-${payload.orderId}`);
     } catch (e) {
@@ -248,8 +260,9 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
         read: false,
       }));
 
-      // Auto-refresh balance immediately
+      // Auto-refresh balance + transaction history immediately
       dispatch(fetchWalletBalance());
+      dispatch(fetchTransactions());
 
       // Only show system notification for credits/refunds (user is in-app for debits)
       // Use a fixed Notifee notification ID so duplicate wallet notifications
@@ -338,6 +351,13 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       // Eat-mode users are customers — they shouldn't receive payment notifications for their shop
       if (userMode === 'eat') return;
 
+      // Validate required payload fields
+      if (!payload || !payload.paymentRequestId || !payload.amount || !payload.studentName) return;
+
+      // Dedup: prevent duplicate payment notifications (socket reconnect + FCM)
+      // Uses paymentRequestId so both socket and FCM handlers share the same key
+      if (isDuplicate(`payment:${payload.paymentRequestId}`)) return;
+
       if (__DEV__) console.log('[Socket] Payment received:', payload);
 
       const title = 'Payment Received';
@@ -354,12 +374,22 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
 
       // Refresh QR payments so dashboard shows updated collected amount
       dispatch(fetchQRPayments());
+      // Also refresh wallet balance + orders in case payment is linked to an order
+      dispatch(fetchWalletBalance());
+      dispatch(fetchActiveShopOrders());
+      dispatch(fetchDashboardStats());
 
       // Show local notification for shop staff
       displayLocalNotification(title, msg, { paymentRequestId: payload.paymentRequestId }, CHANNEL_WALLET, `payment-${payload.paymentRequestId}`);
     } catch (e) {
       if (__DEV__) console.warn('[Socket] Error in payment:received handler:', e);
     }
+  });
+
+  // Force logout — another device logged in with this account
+  socket.on('force_logout', (payload: { reason: string }) => {
+    if (__DEV__) console.log('[Socket] Force logout received:', payload.reason);
+    DeviceEventEmitter.emit(FORCE_LOGOUT_EVENT, { reason: payload.reason });
   });
 };
 

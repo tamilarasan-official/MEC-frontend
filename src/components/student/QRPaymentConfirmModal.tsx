@@ -8,6 +8,7 @@ import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector } from '../../store';
 import type { QRPaymentData } from '../../utils/qrDecode';
 import walletService from '../../services/walletService';
+import PINVerifyModal from '../common/PINVerifyModal';
 
 interface QRPaymentConfirmModalProps {
   visible: boolean;
@@ -22,9 +23,11 @@ export default function QRPaymentConfirmModal({
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const balance = useAppSelector(s => s.user.balance);
+  const user = useAppSelector(s => s.auth.user);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Preserve last non-null paymentData so content stays visible during fade-out animation
   const lastPaymentData = useRef(paymentData);
@@ -40,6 +43,7 @@ export default function QRPaymentConfirmModal({
       setPaying(false);
       setError(null);
       setSuccess(false);
+      setShowPinModal(false);
     }
   }, [visible]);
 
@@ -47,6 +51,15 @@ export default function QRPaymentConfirmModal({
 
   const insufficientBalance = balance < data.amount;
   const balanceAfter = balance - data.amount;
+
+  const handlePayPress = () => {
+    if (paying || insufficientBalance) return;
+    if (user?.isPinSetup) {
+      setShowPinModal(true);
+    } else {
+      handlePay();
+    }
+  };
 
   const handlePay = async () => {
     if (paying || insufficientBalance) return;
@@ -59,6 +72,7 @@ export default function QRPaymentConfirmModal({
         onSuccess();
       }, 1500);
     } catch (e: any) {
+      if (__DEV__) console.error('[QRPayment] Error:', e?.response?.status, e?.response?.data || e?.message);
       const msg = e?.response?.data?.error?.message
         || e?.response?.data?.message
         || e?.message
@@ -69,6 +83,7 @@ export default function QRPaymentConfirmModal({
   };
 
   return (
+    <>
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={paying ? undefined : onClose}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
@@ -90,7 +105,7 @@ export default function QRPaymentConfirmModal({
               {/* Payment Info Card */}
               <View style={styles.paymentInfoCard}>
                 <Text style={styles.paymentForLabel}>Payment for</Text>
-                <Text style={styles.paymentTitle}>{data.title || 'Payment'}</Text>
+                <Text style={styles.paymentTitle}>{data.title || 'QR Payment'}</Text>
                 {data.shopName ? (
                   <Text style={styles.paymentFrom}>From: {data.shopName}</Text>
                 ) : null}
@@ -142,7 +157,7 @@ export default function QRPaymentConfirmModal({
 
                 <TouchableOpacity
                   style={[styles.confirmBtn, (insufficientBalance || paying) && styles.confirmBtnDisabled]}
-                  onPress={handlePay}
+                  onPress={handlePayPress}
                   activeOpacity={0.8}
                   disabled={insufficientBalance || paying}
                 >
@@ -158,6 +173,16 @@ export default function QRPaymentConfirmModal({
         </View>
       </View>
     </Modal>
+    {data && (
+      <PINVerifyModal
+        visible={showPinModal}
+        amount={data.amount}
+        title={data.title || 'QR Payment'}
+        onVerified={() => { setShowPinModal(false); handlePay(); }}
+        onCancel={() => setShowPinModal(false)}
+      />
+    )}
+    </>
   );
 }
 

@@ -12,6 +12,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
+import { useSecureScreen } from '../../utils/useSecureScreen';
 
 type Period = 'today' | 'week' | 'month' | 'all'
 
@@ -49,6 +50,7 @@ function formatDate(dateString: string) {
 }
 
 export default function WalletScreen({ navigation }: Props) {
+  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();

@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Animated, ScrollView, Keyboard,
+  ActivityIndicator, KeyboardAvoidingView, Animated, ScrollView, Keyboard, Platform,
 } from 'react-native';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
@@ -52,7 +52,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
     }
   }, [visible, slideAnim, backdropAnim]);
 
-  // Reset state when modal closes — use a small delay so it doesn't interfere with the exit animation
+  // Reset state when modal closes -- use a small delay so it doesn't interfere with the exit animation
   useEffect(() => {
     if (!visible) {
       const resetTimer = setTimeout(() => {
@@ -68,6 +68,11 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   }, [visible]);
 
   const numericAmount = parseInt(amount || '0', 10);
+
+  const handleChangeText = useCallback((t: string) => {
+    setAmount(t.replace(/[^0-9]/g, ''));
+    setError('');
+  }, []);
 
   const handleTopUp = async () => {
     if (submittingRef.current) return;
@@ -162,7 +167,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         setVerificationFailed(true);
         setError('Payment was successful but verification failed. Tap "Retry Verification" to try again.');
       } else {
-        // Hard failure — show full-screen failure result
+        // Hard failure -- show full-screen failure result
         setPaymentResult({ type: 'failed', amount: numericAmount });
       }
     } finally {
@@ -258,11 +263,12 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           <TextInput
             style={styles.input}
             value={amount}
-            onChangeText={(t) => { setAmount(t.replace(/[^0-9]/g, '')); setError(''); }}
+            onChangeText={handleChangeText}
             placeholder="0"
             placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"
             maxLength={5}
+            autoCorrect={false}
             accessibilityLabel="Top up amount"
           />
 

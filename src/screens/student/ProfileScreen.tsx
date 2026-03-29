@@ -188,7 +188,7 @@ export default function ProfileScreen({ navigation }: Props) {
             </View>
           )}
 
-          {/* Wallet Balance Card → navigates to WalletScreen */}
+          {/* Wallet Balance Card -> navigates to WalletScreen */}
           <TouchableOpacity
             style={styles.walletCard}
             activeOpacity={0.8}
@@ -244,6 +244,7 @@ export default function ProfileScreen({ navigation }: Props) {
           {[
             { icon: 'time-outline', label: 'Order History', subtitle: 'View past completed orders', onPress: () => navigation.navigate('OrderHistory') },
             { icon: 'lock-closed-outline', label: 'Change Password', subtitle: 'Update your account password', onPress: () => navigation.navigate('ChangePassword') },
+            { icon: 'keypad-outline', label: 'Transaction PIN', subtitle: 'Change or reset your payment PIN', onPress: () => navigation.navigate('TransactionPIN' as any) },
             { icon: 'notifications-outline', label: 'Notifications', subtitle: 'Manage your notifications', onPress: () => navigation.navigate('NotificationSettings') },
             { icon: 'shield-checkmark-outline', label: 'Privacy & Security', subtitle: 'Account security settings', onPress: () => navigation.navigate('PrivacySecurity') },
             { icon: 'help-circle-outline', label: 'Help & Support', subtitle: 'Get help with your orders', onPress: () => navigation.navigate('HelpSupport') },
@@ -465,6 +466,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   modalCard: {
     width: '100%', maxWidth: 320, backgroundColor: c.card,
     borderRadius: 28, padding: 28, alignItems: 'center',
+    borderColor: c.border,
     shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 24, elevation: 16,
   },
   modalIconWrap: {

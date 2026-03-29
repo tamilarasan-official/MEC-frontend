@@ -3,14 +3,14 @@ import { View, Text, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
-import { refreshUserData } from '../store/slices/authSlice';
-import { fetchWalletBalance } from '../store/slices/userSlice';
+import { refreshUserData, resetAuth } from '../store/slices/authSlice';
+import { fetchWalletBalance, fetchDashboardStats, fetchNotifications } from '../store/slices/userSlice';
 import { fetchMyActiveOrders, fetchActiveShopOrders } from '../store/slices/ordersSlice';
 import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/colors';
-import { ORDER_STATUS_POPUP_EVENT, LOGIN_SUCCESS_EVENT } from '../constants/events';
+import { ORDER_STATUS_POPUP_EVENT, LOGIN_SUCCESS_EVENT, FORCE_LOGOUT_EVENT } from '../constants/events';
 import Icon from '../components/common/Icon';
 import { OrderStatusPopup } from '../components/common/OrderStatusPopup';
 import AuthStack from './AuthStack';
@@ -18,6 +18,7 @@ import StudentTabs from './tabs/StudentTabs';
 import CaptainTabs from './tabs/CaptainTabs';
 import OwnerTabs from './tabs/OwnerTabs';
 import { connectSocket, disconnectSocket, setupSocketListeners } from '../services/socketService';
+import SetupPINScreen from '../screens/shared/SetupPINScreen';
 import { getMessaging, onMessage, getInitialNotification } from '@react-native-firebase/messaging';
 import notifee, { EventType } from '@notifee/react-native';
 import {
@@ -101,11 +102,144 @@ const loginOverlay = StyleSheet.create({
   tagline: { fontSize: 14, color: 'rgba(255,255,255,0.6)' },
 });
 
+/* ─── Force Logout Overlay ─── */
+function ForceLogoutOverlay({ onDismiss }: { onDismiss: () => void }) {
+  const bgAnim = useRef(new Animated.Value(0)).current;
+  const iconScale = useRef(new Animated.Value(0)).current;
+  const iconShake = useRef(new Animated.Value(0)).current;
+  const titleAnim = useRef(new Animated.Value(0)).current;
+  const msg1Anim = useRef(new Animated.Value(0)).current;
+  const msg2Anim = useRef(new Animated.Value(0)).current;
+  const btnAnim = useRef(new Animated.Value(0)).current;
+  const btnScale = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    StatusBar.setBarStyle('light-content');
+
+    Animated.timing(bgAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+
+    Animated.stagger(150, [
+      Animated.spring(iconScale, { toValue: 1, friction: 4, tension: 80, useNativeDriver: true }),
+      Animated.timing(titleAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(msg1Anim, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.timing(msg2Anim, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.spring(btnAnim, { toValue: 1, friction: 5, useNativeDriver: true }),
+    ]).start();
+
+    setTimeout(() => {
+      Animated.sequence([
+        Animated.timing(iconShake, { toValue: 12, duration: 80, useNativeDriver: true }),
+        Animated.timing(iconShake, { toValue: -12, duration: 80, useNativeDriver: true }),
+        Animated.timing(iconShake, { toValue: 8, duration: 60, useNativeDriver: true }),
+        Animated.timing(iconShake, { toValue: -8, duration: 60, useNativeDriver: true }),
+        Animated.timing(iconShake, { toValue: 0, duration: 50, useNativeDriver: true }),
+      ]).start();
+    }, 400);
+
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.15, duration: 1200, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+    ])).start();
+
+    return () => { StatusBar.setBarStyle('default'); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePress = () => {
+    Animated.sequence([
+      Animated.timing(btnScale, { toValue: 0.92, duration: 80, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 1, duration: 80, useNativeDriver: true }),
+    ]).start(() => {
+      Animated.timing(bgAnim, { toValue: 0, duration: 250, useNativeDriver: true }).start(onDismiss);
+    });
+  };
+
+  return (
+    <Animated.View style={[forceLogoutStyles.overlay, { opacity: bgAnim }]}>
+      <Animated.View style={[forceLogoutStyles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />
+
+      <Animated.View style={[forceLogoutStyles.iconWrap, { transform: [{ scale: iconScale }, { translateX: iconShake }] }]}>
+        <View style={forceLogoutStyles.iconOuter}>
+          <View style={forceLogoutStyles.iconInner}>
+            <Text style={forceLogoutStyles.iconEmoji}>🔒</Text>
+          </View>
+        </View>
+      </Animated.View>
+
+      <Animated.Text style={[forceLogoutStyles.title, { opacity: titleAnim, transform: [{ translateY: titleAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
+        Session Ended
+      </Animated.Text>
+
+      <Animated.Text style={[forceLogoutStyles.message, { opacity: msg1Anim, transform: [{ translateY: msg1Anim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }] }]}>
+        Your account was logged in on another device.
+      </Animated.Text>
+
+      <Animated.Text style={[forceLogoutStyles.submessage, { opacity: msg2Anim, transform: [{ translateY: msg2Anim.interpolate({ inputRange: [0, 1], outputRange: [15, 0] }) }] }]}>
+        Only one device can be active at a time.
+      </Animated.Text>
+
+      <Animated.View style={{ opacity: btnAnim, transform: [{ scale: Animated.multiply(btnAnim, btnScale) }] }}>
+        <Animated.View style={forceLogoutStyles.btnShadow}>
+          <View style={forceLogoutStyles.btn}>
+            <Text style={forceLogoutStyles.btnText} onPress={handlePress}>OK, GOT IT</Text>
+          </View>
+        </Animated.View>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+const forceLogoutStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject, zIndex: 99999,
+    backgroundColor: '#ef4444', justifyContent: 'center', alignItems: 'center', padding: 32,
+  },
+  pulseRing: {
+    position: 'absolute', width: 200, height: 200, borderRadius: 100,
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  iconWrap: { marginBottom: 28 },
+  iconOuter: {
+    width: 120, height: 120, borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 2, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  iconInner: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  iconEmoji: { fontSize: 40 },
+  title: {
+    fontSize: 28, fontWeight: '900', color: '#fff', marginBottom: 12, textAlign: 'center',
+  },
+  message: {
+    fontSize: 16, fontWeight: '500', color: 'rgba(255,255,255,0.9)',
+    textAlign: 'center', lineHeight: 22, marginBottom: 4,
+  },
+  submessage: {
+    fontSize: 14, color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginBottom: 36,
+  },
+  btnShadow: {
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25, shadowRadius: 12, elevation: 8,
+  },
+  btn: {
+    backgroundColor: '#fff', paddingHorizontal: 48, paddingVertical: 18,
+    borderRadius: 20,
+  },
+  btnText: {
+    fontSize: 16, fontWeight: '800', color: '#ef4444', letterSpacing: 1, textAlign: 'center',
+  },
+});
+
 interface PopupData {
   status: 'preparing' | 'partially_ready' | 'ready' | 'partially_delivered' | 'completed' | 'cancelled';
   orderNumber: string;
-  itemNames?: string[];
   pickupToken?: string;
+  itemNames?: string[];
 }
 
 export default function RootNavigator() {
@@ -117,10 +251,14 @@ export default function RootNavigator() {
   const userModeRef = useRef(userMode);
   useEffect(() => { userModeRef.current = userMode; }, [userMode]);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [popup, setPopup] = useState<PopupData | null>(null);
+  const [popupQueue, setPopupQueue] = useState<PopupData[]>([]);
+  const currentPopup = popupQueue.length > 0 ? popupQueue[0] : null;
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [permissionsHandled, setPermissionsHandled] = useState(false);
   const [loginSuccessData, setLoginSuccessData] = useState<{ name: string; role: string } | null>(null);
+
+  // PIN setup check — show setup screen if user hasn't set up PIN
+  const needsPinSetup = isAuthenticated && user && user.isPinSetup === false && !isCheckingAuth;
 
   // Listen for login success event (emitted from OTPScreen after auth succeeds)
   useEffect(() => {
@@ -130,16 +268,51 @@ export default function RootNavigator() {
     return () => sub.remove();
   }, []);
 
-  // Listen for order status popup events (from socket + FCM)
+  // Listen for order status popup events (from socket + FCM) — queued
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: PopupData) => {
-      if (__DEV__) console.log('[RootNavigator] OrderStatusPopup event received:', data);
-      setPopup(data);
+      if (__DEV__) console.log('[RootNavigator] OrderStatusPopup queued:', data);
+      setPopupQueue(prev => [...prev, data]);
     });
     return () => subscription.remove();
   }, []);
 
-  const dismissPopup = useCallback(() => setPopup(null), []);
+  // Dismiss current popup → show next in queue
+  const dismissPopup = useCallback(() => {
+    setPopupQueue(prev => prev.slice(1));
+  }, []);
+
+  // Listen for force_logout (another device logged in with this account)
+  const [showForceLogout, setShowForceLogout] = useState(false);
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(FORCE_LOGOUT_EVENT, () => {
+      setShowForceLogout(true);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const handleForceLogoutDismiss = useCallback(async () => {
+    setShowForceLogout(false);
+    disconnectSocket();
+    await clearTokens();
+    dispatch(resetAuth());
+  }, [dispatch]);
+
+  // Listen for forced app update (426 from backend)
+  useEffect(() => {
+    const storeUrl = Platform.OS === 'ios'
+      ? 'https://apps.apple.com/app/campusone/id0000000000'
+      : 'https://play.google.com/store/apps/details?id=com.mec.campusone';
+    const sub = DeviceEventEmitter.addListener('FORCE_UPDATE_REQUIRED', () => {
+      setUpdateInfo({
+        updateAvailable: true,
+        forceUpdate: true,
+        latestVersion: 'latest',
+        updateUrl: storeUrl,
+      });
+    });
+    return () => sub.remove();
+  }, []);
 
   // On mount, check for stored tokens and try to restore session
   useEffect(() => {
@@ -184,7 +357,6 @@ export default function RootNavigator() {
   // Without this, OEMs like Motorola/Samsung kill the app after a few minutes
   useEffect(() => {
     if (!isAuthenticated || Platform.OS !== 'android') return;
-    // Use sendIntent to trigger the system battery optimization dialog
     Linking.sendIntent(
       'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
       [{ key: 'data', value: 'package:com.mec.campusone' }]
@@ -232,7 +404,6 @@ export default function RootNavigator() {
   // Reconnect socket when eat/work mode changes (need to rejoin/leave shop room)
   useEffect(() => {
     if (!isAuthenticated || !userIdRef.current || !userRoleRef.current) return;
-    // Reconnect to change room membership (eat mode leaves shop room)
     disconnectSocket();
     (async () => {
       const sock = await connectSocket(
@@ -271,11 +442,13 @@ export default function RootNavigator() {
         }
         // Refresh data on resume — events were missed while backgrounded
         dispatch(fetchWalletBalance());
+        dispatch(fetchNotifications());
         const mode = userModeRef.current;
         if (role === 'student' || mode === 'eat') {
           dispatch(fetchMyActiveOrders());
         } else {
           dispatch(fetchActiveShopOrders());
+          dispatch(fetchDashboardStats());
         }
       }
     });
@@ -283,11 +456,19 @@ export default function RootNavigator() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user?.id]);
 
-  // Initialize push notifications after authentication
+  // Initialize push notifications + request camera permission after authentication
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
     initializeNotifications(user.id);
+
+    // Request camera permission early so Scanner tab works without settings redirect
+    import('react-native-vision-camera').then(({ Camera }) => {
+      const status = Camera.getCameraPermissionStatus();
+      if (status === 'not-determined') {
+        Camera.requestCameraPermission();
+      }
+    }).catch(() => {});
 
     // Foreground FCM message listener
     const unsubscribeFcm = onMessage(getMessaging(), (remoteMessage) => {
@@ -345,12 +526,13 @@ export default function RootNavigator() {
         )}
       </Stack.Navigator>
 
-      {isAuthenticated && popup && (
+      {currentPopup && (
         <OrderStatusPopup
-          status={popup.status}
-          orderNumber={popup.orderNumber}
-          itemNames={popup.itemNames}
-          pickupToken={popup.pickupToken}
+          key={`${currentPopup.orderNumber}-${currentPopup.status}`}
+          status={currentPopup.status}
+          orderNumber={currentPopup.orderNumber}
+          pickupToken={currentPopup.pickupToken}
+          itemNames={currentPopup.itemNames}
           onDismiss={dismissPopup}
         />
       )}
@@ -381,6 +563,14 @@ export default function RootNavigator() {
           role={loginSuccessData.role}
           onDone={() => setLoginSuccessData(null)}
         />
+      )}
+
+      {showForceLogout && (
+        <ForceLogoutOverlay onDismiss={handleForceLogoutDismiss} />
+      )}
+
+      {needsPinSetup && !loginSuccessData && (
+        <SetupPINScreen onComplete={() => dispatch(refreshUserData())} />
       )}
     </>
   );

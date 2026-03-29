@@ -224,6 +224,8 @@ export default function OrdersScreen() {
                   const imageUri = resolveImageUrl(item.image);
                   const imgKey = `${order.id}-${idx}`;
                   const imgFailed = failedImages.has(imgKey);
+                  const iStatus = item.itemStatus || 'preparing';
+                  const showItemTag = order.status === 'partially_ready' || order.status === 'partially_delivered';
                   return (
                     <View key={imgKey} style={styles.orderItem}>
                       {imageUri && !imgFailed ? (
@@ -239,7 +241,16 @@ export default function OrdersScreen() {
                         </View>
                       )}
                       <View style={styles.flex1}>
-                        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          {showItemTag && (
+                            <View style={[styles.itemStatusTag, iStatus === 'ready' ? styles.itemStatusReady : iStatus === 'delivered' ? styles.itemStatusDelivered : styles.itemStatusPreparing]}>
+                              <Text style={[styles.itemStatusTagText, iStatus === 'ready' ? styles.itemStatusReadyText : iStatus === 'delivered' ? styles.itemStatusDeliveredText : styles.itemStatusPreparingText]}>
+                                {iStatus === 'ready' ? 'Ready' : iStatus === 'delivered' ? 'Delivered' : 'Preparing'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.itemQty}>x{item.quantity}</Text>
                       </View>
                       <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
@@ -380,9 +391,19 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(59,130,246,0.15)',
     justifyContent: 'center', alignItems: 'center',
   },
-  itemName: { fontSize: 14, fontWeight: '500', color: colors.text },
+  itemName: { fontSize: 14, fontWeight: '500', color: colors.text, flexShrink: 1 },
   itemQty: { fontSize: 12, color: '#3b82f6', marginTop: 1 },
   itemPrice: { fontSize: 14, fontWeight: '600', color: colors.text },
+  itemStatusTag: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+  },
+  itemStatusReady: { backgroundColor: 'rgba(16,185,129,0.12)' },
+  itemStatusReadyText: { color: '#10b981' },
+  itemStatusDelivered: { backgroundColor: 'rgba(16,185,129,0.12)' },
+  itemStatusDeliveredText: { color: '#10b981' },
+  itemStatusPreparing: { backgroundColor: 'rgba(234,179,8,0.12)' },
+  itemStatusPreparingText: { color: '#eab308' },
+  itemStatusTagText: { fontSize: 10, fontWeight: '700' },
 
   // Footer
   orderFooter: {

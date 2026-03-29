@@ -34,6 +34,7 @@ export interface User {
   institution?: string;
   userTag?: 'Student' | 'Staff' | 'Faculty' | 'MEC ADMIN' | 'Owner' | 'Accountant' | 'Officials';
   staffId?: string;
+  isPinSetup?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -332,6 +333,7 @@ export type StudentHomeStackParamList = {
   PrivacySecurity: undefined;
   HelpSupport: undefined;
   ChangePassword: undefined;
+  TransactionPIN: undefined;
 };
 
 export type CaptainTabParamList = {
@@ -343,6 +345,7 @@ export type CaptainTabParamList = {
   EatScanner: undefined;
   Wallet: undefined;
   TransactionDetail: { transactionId: string };
+  TransactionPIN: undefined;
 };
 
 export type OwnerTabParamList = {
@@ -356,6 +359,11 @@ export type OwnerTabParamList = {
   EatScanner: undefined;
   Wallet: undefined;
   TransactionDetail: { transactionId: string };
+  TransactionPIN: undefined;
+  StationeryDashboard: undefined;
+  StationeryAnalytics: undefined;
+  OldStationeryAnalytics: undefined;
+  Home: undefined;
 };
 
 

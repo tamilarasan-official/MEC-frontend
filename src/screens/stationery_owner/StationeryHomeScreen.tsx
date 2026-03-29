@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Image, TextInput,
+  ActivityIndicator, RefreshControl, Image, TextInput, AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -21,11 +21,11 @@ import { QRPayment } from '../../types';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 
 // ---- Stat Item ----
-function StatItem({ value, label, color }: { value: string | number; label: string; color: string }) {
+function StatItem({ value, label, color, labelColor }: { value: string | number; label: string; color: string; labelColor?: string }) {
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
       <Text style={{ fontSize: 22, fontWeight: '800', color }}>{value}</Text>
-      <Text style={{ fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>{label}</Text>
+      <Text style={{ fontSize: 10, fontWeight: '500', color: labelColor || '#6b7280', marginTop: 2 }}>{label}</Text>
     </View>
   );
 }
@@ -113,22 +113,37 @@ export default function StationeryHomeScreen() {
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
 
   // Filter QR payments by search query
+  // Only show active (unpaid) QR payments on dashboard — paid ones move to History
+  const activePayments = useMemo(() => qrPayments.filter(p => p.status === 'active'), [qrPayments]);
+
   const filteredPayments = useMemo(() => {
-    if (!searchQuery.trim()) return qrPayments;
+    if (!searchQuery.trim()) return activePayments;
     const q = searchQuery.toLowerCase();
-    return qrPayments.filter(p => p.title.toLowerCase().includes(q));
-  }, [qrPayments, searchQuery]);
+    return activePayments.filter(p => p.title.toLowerCase().includes(q));
+  }, [activePayments, searchQuery]);
 
   // Computed stats (based on all payments, not filtered)
-  const totalCollected = qrPayments.reduce((sum, p) => sum + (p.totalCollected || 0), 0);
-  const totalPaymentCount = qrPayments.reduce((sum, p) => sum + (p.paidCount || 0), 0);
+  const totalCollected = qrPayments.reduce((sum, p) => sum + (Number(p.totalCollected) || 0), 0);
+  const totalPaymentCount = qrPayments.reduce((sum, p) => sum + (Number(p.paidCount) || 0), 0);
   const activeCount = qrPayments.filter(p => p.status === 'active').length;
   const paidCount = qrPayments.filter(p => p.status !== 'active').length;
+
+  if (__DEV__) console.log('[StationeryHome] qrPayments:', qrPayments.length, 'totalCollected:', totalCollected, 'active:', activeCount);
 
   const handleCardPress = (payment: QRPayment) => {
     setSelectedPayment(payment);
     setShowQRDisplay(true);
   };
+
+  // Auto-dismiss QR display modal when payment is received (status changes to closed)
+  useEffect(() => {
+    if (!selectedPayment || !showQRDisplay) return;
+    const fresh = qrPayments.find(p => p.id === selectedPayment.id);
+    if (fresh && fresh.status !== 'active' && selectedPayment.status === 'active') {
+      setShowQRDisplay(false);
+      setSelectedPayment(null);
+    }
+  }, [qrPayments, selectedPayment, showQRDisplay]);
 
   const canGenerateQR = shopDetails?.canGenerateQR === true;
 
@@ -150,8 +165,20 @@ export default function StationeryHomeScreen() {
   useFocusEffect(
     useCallback(() => {
       dispatch(fetchWalletBalance());
+      dispatch(fetchQRPayments());
     }, [dispatch])
   );
+
+  // Refresh on app resume (no polling — socket handles real-time updates)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        dispatch(fetchQRPayments());
+        dispatch(fetchWalletBalance());
+      }
+    });
+    return () => sub.remove();
+  }, [dispatch]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -287,7 +314,7 @@ export default function StationeryHomeScreen() {
                   <Text style={{ fontSize: 14, fontWeight: '600', color: '#f97316' }}>₹</Text>
                   <Text style={{ fontSize: 22, fontWeight: '800', color: '#f97316' }}>{totalCollected}</Text>
                 </View>
-                <Text style={{ fontSize: 10, fontWeight: '500', color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>Collected</Text>
+                <Text style={{ fontSize: 10, fontWeight: '500', color: colors.mutedForeground, marginTop: 2 }}>Collected</Text>
               </View>
             </View>
           </View>
@@ -319,7 +346,7 @@ export default function StationeryHomeScreen() {
               <View style={styles.emptyState}>
                 <Icon name="qr-code-outline" size={40} color={colors.mutedForeground} />
                 <Text style={styles.emptyText}>
-                  {searchQuery ? 'No matching payments' : 'No QR payments yet'}
+                  {searchQuery ? 'No matching payments' : 'No active QR payments'}
                 </Text>
                 <Text style={styles.emptySubtext}>
                   {searchQuery ? 'Try a different search term' : 'Tap "+ Create" to generate your first QR payment'}
@@ -352,7 +379,7 @@ export default function StationeryHomeScreen() {
       {/* Modals */}
       <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} onOpenWallet={() => {}} />
       <OwnerWalletModal visible={showWallet} onClose={() => setShowWallet(false)} />
-      <CreateQRPaymentModal visible={showCreateModal} onClose={() => setShowCreateModal(false)} />
+      <CreateQRPaymentModal visible={showCreateModal} onClose={() => { setShowCreateModal(false); dispatch(fetchQRPayments()); }} />
       <QRPaymentDisplayModal
         visible={showQRDisplay}
         payment={selectedPayment}
@@ -450,7 +477,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderColor: 'rgba(16,185,129,0.25)',
   },
   totalCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  totalCardLabel: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.6)' },
+  totalCardLabel: { fontSize: 13, fontWeight: '500', color: colors.mutedForeground },
   totalCardAmount: { fontSize: 32, fontWeight: '900', color: colors.foreground, marginBottom: 4 },
   totalCardSub: { fontSize: 12, fontWeight: '500', color: '#10b981' },
 
@@ -468,7 +495,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  overviewTitle: { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.5)', letterSpacing: 1 },
+  overviewTitle: { fontSize: 11, fontWeight: '800', color: colors.mutedForeground, letterSpacing: 1 },
   statsRow: { flexDirection: 'row', alignItems: 'center' },
 
   // QR Payments Section

@@ -8,6 +8,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector } from '../../store';
 import { QRPayment } from '../../types';
+import { useSecureScreen } from '../../utils/useSecureScreen';
 
 interface QRPaymentDisplayModalProps {
   visible: boolean;
@@ -16,6 +17,7 @@ interface QRPaymentDisplayModalProps {
 }
 
 export default function QRPaymentDisplayModal({ visible, payment, onClose }: QRPaymentDisplayModalProps) {
+  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const user = useAppSelector(s => s.auth.user);
@@ -35,13 +37,13 @@ export default function QRPaymentDisplayModal({ visible, payment, onClose }: QRP
 
   if (!payment) return null;
 
+  // Compact QR data for faster scanning (~50 chars vs ~200)
+  // t=type, p=paymentId, a=amount, s=shopId
   const qrValue = JSON.stringify({
-    type: 'shop_qr_payment',
-    paymentId: payment.id,
-    title: payment.title,
-    amount: payment.amount,
-    shopId: user?.shopId || '',
-    shopName: shopDetails?.name || '',
+    t: 'qp',
+    p: payment.id,
+    a: payment.amount,
+    s: user?.shopId || '',
   });
 
   return (
@@ -73,9 +75,15 @@ export default function QRPaymentDisplayModal({ visible, payment, onClose }: QRP
           <View style={styles.qrWrapper}>
             <QRCode
               value={qrValue}
-              size={200}
+              size={240}
               backgroundColor="#fff"
               color="#000"
+              ecl="M"
+              logo={require('../../assets/icons/appicon.png')}
+              logoSize={48}
+              logoBackgroundColor="#fff"
+              logoBorderRadius={12}
+              logoMargin={4}
             />
           </View>
         </View>

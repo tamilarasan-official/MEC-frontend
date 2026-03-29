@@ -59,11 +59,11 @@ export default function StudentTabs() {
         tabBarStyle: {
           backgroundColor: colors.card,
           borderTopWidth: 0,
-          elevation: 0,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.06,
           shadowRadius: 12,
+          elevation: 8,
           height: 60 + bottomPad,
           paddingBottom: bottomPad,
           paddingTop: 10,
