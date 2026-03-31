@@ -93,30 +93,14 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
     const savedTotal = cartTotal;
     const savedShopName = shopName || '';
     setOrdering(true);
+
+    // Step 1: Place the order — only a real API failure should show "Order Failed"
+    let result: CreateOrderResult;
     try {
-      const result = await dispatch(createOrder({
+      result = await dispatch(createOrder({
         shopId,
         items: cartItems.map(c => ({ foodItemId: c.item.id, quantity: c.quantity })),
       })).unwrap();
-      dispatch(clearCart());
-      setOrdering(false);
-      // Ensure order has shopName and total filled
-      const enrichedResult: CreateOrderResult = {
-        ...result,
-        order: {
-          ...result.order,
-          total: result.order.total ?? savedTotal,
-          shopName: result.order.shopName || savedShopName,
-        },
-        orders: result.orders?.map(o => ({
-          ...o,
-          total: o.total ?? 0,
-          shopName: o.shopName || savedShopName,
-        })),
-      };
-      // Animate sheet out before triggering success — skip onClose so parent
-      // can delay closing until the success animation covers the screen (#63)
-      animateClose(() => onOrderSuccess(enrichedResult), true);
     } catch (err: any) {
       let msg: string;
       if (typeof err === 'string') {
@@ -128,10 +112,33 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       } else {
         msg = 'Order failed. Please check your balance and try again.';
       }
+      if (__DEV__) console.error('[CartBottomSheet] Order failed:', typeof err);
       setOrdering(false);
-      // Animate sheet out before triggering failure — skip onClose so parent
-      // can delay closing until the failure animation covers the screen
       animateClose(() => onOrderFailure(msg), true);
+      return;
+    }
+
+    // Step 2: Order succeeded — anything below must NEVER show failure
+    dispatch(clearCart());
+    setOrdering(false);
+    try {
+      const enrichedResult: CreateOrderResult = {
+        ...result,
+        order: {
+          ...result.order,
+          total: result.order?.total ?? savedTotal,
+          shopName: result.order?.shopName || savedShopName,
+        },
+        orders: result.orders?.map(o => ({
+          ...o,
+          total: o.total ?? 0,
+          shopName: o.shopName || savedShopName,
+        })),
+      };
+      animateClose(() => onOrderSuccess(enrichedResult), true);
+    } catch {
+      // Enrichment failed but order exists — send raw result as success
+      animateClose(() => onOrderSuccess(result), true);
     }
   };
 
@@ -303,7 +310,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: colors.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    maxHeight: '88%',
+    maxHeight: '95%',
   },
   handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },

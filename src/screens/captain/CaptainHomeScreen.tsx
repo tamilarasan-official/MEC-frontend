@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { RootState } from '../../store';
-import { fetchActiveShopOrders, updateOrderStatus, markItemDelivered } from '../../store/slices/ordersSlice';
+import { fetchActiveShopOrders, updateOrderStatus, markItemDelivered, acceptItem, rejectItem, acceptAllItems, rejectAllItems } from '../../store/slices/ordersSlice';
 import { fetchDashboardStats, fetchWalletBalance } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -47,19 +47,13 @@ function getSwipeConfig(
   switch (filter) {
     case 'pending':
       return {
-        right: { label: 'Start', icon: 'restaurant-outline', color: '#3b82f6', onAction: () => onStatusUpdate(order.id, 'preparing') },
-        left: { label: 'Reject', icon: 'close', color: '#ef4444', onAction: () => onReject(order.id, order.pickupToken) },
+        right: { label: 'Accept All', icon: 'checkmark-done', color: '#22c55e', onAction: () => onBatchReady(order.id) },
+        left: { label: 'Reject All', icon: 'close', color: '#ef4444', onAction: () => onReject(order.id, order.pickupToken) },
       };
     case 'preparing':
-      return {
-        right: { label: 'All Ready', icon: 'checkmark-done', color: '#22c55e', onAction: () => onBatchReady(order.id) },
-        left: null,
-      };
+      return { right: null, left: null };
     case 'partially_ready':
-      return {
-        right: { label: 'All Ready', icon: 'checkmark-done', color: '#22c55e', onAction: () => onBatchReady(order.id) },
-        left: null,
-      };
+      return { right: null, left: null };
     case 'ready':
       return {
         right: { label: 'Delivered', icon: 'checkmark', color: '#22c55e', onAction: () => onStatusUpdate(order.id, 'completed') },
@@ -92,8 +86,11 @@ export default function CaptainHomeScreen() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Reject order modal state
-  const [rejectModal, setRejectModal] = useState<{ visible: boolean; orderId: string; token: string }>({ visible: false, orderId: '', token: '' });
+  // Reject modal state — supports both order-level and item-level rejection
+  const [rejectModal, setRejectModal] = useState<{
+    visible: boolean; orderId: string; token: string;
+    mode: 'order' | 'item'; itemIndex: number; itemName: string; refundAmount: number;
+  }>({ visible: false, orderId: '', token: '', mode: 'order', itemIndex: 0, itemName: '', refundAmount: 0 });
   const [rejectLoading, setRejectLoading] = useState(false);
 
   // Item confirmation modal state
@@ -212,13 +209,13 @@ export default function CaptainHomeScreen() {
         }))
         .filter(o => o.items.length > 0);
     } else if (filter === 'preparing') {
-      // Normal preparing orders + partially_ready orders showing only their preparing items
+      // Normal preparing orders + preparing items from partially_ready/partially_delivered orders
       const normal = activeOrders.filter(o => {
         if (o.isReadyServe && o.status === 'ready') return false;
         return o.status === 'preparing';
       });
       const splitPreparing = activeOrders
-        .filter(o => o.status === 'partially_ready')
+        .filter(o => o.status === 'partially_ready' || o.status === 'partially_delivered')
         .map(o => ({
           ...o,
           _splitView: 'preparing' as const,
@@ -228,12 +225,29 @@ export default function CaptainHomeScreen() {
         }))
         .filter(o => o.items.length > 0);
       orders = [...normal, ...splitPreparing];
+    } else if (filter === 'ready') {
+      // Normal ready orders + ready/delivered items from partially_delivered orders
+      const normal = activeOrders.filter(o => {
+        if (o.isReadyServe && o.status === 'ready') return false;
+        return o.status === 'ready';
+      });
+      const splitReady = activeOrders
+        .filter(o => o.status === 'partially_delivered')
+        .map(o => ({
+          ...o,
+          _splitView: 'ready' as const,
+          items: o.items
+            .map((item, i) => ({ ...item, _originalIdx: i }))
+            .filter(i => {
+              const s = i.itemStatus || 'preparing';
+              return s === 'ready' || s === 'delivered';
+            }),
+        }))
+        .filter(o => o.items.length > 0);
+      orders = [...normal, ...splitReady];
     } else {
       orders = activeOrders.filter(o => {
         if (o.isReadyServe && o.status === 'ready') return false;
-        // 'partially_delivered' orders belong to the 'ready' tab — they were 'ready' and
-        // are being scanned; remaining items are still ready for collection.
-        if (filter === 'ready' && o.status === 'partially_delivered') return true;
         return o.status === filter;
       });
     }
@@ -255,15 +269,20 @@ export default function CaptainHomeScreen() {
   };
 
   // Actions
-  // Batch mark all preparing items as ready (for swipe on preparing/partial ready)
-  const handleBatchMarkReady = async (orderId: string) => {
+  // Accept all items (for pending tab order-level swipe right)
+  const handleAcceptAll = async (orderId: string) => {
     const order = shopOrders.find(o => o.id === orderId);
     if (!order) return;
     setUpdatingId(orderId);
     try {
-      for (let i = 0; i < order.items.length; i++) {
-        if ((order.items[i].itemStatus || 'preparing') === 'preparing') {
-          await dispatch(markItemDelivered({ orderId, itemIndex: i, itemStatus: 'ready' })).unwrap();
+      if (order.status === 'pending') {
+        await dispatch(acceptAllItems({ orderId })).unwrap();
+      } else {
+        // Batch mark all preparing items as ready
+        for (let i = 0; i < order.items.length; i++) {
+          if ((order.items[i].itemStatus || 'preparing') === 'preparing') {
+            await dispatch(markItemDelivered({ orderId, itemIndex: i, itemStatus: 'ready' })).unwrap();
+          }
         }
       }
     } catch {
@@ -428,8 +447,8 @@ export default function CaptainHomeScreen() {
         ) : (
           filteredOrders.map(order => {
             // Swipe config per tab
-            const swipeCfg = getSwipeConfig(filter, order, handleStatusUpdate, handleBatchMarkReady,
-              (id: string, token: string) => setRejectModal({ visible: true, orderId: id, token }));
+            const swipeCfg = getSwipeConfig(filter, order, handleStatusUpdate, handleAcceptAll,
+              (id: string, token: string) => setRejectModal({ visible: true, orderId: id, token, mode: 'order', itemIndex: 0, itemName: '', refundAmount: 0 }));
             return (
               <SwipeableOrderCard
                 key={`${order.id}-${(order as any)._splitView || 'full'}`}
@@ -440,7 +459,10 @@ export default function CaptainHomeScreen() {
                 dispatch={dispatch}
                 swipeRight={swipeCfg.right}
                 swipeLeft={swipeCfg.left}
-                showCheckboxes={filter === 'preparing' || filter === 'partially_ready'}
+                filter={filter}
+                onRejectItem={(orderId, itemIndex, itemName, refundAmount) =>
+                  setRejectModal({ visible: true, orderId, token: order.pickupToken, mode: 'item', itemIndex, itemName, refundAmount })
+                }
               />
             );
           })
@@ -503,16 +525,20 @@ export default function CaptainHomeScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Reject Order Modal */}
+      {/* Reject Modal (order-level OR item-level) */}
       <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
         <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
           <TouchableOpacity activeOpacity={1} style={styles.confirmDialog}>
             <View style={[styles.confirmIconWrap, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
               <Icon name="close-circle" size={28} color="#ef4444" />
             </View>
-            <Text style={styles.confirmTitle}>Reject Order</Text>
+            <Text style={styles.confirmTitle}>
+              {rejectModal.mode === 'item' ? 'Reject Item' : 'Reject Order'}
+            </Text>
             <Text style={styles.confirmMessage}>
-              Are you sure you want to reject order #{rejectModal.token}? The amount will be refunded to the student's wallet.
+              {rejectModal.mode === 'item'
+                ? `Reject "${rejectModal.itemName}"? ₹${rejectModal.refundAmount} will be refunded.`
+                : `Reject order #${rejectModal.token}? Full amount will be refunded.`}
             </Text>
             <View style={styles.confirmActions}>
               <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setRejectModal(prev => ({ ...prev, visible: false }))} disabled={rejectLoading} activeOpacity={0.7}>
@@ -522,7 +548,13 @@ export default function CaptainHomeScreen() {
                 style={[styles.confirmActionBtn, { backgroundColor: '#ef4444' }]}
                 onPress={async () => {
                   setRejectLoading(true);
-                  await handleStatusUpdate(rejectModal.orderId, 'cancelled');
+                  try {
+                    if (rejectModal.mode === 'item') {
+                      await dispatch(rejectItem({ orderId: rejectModal.orderId, itemIndex: rejectModal.itemIndex })).unwrap();
+                    } else {
+                      await dispatch(rejectAllItems({ orderId: rejectModal.orderId })).unwrap();
+                    }
+                  } catch { Alert.alert('Error', 'Failed to reject'); }
                   setRejectLoading(false);
                   setRejectModal(prev => ({ ...prev, visible: false }));
                 }}
@@ -544,20 +576,140 @@ export default function CaptainHomeScreen() {
   );
 }
 
+/* ─── Swipeable Item Card ─── */
+const ITEM_SWIPE_THRESHOLD = 70;
+const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, orderId, filter, colors, styles, dispatch, onRejectItem }: {
+  item: any; apiIdx: number; orderId: string; filter: FilterKey;
+  colors: ThemeColors; styles: any; dispatch: any;
+  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number) => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const iStatus = item.itemStatus || 'pending';
+  const isRejected = iStatus === 'rejected';
+  const isDelivered = iStatus === 'delivered';
+  const isReady = iStatus === 'ready';
+  const isPreparing = iStatus === 'preparing';
+  const subtotal = (item.offerPrice || item.price) * item.quantity;
+
+  // Determine swipe actions based on current item status and tab
+  let rightAction: { label: string; color: string; icon: string } | null = null;
+  let leftAction: { label: string; color: string; icon: string } | null = null;
+
+  // In pending tab: only pending items are swipeable, preparing = already accepted
+  if (filter === 'pending' && iStatus === 'pending') {
+    rightAction = { label: 'Accept', color: '#22c55e', icon: 'checkmark' };
+    leftAction = { label: 'Reject', color: '#ef4444', icon: 'close' };
+  } else if (filter !== 'pending' && !isRejected && !isDelivered) {
+    if (isPreparing) rightAction = { label: 'Ready', color: '#3b82f6', icon: 'checkmark-circle' };
+    else if (isReady) rightAction = { label: 'Deliver', color: '#22c55e', icon: 'bag-check-outline' };
+  }
+
+  const rightRef = useRef(rightAction);
+  const leftRef = useRef(leftAction);
+  rightRef.current = rightAction;
+  leftRef.current = leftAction;
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderMove: (_, g) => {
+      if (g.dx > 0 && !rightRef.current) return;
+      if (g.dx < 0 && !leftRef.current) return;
+      translateX.setValue(g.dx);
+    },
+    onPanResponderRelease: (_, g) => {
+      if (g.dx > ITEM_SWIPE_THRESHOLD && rightRef.current) {
+        // Swipe off-screen — don't snap back
+        Animated.timing(translateX, { toValue: 400, duration: 200, useNativeDriver: true }).start(() => {
+          mediumHaptic();
+          if (filter === 'pending') {
+            dispatch(acceptItem({ orderId, itemIndex: apiIdx }));
+          } else if (isPreparing) {
+            dispatch(markItemDelivered({ orderId, itemIndex: apiIdx, itemStatus: 'ready' }));
+          } else if (isReady) {
+            dispatch(markItemDelivered({ orderId, itemIndex: apiIdx, itemStatus: 'delivered' }));
+          }
+        });
+      } else if (g.dx < -ITEM_SWIPE_THRESHOLD && leftRef.current) {
+        Animated.timing(translateX, { toValue: -400, duration: 200, useNativeDriver: true }).start(() => {
+          mediumHaptic();
+          onRejectItem(orderId, apiIdx, item.name, subtotal);
+        });
+      } else {
+        Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
+      }
+    },
+  })).current;
+
+  // Non-swipeable items (rejected/delivered/already accepted in pending tab)
+  const isAcceptedInPending = filter === 'pending' && isPreparing;
+  if (isRejected || isDelivered || isAcceptedInPending) {
+    return (
+      <View style={[styles.itemCard, isRejected && { opacity: 0.5 }]}>
+        {resolveImageUrl(item.image) ? (
+          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} />
+        ) : (
+          <View style={styles.itemImgPlaceholder}>
+            <Icon name="restaurant-outline" size={10} color={colors.mutedForeground} />
+          </View>
+        )}
+        <Text style={[styles.itemName, (isDelivered || isRejected) && styles.itemDone]} numberOfLines={1}>
+          {item.quantity}x {item.name}
+        </Text>
+        {isAcceptedInPending && <Text style={[styles.readyTag, { backgroundColor: 'rgba(34,197,94,0.12)', color: '#22c55e' }]}>ACCEPTED</Text>}
+        {isDelivered && <Text style={styles.doneTag}>DONE</Text>}
+        {isRejected && <Text style={[styles.readyTag, { backgroundColor: 'rgba(239,68,68,0.12)', color: '#ef4444' }]}>REJECTED</Text>}
+        <Text style={styles.itemPrice}>₹{subtotal}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.itemSwipeWrap}>
+      {/* Right bg */}
+      {rightAction && (
+        <Animated.View style={[styles.itemSwipeBg, { backgroundColor: rightAction.color, opacity: translateX.interpolate({ inputRange: [0, 20], outputRange: [0, 1], extrapolate: 'clamp' }) }]}>
+          <Icon name={rightAction.icon} size={16} color="#fff" />
+          <Text style={styles.itemSwipeBgText}>{rightAction.label}</Text>
+        </Animated.View>
+      )}
+      {/* Left bg */}
+      {leftAction && (
+        <Animated.View style={[styles.itemSwipeBg, { justifyContent: 'flex-end', backgroundColor: leftAction.color, opacity: translateX.interpolate({ inputRange: [-20, 0], outputRange: [1, 0], extrapolate: 'clamp' }) }]}>
+          <Text style={styles.itemSwipeBgText}>{leftAction.label}</Text>
+          <Icon name={leftAction.icon} size={16} color="#fff" />
+        </Animated.View>
+      )}
+      <Animated.View style={[styles.itemCard, { transform: [{ translateX }] }]} {...panResponder.panHandlers}>
+        {resolveImageUrl(item.image) ? (
+          <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} />
+        ) : (
+          <View style={styles.itemImgPlaceholder}>
+            <Icon name="restaurant-outline" size={10} color={colors.mutedForeground} />
+          </View>
+        )}
+        <Text style={styles.itemName} numberOfLines={1}>{item.quantity}x {item.name}</Text>
+        {isReady && <Text style={styles.readyTag}>READY</Text>}
+        {isPreparing && filter !== 'pending' && <Text style={[styles.readyTag, { backgroundColor: 'rgba(59,130,246,0.12)', color: '#3b82f6' }]}>PREP</Text>}
+        <Text style={styles.itemPrice}>₹{subtotal}</Text>
+      </Animated.View>
+    </View>
+  );
+});
+
 /* ─── Swipeable Order Card (All Tabs) ─── */
 const SWIPE_THRESHOLD = 80;
-const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, colors, styles, isUpdating, swipeRight, swipeLeft, showCheckboxes, dispatch }: {
+const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, colors, styles, isUpdating, swipeRight, swipeLeft, filter, dispatch, onRejectItem }: {
   order: Order;
   colors: ThemeColors;
   styles: any;
   isUpdating: boolean;
   swipeRight: SwipeAction | null;
   swipeLeft: SwipeAction | null;
-  showCheckboxes: boolean;
+  filter: FilterKey;
   dispatch: any;
+  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const sc = statusColors[order.status];
   const badge = order.isReadyServe
     ? { text: '#f97316', bg: 'rgba(249,115,22,0.12)', label: 'Ready to Serve' }
@@ -567,55 +719,15 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
     ? order.items.reduce((sum: number, i: any) => sum + (i.offerPrice || i.price) * i.quantity, 0)
     : order.total;
 
-  // Toggle item selection (preparing tab — no API call, just visual toggle)
-  const toggleItem = useCallback((apiIdx: number) => {
-    mediumHaptic();
-    setSelectedItems(prev => {
-      const next = new Set(prev);
-      if (next.has(apiIdx)) next.delete(apiIdx); else next.add(apiIdx);
-      return next;
-    });
-  }, []);
-
-  // Batch mark selected items as ready (called on swipe right for preparing/partial ready)
-  const batchMarkSelected = useCallback(async () => {
-    const indices = showCheckboxes && selectedItems.size > 0
-      ? Array.from(selectedItems)
-      : order.items.map((_, i) => (order.items[i] as any)._originalIdx ?? i).filter(i => {
-          const item = order.items.find((_, idx) => ((order.items[idx] as any)._originalIdx ?? idx) === i);
-          return item && (item.itemStatus || 'preparing') === 'preparing';
-        });
-    if (indices.length === 0) return;
-    for (const idx of indices) {
-      try {
-        await dispatch(markItemDelivered({ orderId: order.id, itemIndex: idx, itemStatus: 'ready' })).unwrap();
-      } catch { /* continue with remaining */ }
-    }
-    setSelectedItems(new Set());
-  }, [dispatch, order, selectedItems, showCheckboxes]);
-
-  // Override swipe right for preparing/partial ready to use batch selection
-  const effectiveSwipeRight = useMemo(() => {
-    if (!swipeRight) return null;
-    if (showCheckboxes) {
-      const count = selectedItems.size;
-      return {
-        ...swipeRight,
-        label: count > 0 ? `${count} Ready` : swipeRight.label,
-        onAction: batchMarkSelected,
-      };
-    }
-    return swipeRight;
-  }, [swipeRight, showCheckboxes, selectedItems.size, batchMarkSelected]);
-
-  // Use refs for swipe actions so PanResponder always has latest
-  const swipeRightRef = useRef(effectiveSwipeRight);
+  // Order-level swipe (pending: accept-all/reject-all, ready: delivered)
+  const hasOrderSwipe = !!swipeRight || !!swipeLeft;
+  const swipeRightRef = useRef(swipeRight);
   const swipeLeftRef = useRef(swipeLeft);
-  swipeRightRef.current = effectiveSwipeRight;
+  swipeRightRef.current = swipeRight;
   swipeLeftRef.current = swipeLeft;
 
   const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onMoveShouldSetPanResponder: (_, g) => hasOrderSwipe && Math.abs(g.dx) > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
     onPanResponderMove: (_, g) => {
       if (g.dx > 0 && !swipeRightRef.current) return;
       if (g.dx < 0 && !swipeLeftRef.current) return;
@@ -643,17 +755,17 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
   // Build hint text
   const hintParts: string[] = [];
   if (swipeLeft) hintParts.push(`← ${swipeLeft.label}`);
-  if (effectiveSwipeRight) hintParts.push(`${effectiveSwipeRight.label} →`);
+  if (swipeRight) hintParts.push(`${swipeRight.label} →`);
   const hintText = hintParts.join('  |  ');
 
   return (
     <View style={styles.swipeContainer}>
       {/* Right swipe background */}
-      {effectiveSwipeRight && (
-        <Animated.View style={[styles.swipeBgFull, { backgroundColor: effectiveSwipeRight.color, opacity: translateX.interpolate({ inputRange: [0, 30], outputRange: [0, 1], extrapolate: 'clamp' }) }]}>
+      {swipeRight && (
+        <Animated.View style={[styles.swipeBgFull, { backgroundColor: swipeRight.color, opacity: translateX.interpolate({ inputRange: [0, 30], outputRange: [0, 1], extrapolate: 'clamp' }) }]}>
           <View style={styles.swipeBgContent}>
-            <Icon name={effectiveSwipeRight.icon} size={24} color="#fff" />
-            <Text style={styles.swipeBgText}>{effectiveSwipeRight.label}</Text>
+            <Icon name={swipeRight.icon} size={24} color="#fff" />
+            <Text style={styles.swipeBgText}>{swipeRight.label}</Text>
           </View>
         </Animated.View>
       )}
@@ -668,9 +780,12 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
       )}
 
       {/* Card */}
-      <Animated.View style={[styles.swipeCard, { transform: [{ translateX }] }]} {...panResponder.panHandlers}>
-        {/* Header */}
-        <View style={styles.cardHeader}>
+      <Animated.View
+        style={[styles.swipeCard, { transform: [{ translateX }] }]}
+        {...(hasOrderSwipe && filter !== 'pending' ? panResponder.panHandlers : {})}
+      >
+        {/* Header — swipeable area for order-level actions in pending tab */}
+        <View style={styles.cardHeader} {...(hasOrderSwipe && filter === 'pending' ? panResponder.panHandlers : {})}>
           <Text style={styles.tokenText}>#{order.pickupToken}</Text>
           <Text style={styles.timeText}>{timeSince}</Text>
           <Text style={styles.customerName} numberOfLines={1}>{order.userName || '—'}</Text>
@@ -680,45 +795,25 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
           <Text style={styles.totalValue}>₹{displayTotal}</Text>
         </View>
 
-        {/* Items */}
+        {/* Per-item swipeable cards */}
         {order.items.map((item, idx) => {
-          const iStatus = item.itemStatus || 'preparing';
-          const isReady = iStatus === 'ready';
-          const isItemDelivered = iStatus === 'delivered';
           const apiIdx = (item as any)._originalIdx ?? idx;
           return (
-            <View key={apiIdx} style={styles.itemRow}>
-              {showCheckboxes && (
-                <TouchableOpacity
-                  onPress={() => toggleItem(apiIdx)}
-                  style={styles.checkboxBtn}
-                  disabled={isItemDelivered || isReady}
-                >
-                  <Icon
-                    name={isItemDelivered ? 'checkmark-circle' : isReady ? 'checkbox' : selectedItems.has(apiIdx) ? 'checkbox' : 'square-outline'}
-                    size={16}
-                    color={isItemDelivered ? '#22c55e' : isReady ? '#3b82f6' : selectedItems.has(apiIdx) ? colors.accent : colors.mutedForeground}
-                  />
-                </TouchableOpacity>
-              )}
-              {resolveImageUrl(item.image) ? (
-                <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} />
-              ) : (
-                <View style={styles.itemImgPlaceholder}>
-                  <Icon name="restaurant-outline" size={10} color={colors.mutedForeground} />
-                </View>
-              )}
-              <Text style={[styles.itemName, isItemDelivered && styles.itemDone]} numberOfLines={1}>
-                {item.quantity}x {item.name}
-              </Text>
-              {isReady && <Text style={styles.readyTag}>READY</Text>}
-              {isItemDelivered && <Text style={styles.doneTag}>DONE</Text>}
-              <Text style={styles.itemPrice}>₹{(item.offerPrice || item.price) * item.quantity}</Text>
-            </View>
+            <SwipeableItemCard
+              key={apiIdx}
+              item={item}
+              apiIdx={apiIdx}
+              orderId={order.id}
+              filter={filter}
+              colors={colors}
+              styles={styles}
+              dispatch={dispatch}
+              onRejectItem={onRejectItem}
+            />
           );
         })}
 
-        {/* Swipe hint */}
+        {/* Swipe hint (order-level) */}
         {hintText ? (
           <View style={styles.swipeHint}>
             <Text style={styles.swipeHintText}>{hintText}</Text>
@@ -954,14 +1049,29 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
 
   // Items
+  // Item swipe wrapper
+  itemSwipeWrap: {
+    overflow: 'hidden', borderRadius: 10, marginVertical: 3, position: 'relative',
+  },
+  itemSwipeBg: {
+    ...StyleSheet.absoluteFillObject, flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, gap: 6, borderRadius: 10,
+  },
+  itemSwipeBgText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+
+  // Item card (swipeable)
+  itemCard: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 8,
+    backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+  },
   itemRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 3,
   },
-  checkboxBtn: { marginRight: 5 },
-  itemImg: { width: 24, height: 24, borderRadius: 6, marginRight: 6 },
+  checkboxBtn: { marginRight: 6, padding: 4 },
+  itemImg: { width: 28, height: 28, borderRadius: 8, marginRight: 8 },
   itemImgPlaceholder: {
-    width: 24, height: 24, borderRadius: 6, backgroundColor: colors.muted,
-    justifyContent: 'center', alignItems: 'center', marginRight: 6,
+    width: 28, height: 28, borderRadius: 8, backgroundColor: colors.muted,
+    justifyContent: 'center', alignItems: 'center', marginRight: 8,
   },
   itemName: { flex: 1, fontSize: 14, fontWeight: '500', color: colors.foreground },
   itemDone: { textDecorationLine: 'line-through', color: colors.mutedForeground },

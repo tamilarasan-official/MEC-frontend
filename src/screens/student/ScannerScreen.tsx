@@ -97,10 +97,14 @@ export default function ScannerScreen() {
 
     const orderId = decodeQrData(raw);
     if (orderId) {
-      setScannedOrderId(orderId);
-      setScanError(null);
-      setIsActive(false);
-    } else {
+      // Students cannot scan food order QR — only captains/owners can
+      setScanError('Food order QR can only be scanned by Captains or Owners.');
+      errorTimerRef.current = setTimeout(() => {
+        setScanError(null);
+        scanCooldown.current = false;
+      }, 3000);
+      return;
+    } else if (!paymentData) {
       setScanError('Invalid QR code. Please scan a valid MEC QR code.');
       errorTimerRef.current = setTimeout(() => {
         setScanError(null);
@@ -297,7 +301,7 @@ export default function ScannerScreen() {
       {showMoveCloser && (
         <View style={styles.moveCloserHint}>
           <Icon name="arrow-down-outline" size={16} color="#fff" />
-          <Text style={styles.moveCloserText}>Move closer to the QR code or pinch to zoom</Text>
+          <Text style={styles.moveCloserText}>Move closer to the QR code</Text>
         </View>
       )}
 

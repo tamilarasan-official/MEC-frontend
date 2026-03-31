@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState, Animated, StatusBar } from 'react-native';
+import { View, Text, Image, ActivityIndicator, StyleSheet, DeviceEventEmitter, AppState, Animated, StatusBar } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../store';
@@ -251,8 +251,9 @@ export default function RootNavigator() {
 
   if (isCheckingAuth) {
     return (
-      <View style={styles.splash}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={staticStyles.splash}>
+        <StatusBar barStyle="light-content" backgroundColor="#7c3aed" />
+        <Image source={require('../assets/icons/appicon.png')} style={staticStyles.splashLogo} />
       </View>
     );
   }
@@ -521,11 +522,19 @@ const forceLogoutStyles = StyleSheet.create({
   },
 });
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const staticStyles = StyleSheet.create({
   splash: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: '#7c3aed',
   },
+  splashLogo: {
+    width: 90,
+    height: 90,
+    borderRadius: 22,
+  },
+});
+
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
 });

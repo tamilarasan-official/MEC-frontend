@@ -93,13 +93,14 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const numericAmount = parseInt(amount || '0', 10);
 
   const handleChangeText = useCallback((t: string) => {
-    setAmount(t.replace(/[^0-9]/g, ''));
+    // Strip non-digits, then strip leading zeros
+    setAmount(t.replace(/[^0-9]/g, '').replace(/^0+/, ''));
     setError('');
   }, []);
 
   const handleTopUp = async () => {
-    if (numericAmount < 1 || numericAmount > 50000) {
-      setError('Amount must be between Rs. 1 and Rs. 50,000');
+    if (numericAmount < 10 || numericAmount > 5000) {
+      setError('Amount must be between Rs. 10 and Rs. 5,000');
       return;
     }
     setLoading(true);
@@ -277,18 +278,22 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           </View>
 
           {/* Amount Input */}
-          <Text style={styles.inputLabel}>Enter Amount (Rs.)</Text>
-          <TextInput
-            style={styles.input}
-            value={amount}
-            onChangeText={handleChangeText}
-            placeholder="0"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="number-pad"
-            maxLength={5}
-            autoCorrect={false}
-            accessibilityLabel="Top up amount"
-          />
+          <Text style={styles.inputLabel}>Enter Amount</Text>
+          <View style={styles.inputWrap}>
+            <Text style={styles.inputPrefix}>Rs.</Text>
+            <TextInput
+              style={styles.input}
+              value={amount}
+              onChangeText={handleChangeText}
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              maxLength={5}
+              autoCorrect={false}
+              textAlign="center"
+              accessibilityLabel="Top up amount"
+            />
+          </View>
 
           {/* Quick amounts */}
           <View style={styles.quickRow}>
@@ -380,7 +385,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.card,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 20, paddingBottom: 40,
-    maxHeight: '85%',
+    maxHeight: '95%',
   },
 
   handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
@@ -411,11 +416,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   balanceValue: { fontSize: 22, fontWeight: '900', color: '#3b82f6' },
 
   inputLabel: { fontSize: 13, fontWeight: '500', color: colors.textMuted, marginBottom: 8 },
-  input: {
+  inputWrap: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const,
     borderWidth: 1, borderColor: colors.border, borderRadius: 16,
-    paddingHorizontal: 16, paddingVertical: 14, fontSize: 22, fontWeight: '700',
-    color: colors.text, backgroundColor: colors.surface, marginBottom: 14,
-    textAlign: 'center' as const,
+    backgroundColor: colors.surface, marginBottom: 14, paddingHorizontal: 16,
+  },
+  inputPrefix: { fontSize: 18, fontWeight: '600' as const, color: colors.textMuted, marginRight: 4 },
+  input: {
+    flex: 1, paddingVertical: 14, fontSize: 22, fontWeight: '700' as const,
+    color: colors.text, textAlign: 'center' as const,
   },
 
   quickRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },

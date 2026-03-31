@@ -29,6 +29,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   // Auto-expand details when partially_ready so student sees which items are ready
   const [showDetails, setShowDetails] = useState(order.status === 'partially_ready' || order.status === 'partially_delivered');
   const [currentStatus, setCurrentStatus] = useState(order.status);
+  const [showFullQR, setShowFullQR] = useState(false);
   const slideAnim = useState(new Animated.Value(300))[0];
 
   useEffect(() => {
@@ -87,8 +88,8 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
 
           {/* QR + Token side by side */}
           <View style={styles.qrRow}>
-            {/* QR */}
-            <View style={styles.qrWrapper}>
+            {/* QR — tap for fullscreen */}
+            <TouchableOpacity style={styles.qrWrapper} onPress={() => setShowFullQR(true)} activeOpacity={0.8}>
               <View style={styles.qrGradientBorder}>
                 <View style={styles.qrInner}>
                   <QRCode
@@ -105,7 +106,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
                   />
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
 
             {/* Token */}
             <View style={styles.tokenInfo}>
@@ -182,6 +183,33 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      {/* Fullscreen QR Modal */}
+      {showFullQR && (
+        <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowFullQR(false)}>
+          <TouchableOpacity style={styles.fullQRBackdrop} activeOpacity={1} onPress={() => setShowFullQR(false)}>
+            <View style={styles.fullQRContainer}>
+              <View style={styles.fullQRCard}>
+                <QRCode
+                  value={qrValue}
+                  size={260}
+                  backgroundColor="#fff"
+                  color="#000"
+                  ecl="M"
+                  logo={require('../../assets/icons/appicon.png')}
+                  logoSize={48}
+                  logoBackgroundColor="#fff"
+                  logoBorderRadius={12}
+                  logoMargin={4}
+                />
+              </View>
+              <Text style={styles.fullQRToken}>{order.pickupToken}</Text>
+              <Text style={styles.fullQRHint}>Show this QR at the counter</Text>
+              <Text style={styles.fullQRTap}>Tap anywhere to close</Text>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -255,4 +283,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: '#3b82f6', borderRadius: 16, paddingVertical: 14, alignItems: 'center',
   },
   doneBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  // Fullscreen QR
+  fullQRBackdrop: {
+    flex: 1, backgroundColor: '#7c3aed', justifyContent: 'center', alignItems: 'center',
+  },
+  fullQRContainer: { alignItems: 'center' },
+  fullQRCard: {
+    backgroundColor: '#fff', borderRadius: 24, padding: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 24, elevation: 10,
+  },
+  fullQRToken: {
+    fontSize: 56, fontWeight: '900', color: '#fff', letterSpacing: 8, marginTop: 28,
+  },
+  fullQRHint: {
+    fontSize: 16, color: 'rgba(255,255,255,0.8)', marginTop: 8,
+  },
+  fullQRTap: {
+    fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 24,
+  },
 });

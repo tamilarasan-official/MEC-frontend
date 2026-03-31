@@ -34,6 +34,9 @@ export default function PINVerifyModal({
   const [locked, setLocked] = useState(false);
   const [lockCountdown, setLockCountdown] = useState(0);
 
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(300)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
@@ -109,6 +112,7 @@ export default function PINVerifyModal({
       await api.post('/auth/verify-pin', { pin: finalPin });
       onVerified();
     } catch (err: any) {
+      if (!mountedRef.current) return;
       const status = err?.response?.status;
       const code = err?.response?.data?.error?.code;
       const msg = err?.response?.data?.error?.message
@@ -116,7 +120,6 @@ export default function PINVerifyModal({
         || 'Wrong PIN. Please try again.';
 
       if (status === 429 || code === 'PIN_LOCKED' || code === 'PIN_COOLDOWN') {
-        // Parse seconds from "PIN locked. Try again in 27 seconds."
         const secMatch = msg.match(/(\d+)\s*second/);
         const seconds = secMatch ? parseInt(secMatch[1], 10) : 30;
         setLocked(true);
@@ -128,7 +131,7 @@ export default function PINVerifyModal({
       }
       setPin('');
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }, [onVerified, triggerShake]);
 
@@ -142,7 +145,7 @@ export default function PINVerifyModal({
     setError(null);
 
     if (newPin.length === PIN_LENGTH) {
-      setTimeout(() => verifyPin(newPin), 200);
+      setTimeout(() => verifyPin(newPin), 50);
     }
   }, [pin, loading, locked, verifyPin]);
 
