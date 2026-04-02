@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal, Animated,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
   ActivityIndicator, Dimensions, TouchableWithoutFeedback,
 } from 'react-native';
 import Icon from './Icon';
@@ -226,14 +226,12 @@ export default function PINVerifyModal({
 
   if (!visible) return null;
 
+  // Render as an absolute-positioned overlay instead of a <Modal>.
+  // iOS only supports one Modal presentation at a time — PINVerifyModal is shown
+  // while CartBottomSheet or QRPaymentConfirmModal (both Modals) are still open,
+  // so using a second Modal causes it to render behind the first or not at all.
   return (
-    <Modal
-      visible
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={handleDismiss}
-    >
+    <View style={styles.absoluteFill} pointerEvents="auto">
       {/* Backdrop */}
       <TouchableWithoutFeedback onPress={handleDismiss}>
         <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]} />
@@ -292,11 +290,16 @@ export default function PINVerifyModal({
         {/* Keypad */}
         {renderKeypad()}
       </Animated.View>
-    </Modal>
+    </View>
   );
 }
 
 const createStyles = (c: ThemeColors) => StyleSheet.create({
+  absoluteFill: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99999,
+    elevation: 99999,
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',

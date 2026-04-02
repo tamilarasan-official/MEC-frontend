@@ -180,7 +180,7 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
           {/* Change Password */}
           <TouchableOpacity
             style={styles.menuItem}
-            onPress={() => { onClose(); setTimeout(() => setShowChangePassword(true), 100); }}
+            onPress={() => { onClose(); setTimeout(() => setShowChangePassword(true), 350); }}
             activeOpacity={0.7}>
             <Icon name="lock-closed-outline" size={18} color="#8b5cf6" />
             <Text style={styles.menuItemText}>Change Password</Text>
@@ -190,7 +190,7 @@ export default function CaptainProfileDropdown({ visible, onClose, onNavigateNot
           {userMode === 'eat' && (
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => { onClose(); setTimeout(() => setShowTransactionPIN(true), 100); }}
+              onPress={() => { onClose(); setTimeout(() => setShowTransactionPIN(true), 350); }}
               activeOpacity={0.7}>
               <Icon name="keypad-outline" size={18} color="#f59e0b" />
               <Text style={styles.menuItemText}>Transaction PIN</Text>

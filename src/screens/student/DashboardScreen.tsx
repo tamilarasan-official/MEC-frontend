@@ -232,14 +232,8 @@ export default function StudentDashboard({ navigation }: Props) {
     return () => clearInterval(interval);
   }, [dispatch, isStudent]);
 
-  // Sync successOrder with Redux when socket/FCM triggers a refetch
-  useEffect(() => {
-    if (!successOrder) return;
-    const updated = activeOrders.find(o => o.id === successOrder.id);
-    if (updated && updated.status !== successOrder.status) {
-      setSuccessOrder(updated);
-    }
-  }, [activeOrders, successOrder]);
+  // NOTE: successOrder sync is handled by the effect at line ~161 above.
+  // Do NOT add another sync here — it causes a re-render cascade.
 
   const onRefresh = async () => {
     setRefreshing(true);

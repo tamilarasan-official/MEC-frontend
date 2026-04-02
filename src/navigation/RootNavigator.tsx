@@ -258,7 +258,13 @@ export default function RootNavigator() {
   const [loginSuccessData, setLoginSuccessData] = useState<{ name: string; role: string } | null>(null);
 
   // PIN setup check — show setup screen if user hasn't set up PIN
-  const needsPinSetup = isAuthenticated && user && user.isPinSetup === false && !isCheckingAuth;
+  // Use !user.isPinSetup (not === false) so users who predate the PIN feature
+  // (isPinSetup is undefined) are also prompted to set up their PIN.
+  const needsPinSetup = isAuthenticated && user && !user.isPinSetup && !isCheckingAuth;
+
+  if (__DEV__ && isAuthenticated && user) {
+    console.log('[RootNavigator] PIN check:', { isPinSetup: user.isPinSetup, needsPinSetup, permissionsHandled, loginSuccessData: !!loginSuccessData });
+  }
 
   // Listen for login success event (emitted from OTPScreen after auth succeeds)
   useEffect(() => {
@@ -402,17 +408,25 @@ export default function RootNavigator() {
   }, [isAuthenticated, user?.id]);
 
   // Reconnect socket when eat/work mode changes (need to rejoin/leave shop room)
+  const userModeChangedRef = useRef(false);
   useEffect(() => {
+    // Skip the initial mount — the login effect above handles the first connection
+    if (!userModeChangedRef.current) {
+      userModeChangedRef.current = true;
+      return;
+    }
     if (!isAuthenticated || !userIdRef.current || !userRoleRef.current) return;
+    let cancelled = false;
     disconnectSocket();
     (async () => {
       const sock = await connectSocket(
         userIdRef.current!, userRoleRef.current!, userShopIdRef.current, userMode
       );
-      if (sock) {
+      if (!cancelled && sock) {
         setupSocketListeners(dispatch, userRoleRef.current!, userMode);
       }
     })();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userMode]);
 
@@ -569,7 +583,9 @@ export default function RootNavigator() {
         <ForceLogoutOverlay onDismiss={handleForceLogoutDismiss} />
       )}
 
-      {needsPinSetup && !loginSuccessData && (
+      {/* PIN setup gate — shown AFTER permissions and login overlay are dismissed.
+          Blocks the app until the user sets up a transaction PIN. */}
+      {needsPinSetup && permissionsHandled && !loginSuccessData && (
         <SetupPINScreen onComplete={() => dispatch(refreshUserData())} />
       )}
     </>

@@ -139,7 +139,6 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   };
 
   return (
-    <>
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
       <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close cart" accessibilityRole="button" />
@@ -290,15 +289,18 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
           </View>
         )}
       </Animated.View>
+
+      {/* PIN verification — must be inside the same Modal to work on iOS.
+          iOS only supports one Modal presentation at a time; a sibling Modal
+          gets hidden behind the first one. */}
+      <PINVerifyModal
+        visible={showPinModal}
+        amount={cartTotal}
+        title={cartItems.map(c => c.item.name).join(', ')}
+        onVerified={() => { setShowPinModal(false); handlePay(); }}
+        onCancel={() => setShowPinModal(false)}
+      />
     </Modal>
-    <PINVerifyModal
-      visible={showPinModal}
-      amount={cartTotal}
-      title={cartItems.map(c => c.item.name).join(', ')}
-      onVerified={() => { setShowPinModal(false); handlePay(); }}
-      onCancel={() => setShowPinModal(false)}
-    />
-    </>
   );
 }
 

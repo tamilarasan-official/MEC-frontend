@@ -172,16 +172,17 @@ export default function QRPaymentConfirmModal({
           )}
         </View>
       </View>
+      {/* PIN verification — rendered inside the same Modal for iOS compatibility */}
+      {data && (
+        <PINVerifyModal
+          visible={showPinModal}
+          amount={data.amount}
+          title={data.title || 'QR Payment'}
+          onVerified={() => { setShowPinModal(false); handlePay(); }}
+          onCancel={() => setShowPinModal(false)}
+        />
+      )}
     </Modal>
-    {data && (
-      <PINVerifyModal
-        visible={showPinModal}
-        amount={data.amount}
-        title={data.title || 'QR Payment'}
-        onVerified={() => { setShowPinModal(false); handlePay(); }}
-        onCancel={() => setShowPinModal(false)}
-      />
-    )}
     </>
   );
 }

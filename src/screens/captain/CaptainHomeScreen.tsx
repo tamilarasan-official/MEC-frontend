@@ -124,7 +124,7 @@ export default function CaptainHomeScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Fetch orders on focus and poll every 30s while focused, pausing when backgrounded (iOS useFocusEffect)
+  // Single polling interval: orders + stats + wallet every 30s while focused
   useFocusEffect(
     useCallback(() => {
       dispatch(fetchActiveShopOrders());
@@ -136,6 +136,7 @@ export default function CaptainHomeScreen() {
         interval = setInterval(() => {
           dispatch(fetchActiveShopOrders());
           dispatch(fetchDashboardStats());
+          dispatch(fetchWalletBalance());
         }, 30000);
       };
       startPolling();
@@ -144,20 +145,6 @@ export default function CaptainHomeScreen() {
         else stopPolling();
       });
       return () => { stopPolling(); sub.remove(); };
-    }, [dispatch])
-  );
-
-  // Poll wallet balance every 30s while focused, pausing when backgrounded (iOS useFocusEffect)
-  useFocusEffect(
-    useCallback(() => {
-      let walletInterval: ReturnType<typeof setInterval> | null = null;
-      const stopWalletPolling = () => { if (walletInterval) { clearInterval(walletInterval); walletInterval = null; } };
-      const startWalletPolling = () => { stopWalletPolling(); walletInterval = setInterval(() => dispatch(fetchWalletBalance()), 30000); };
-      startWalletPolling();
-      const sub = AppState.addEventListener('change', (state) => {
-        if (state === 'active') startWalletPolling(); else stopWalletPolling();
-      });
-      return () => { stopWalletPolling(); sub.remove(); };
     }, [dispatch])
   );
 

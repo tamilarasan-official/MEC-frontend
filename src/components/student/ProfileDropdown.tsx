@@ -190,8 +190,9 @@ export default function ProfileDropdown({
         </TouchableOpacity>
       </TouchableOpacity>
 
-      {/* Sign Out Confirmation Modal */}
-      <Modal visible={showSignOut} animationType="fade" transparent statusBarTranslucent>
+      {/* Sign Out Confirmation — absolute View instead of nested Modal for iOS compat */}
+      {showSignOut && (
+      <View style={StyleSheet.absoluteFill}>
         <TouchableOpacity style={styles.signOutOverlay} activeOpacity={1} onPress={() => setShowSignOut(false)}>
           <Animated.View style={[styles.signOutDialog, { transform: [{ scale: signOutScale }] }]}>
             <View style={styles.signOutIconWrap}>
@@ -224,7 +225,8 @@ export default function ProfileDropdown({
             </View>
           </Animated.View>
         </TouchableOpacity>
-      </Modal>
+      </View>
+      )}
     </Modal>
   );
 }

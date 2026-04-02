@@ -19,6 +19,19 @@ const SOCKET_URL = API_ORIGIN;
 
 let socket: Socket | null = null;
 
+// Throttle mechanism to prevent dispatch storms — multiple socket events arriving
+// in quick succession (e.g. dual-room delivery, rapid status changes) would trigger
+// redundant API calls that freeze the UI. This batches them into one call per interval.
+const throttledDispatches = new Map<string, ReturnType<typeof setTimeout>>();
+function throttledDispatch(dispatch: AppDispatch, key: string, thunk: any, delayMs = 2000) {
+  const existing = throttledDispatches.get(key);
+  if (existing) clearTimeout(existing);
+  throttledDispatches.set(key, setTimeout(() => {
+    throttledDispatches.delete(key);
+    dispatch(thunk);
+  }, delayMs));
+}
+
 export interface OrderUpdatePayload {
   orderId: string;
   orderNumber: string;
@@ -125,18 +138,19 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       // This must happen BEFORE dedup check — dedup only gates notifications/popups.
       dispatch(patchOrderStatus({ orderId: payload.orderId, status, items: payload.items }));
 
-      // Always re-fetch orders so UI reflects the new status — even if popup/notification
-      // was already shown by FCM. Fetch both active orders (for Dashboard) and all
-      // orders (for Orders page) so every screen updates in real-time.
+      // Re-fetch orders so UI reflects the new status. Throttled to prevent dispatch
+      // storms when multiple events arrive in quick succession (dual-room delivery,
+      // rapid status changes). The patchOrderStatus above already updated Redux
+      // instantly — these fetches just ensure full consistency.
       if (userRole === 'student' || userMode === 'eat') {
-        dispatch(fetchMyActiveOrders());
-        dispatch(fetchMyOrders());
+        throttledDispatch(dispatch, 'fetchMyActiveOrders', fetchMyActiveOrders());
+        throttledDispatch(dispatch, 'fetchMyOrders', fetchMyOrders());
         if (status === 'cancelled' || status === 'completed') {
-          dispatch(fetchWalletBalance());
+          throttledDispatch(dispatch, 'fetchWalletBalance', fetchWalletBalance());
         }
       } else {
-        dispatch(fetchActiveShopOrders());
-        dispatch(fetchDashboardStats());
+        throttledDispatch(dispatch, 'fetchActiveShopOrders', fetchActiveShopOrders());
+        throttledDispatch(dispatch, 'fetchDashboardStats', fetchDashboardStats());
       }
 
       // Dedup: only skip notification + popup if this orderId+status was already processed
@@ -226,8 +240,8 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       }));
 
       // Refetch order list + dashboard stats so new order appears immediately
-      dispatch(fetchActiveShopOrders());
-      dispatch(fetchDashboardStats());
+      throttledDispatch(dispatch, 'fetchActiveShopOrders', fetchActiveShopOrders());
+      throttledDispatch(dispatch, 'fetchDashboardStats', fetchDashboardStats());
 
       displayLocalNotification('New Order!', msg, { orderId: payload.orderId }, CHANNEL_ORDER_UPDATES, `new-order-${payload.orderId}`);
     } catch (e) {
@@ -373,11 +387,10 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       }));
 
       // Refresh QR payments so dashboard shows updated collected amount
-      dispatch(fetchQRPayments());
-      // Also refresh wallet balance + orders in case payment is linked to an order
-      dispatch(fetchWalletBalance());
-      dispatch(fetchActiveShopOrders());
-      dispatch(fetchDashboardStats());
+      throttledDispatch(dispatch, 'fetchQRPayments', fetchQRPayments());
+      throttledDispatch(dispatch, 'fetchWalletBalance', fetchWalletBalance());
+      throttledDispatch(dispatch, 'fetchActiveShopOrders', fetchActiveShopOrders());
+      throttledDispatch(dispatch, 'fetchDashboardStats', fetchDashboardStats());
 
       // Show local notification for shop staff
       displayLocalNotification(title, msg, { paymentRequestId: payload.paymentRequestId }, CHANNEL_WALLET, `payment-${payload.paymentRequestId}`);

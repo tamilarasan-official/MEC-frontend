@@ -112,20 +112,14 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
         setCurrentStatus(data.status as Order['status']);
       }
       // Always close -- any popup should be visible, not blocked by this Modal
-      dispatch(fetchMyOrders());
-      dispatch(fetchMyActiveOrders());
+      // No need to dispatch here — socket already triggered the refetch
       onCloseRef.current();
     });
     return () => subscription.remove();
   }, [order.orderNumber, order.pickupToken, order.id, dispatch]);
 
-  // Periodically refresh Redux so screens behind the modal stay updated
-  useEffect(() => {
-    const interval = setInterval(() => {
-      dispatch(fetchMyActiveOrders());
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [dispatch]);
+  // No separate Redux polling needed here — the 8s API poll above + socket events
+  // already keep the order status fresh. Redundant polling causes dispatch storms.
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: 0, friction: 8, useNativeDriver: true }).start();
