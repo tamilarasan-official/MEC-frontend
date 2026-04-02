@@ -161,7 +161,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   kvWrapper: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '85%',
+    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '95%',
   },
   sheet: {
     backgroundColor: colors.card,
@@ -198,7 +198,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   statusText: { fontSize: 11, fontWeight: '500', color: '#10b981' },
 
   // Notification list
-  notifList: { maxHeight: 420 },
+  notifList: { flex: 1 },
   notifCard: {
     flexDirection: 'row', gap: 12, padding: 14, borderRadius: 14,
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8,

@@ -8,7 +8,8 @@ import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { mediumHaptic, successHaptic, errorHaptic } from '../../utils/haptics';
-import { useAppSelector } from '../../store';
+import { useAppSelector, useAppDispatch } from '../../store';
+import { refreshUserData } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import { useSecureScreen } from '../../utils/useSecureScreen';
 
@@ -24,6 +25,7 @@ export default function TransactionPINScreen({ navigation, onClose }: { navigati
   useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
 
   const [mode, setMode] = useState<Mode>('menu');
@@ -131,6 +133,7 @@ export default function TransactionPINScreen({ navigation, onClose }: { navigati
     setChangeError(null);
     try {
       await api.put('/auth/change-pin', { currentPin, newPin });
+      dispatch(refreshUserData());
       resetChangeState();
       setMode('menu');
       showSuccessModal('PIN changed successfully!');
@@ -150,6 +153,30 @@ export default function TransactionPINScreen({ navigation, onClose }: { navigati
     }
   }, [currentPin, newPin, resetChangeState, showSuccessModal, triggerShake]);
 
+  const verifyCurrentPin = useCallback(async (pin: string) => {
+    setChangeLoading(true);
+    setChangeError(null);
+    try {
+      await api.post('/auth/verify-pin', { pin });
+      setChangeStep('new');
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const code = err?.response?.data?.error?.code;
+      const msg = err?.response?.data?.error?.message
+        || err?.response?.data?.message
+        || 'Wrong PIN. Please try again.';
+      if (status === 429 || code === 'PIN_LOCKED' || code === 'PIN_COOLDOWN') {
+        setChangeError(msg);
+      } else {
+        setChangeError(msg);
+        triggerShake();
+      }
+      setCurrentPin('');
+    } finally {
+      setChangeLoading(false);
+    }
+  }, [triggerShake]);
+
   const handleChangeDigitPress = useCallback((digit: string) => {
     if (changeLoading) return;
     mediumHaptic();
@@ -160,7 +187,7 @@ export default function TransactionPINScreen({ navigation, onClose }: { navigati
       const next = currentPin + digit;
       setCurrentPin(next);
       if (next.length === PIN_LENGTH) {
-        setTimeout(() => setChangeStep('new'), 200);
+        setTimeout(() => verifyCurrentPin(next), 200);
       }
     } else if (changeStep === 'new') {
       if (newPin.length >= PIN_LENGTH) return;
@@ -187,7 +214,7 @@ export default function TransactionPINScreen({ navigation, onClose }: { navigati
         }
       }
     }
-  }, [changeStep, currentPin, newPin, confirmPin, changeLoading, handleChangePinSubmit, triggerShake]);
+  }, [changeStep, currentPin, newPin, confirmPin, changeLoading, handleChangePinSubmit, verifyCurrentPin, triggerShake]);
 
   const handleChangeBackspace = useCallback(() => {
     if (changeLoading) return;
@@ -238,6 +265,7 @@ export default function TransactionPINScreen({ navigation, onClose }: { navigati
     setForgotError(null);
     try {
       await api.post('/auth/reset-pin', { newPin: forgotNewPin, otp: otpValue, sessionId });
+      dispatch(refreshUserData());
       resetForgotState();
       setMode('menu');
       showSuccessModal('PIN reset successfully!');

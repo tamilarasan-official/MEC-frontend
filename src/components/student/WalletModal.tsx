@@ -206,7 +206,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   kvWrapper: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '85%',
+    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '95%',
   },
   sheet: {
     backgroundColor: colors.card,

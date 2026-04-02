@@ -76,12 +76,14 @@ export interface FoodItem {
 }
 
 // ---- Cart ----
-export type ItemStatus = 'preparing' | 'ready' | 'delivered';
+export type ItemStatus = 'pending' | 'preparing' | 'rejected' | 'ready' | 'delivered';
 
 export interface CartItem extends FoodItem {
   quantity: number;
   delivered?: boolean;
   itemStatus?: ItemStatus;
+  rejectedAt?: string;
+  refundAmount?: number;
 }
 
 // ---- Order ----

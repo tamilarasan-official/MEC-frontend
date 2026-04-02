@@ -17,6 +17,8 @@ const mapOrderItem = (item: any): CartItem => ({
   quantity: item.quantity ?? 1,
   delivered: item.delivered ?? false,
   itemStatus: item.itemStatus || 'preparing',
+  rejectedAt: item.rejectedAt,
+  refundAmount: item.refundAmount,
 });
 
 const mapOrder = (raw: any): Order => ({
@@ -80,7 +82,10 @@ export const createOrder = createAsyncThunk(
       if (__DEV__) console.log('[createOrder] payload:', JSON.stringify(payload));
       res = await api.post('/orders', payload);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to create order');
+      const errMsg = e.response?.data?.message || e.response?.data?.error?.message || e.message || 'Failed to create order';
+      const errCode = e.response?.data?.error?.code || e.response?.status || 'NETWORK';
+      if (__DEV__) console.error('[createOrder] Stage 1 FAILED:', errCode, errMsg, 'status:', e.response?.status);
+      return rejectWithValue(`${errMsg} (${errCode})`);
     }
 
     // Step 2: Map the response — if this fails, the order WAS created so
@@ -192,6 +197,54 @@ export const markItemDelivered = createAsyncThunk(
       return mapOrder(res.data.data);
     } catch (e: any) {
       return rejectWithValue(e.response?.data?.message || 'Failed to mark item');
+    }
+  },
+);
+
+export const acceptItem = createAsyncThunk(
+  'orders/acceptItem',
+  async ({ orderId, itemIndex }: { orderId: string; itemIndex: number }, { rejectWithValue }) => {
+    try {
+      const res = await api.post(`/orders/${orderId}/items/${itemIndex}/accept`);
+      return mapOrder(res.data.data);
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.message || 'Failed to accept item');
+    }
+  },
+);
+
+export const rejectItem = createAsyncThunk(
+  'orders/rejectItem',
+  async ({ orderId, itemIndex, reason }: { orderId: string; itemIndex: number; reason?: string }, { rejectWithValue }) => {
+    try {
+      const res = await api.post(`/orders/${orderId}/items/${itemIndex}/reject`, { reason });
+      return mapOrder(res.data.data);
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.message || 'Failed to reject item');
+    }
+  },
+);
+
+export const acceptAllItems = createAsyncThunk(
+  'orders/acceptAllItems',
+  async ({ orderId }: { orderId: string }, { rejectWithValue }) => {
+    try {
+      const res = await api.put(`/orders/${orderId}/accept-all`);
+      return mapOrder(res.data.data);
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.message || 'Failed to accept all items');
+    }
+  },
+);
+
+export const rejectAllItems = createAsyncThunk(
+  'orders/rejectAllItems',
+  async ({ orderId, reason }: { orderId: string; reason?: string }, { rejectWithValue }) => {
+    try {
+      const res = await api.put(`/orders/${orderId}/reject-all`, { reason });
+      return mapOrder(res.data.data);
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.message || 'Failed to reject order');
     }
   },
 );
@@ -344,6 +397,23 @@ const ordersSlice = createSlice({
         if (s.currentOrder?.id === o.id) s.currentOrder = o;
       })
       .addCase(markItemDelivered.rejected, (s, a) => { s.error = a.payload as string; });
+    // Accept/Reject item — same reducer pattern: replace order in all lists
+    const replaceOrder = (s: OrdersState, o: Order) => {
+      for (const list of [s.shopOrders, s.activeOrders, s.orders]) {
+        const idx = list.findIndex(x => x.id === o.id);
+        if (idx >= 0) list[idx] = o;
+      }
+      if (s.currentOrder?.id === o.id) s.currentOrder = o;
+    };
+    builder
+      .addCase(acceptItem.fulfilled, (s, a) => { replaceOrder(s, a.payload); })
+      .addCase(acceptItem.rejected, (s, a) => { s.error = a.payload as string; })
+      .addCase(rejectItem.fulfilled, (s, a) => { replaceOrder(s, a.payload); })
+      .addCase(rejectItem.rejected, (s, a) => { s.error = a.payload as string; })
+      .addCase(acceptAllItems.fulfilled, (s, a) => { replaceOrder(s, a.payload); })
+      .addCase(acceptAllItems.rejected, (s, a) => { s.error = a.payload as string; })
+      .addCase(rejectAllItems.fulfilled, (s, a) => { replaceOrder(s, a.payload); })
+      .addCase(rejectAllItems.rejected, (s, a) => { s.error = a.payload as string; });
     // Verify QR
     builder
       .addCase(verifyQRCode.pending, (s) => { s.error = null; })

@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
-  Image, FlatList, ActivityIndicator,
+  Image, FlatList, ActivityIndicator, Animated, Easing, Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAppSelector, useAppDispatch } from '../../store';
@@ -22,8 +22,12 @@ import NotificationsModal from '../../components/student/NotificationsModal';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { useNavigation } from '@react-navigation/native';
-import { FoodItem, Order } from '../../types';
+import { FoodItem, Order, CreateOrderResult } from '../../types';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import { mediumHaptic } from '../../utils/haptics';
+
+const screenWidth = Dimensions.get('window').width;
+const cardWidth = screenWidth - 32; // Account for parent padding (16 each side)
 
 const CATEGORY_ICONS: Record<string, string> = {
   All: 'apps-outline',
@@ -66,9 +70,8 @@ const CATEGORY_ORDER = ['Classic', 'Bites', 'Snacks', 'Drinks', 'Desserts', 'Mea
 const statusConfig: Record<string, { bg: string; color: string; label: string }> = {
   pending: { bg: 'rgba(234,179,8,0.15)', color: '#eab308', label: 'Ordered' },
   preparing: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Preparing' },
-  partially_ready: { bg: 'rgba(139,92,246,0.15)', color: '#8b5cf6', label: 'Partially Ready' },
   ready: { bg: 'rgba(16,185,129,0.15)', color: '#10b981', label: 'Ready' },
-  partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial Pickup' },
+  partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial' },
 };
 
 export default function CaptainEatScreen() {
@@ -90,9 +93,13 @@ export default function CaptainEatScreen() {
   const [showCart, setShowCart] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [successOrder, setSuccessOrder] = useState<Order | null>(null);
+  const [splitOrders, setSplitOrders] = useState<Order[] | null>(null);
   const [showSuccessAnim, setShowSuccessAnim] = useState(false);
+  const [successOrderType, setSuccessOrderType] = useState<'instant' | 'regular' | 'split'>('instant');
   const [showFailAnim, setShowFailAnim] = useState(false);
   const [failError, setFailError] = useState('');
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
   useEffect(() => {
@@ -110,15 +117,6 @@ export default function CaptainEatScreen() {
   }, [activeOrders, allOrders, successOrder]);
 
   const canteenShop = shops.find(s => s.category === 'canteen');
-
-  // Sync successOrder with Redux when socket/FCM triggers a refetch
-  useEffect(() => {
-    if (!successOrder) return;
-    const updated = activeOrders.find(o => o.id === successOrder.id);
-    if (updated && updated.status !== successOrder.status) {
-      setSuccessOrder(updated);
-    }
-  }, [activeOrders, successOrder]);
 
   const loadData = useCallback(async () => {
     await Promise.all([
@@ -147,16 +145,14 @@ export default function CaptainEatScreen() {
 
   const allCategories = useMemo(() => {
     const cats = categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) as string[];
-    return cats
-      .filter(c => c.toLowerCase() !== 'new')
-      .sort((a, b) => {
-        const ai = CATEGORY_ORDER.indexOf(a);
-        const bi = CATEGORY_ORDER.indexOf(b);
-        if (ai === -1 && bi === -1) return 0;
-        if (ai === -1) return 1;
-        if (bi === -1) return -1;
-        return ai - bi;
-      });
+    return [...cats].sort((a, b) => {
+      const ai = CATEGORY_ORDER.indexOf(a);
+      const bi = CATEGORY_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return 0;
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
   }, [categories]);
 
   useEffect(() => {
@@ -301,30 +297,58 @@ export default function CaptainEatScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         ListHeaderComponent={
           <>
-            {/* Active Orders */}
+            {/* Active Orders — Swipeable Carousel */}
             {activeOrders.length > 0 && (
               <View style={styles.section}>
-                {activeOrders.map(order => {
-                  const sc = statusConfig[order.status] || statusConfig.pending;
-                  return (
-                    <View key={order.id} style={styles.activeOrderCard}>
-                      <View style={styles.activeOrderIcon}>
-                        <Icon name="cube-outline" size={24} color="#3b82f6" />
-                      </View>
-                      <View style={styles.activeOrderInfo}>
-                        <Text style={styles.activeOrderItems} numberOfLines={1}>
-                          {order.items.map(i => i.name).join(', ')}
-                        </Text>
-                        <View style={styles.activeOrderMeta}>
-                          <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
-                            <Text style={[styles.statusText, { color: sc.color }]}>{sc.label}</Text>
+                <FlatList
+                  data={activeOrders}
+                  keyExtractor={o => o.id}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={cardWidth + 8}
+                  decelerationRate="fast"
+                  onScroll={(e) => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / (cardWidth + 8));
+                    setCarouselIndex(idx);
+                  }}
+                  scrollEventThrottle={16}
+                  renderItem={({ item: order }) => {
+                    const sc = statusConfig[order.status] || statusConfig.pending;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.carouselCard, { width: cardWidth }]}
+                        onPress={() => { mediumHaptic(); setSelectedOrder(order); }}
+                        activeOpacity={0.85}
+                        accessibilityLabel="Show order QR"
+                        accessibilityRole="button">
+                        <View style={styles.carouselRow}>
+                          <OrderPulseIcon color={sc.color} />
+                          <View style={styles.carouselInfo}>
+                            <Text style={styles.carouselItems} numberOfLines={1}>
+                              {order.items.map(i => i.name).join(', ')}
+                            </Text>
+                            <View style={styles.carouselMeta}>
+                              <View style={[styles.statusBadge, { backgroundColor: sc.bg }]}>
+                                <View style={[styles.statusDot, { backgroundColor: sc.color }]} />
+                                <Text style={[styles.statusText, { color: sc.color }]}>{sc.label}</Text>
+                              </View>
+                              <Text style={styles.tokenText}>#{order.pickupToken}</Text>
+                            </View>
                           </View>
-                          <Text style={styles.tokenText}>#{order.pickupToken}</Text>
+                          <Icon name="chevron-forward" size={20} color={colors.textMuted} />
                         </View>
-                      </View>
-                    </View>
-                  );
-                })}
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+                {activeOrders.length > 1 && (
+                  <View style={styles.dotsRow}>
+                    {activeOrders.map((_, i) => (
+                      <View key={i} style={[styles.dot, i === carouselIndex && styles.dotActive]} />
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 
@@ -377,13 +401,11 @@ export default function CaptainEatScreen() {
           activeOpacity={0.9}
           accessibilityLabel="View cart"
           accessibilityRole="button">
-          <View style={styles.floatingBar}>
-            <LinearGradient
-              colors={['#3b82f6', '#06d6a0']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
+          <LinearGradient
+            colors={['#3b82f6', '#06d6a0']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.floatingBar}>
             <View style={styles.floatingBarLeft}>
               <View style={styles.floatingBarIcon}>
                 <Icon name="bag-handle" size={22} color="#fff" />
@@ -400,7 +422,7 @@ export default function CaptainEatScreen() {
               <Text style={styles.floatingBarAction}>View Cart</Text>
               <Icon name="arrow-forward" size={18} color="#fff" />
             </View>
-          </View>
+          </LinearGradient>
         </TouchableOpacity>
       )}
 
@@ -427,16 +449,27 @@ export default function CaptainEatScreen() {
       <CartBottomSheet
         visible={showCart}
         onClose={() => setShowCart(false)}
-        onOrderSuccess={(result) => {
-          setShowCart(false);
-          setSuccessOrder(result.order);
-          setShowSuccessAnim(true);
+        onOrderSuccess={(result: CreateOrderResult) => {
           dispatch(fetchMyActiveOrders());
+
+          if (result.wasSplit && result.orders && result.orders.length > 1) {
+            setSplitOrders(result.orders);
+            setSuccessOrder(result.order);
+            setSuccessOrderType('split');
+            setShowSuccessAnim(true);
+          } else {
+            const order = result.order;
+            setSplitOrders(null);
+            setSuccessOrder(order);
+            setSuccessOrderType(order.isReadyServe ? 'instant' : 'regular');
+            setShowSuccessAnim(true);
+          }
+          setTimeout(() => setShowCart(false), 150);
         }}
         onOrderFailure={(errorMessage) => {
-          setShowCart(false);
           setFailError(errorMessage || '');
           setShowFailAnim(true);
+          setTimeout(() => setShowCart(false), 150);
         }}
       />
 
@@ -444,10 +477,13 @@ export default function CaptainEatScreen() {
       {showSuccessAnim && successOrder && (
         <OrderAnimation
           type="success"
-          orderType={successOrder.isReadyServe ? 'instant' : 'regular'}
+          orderType={successOrderType}
           pickupToken={successOrder.pickupToken}
           orderId={successOrder.id}
-          total={successOrder.total}
+          total={splitOrders
+            ? splitOrders.reduce((sum, o) => sum + o.total, 0)
+            : successOrder.total}
+          splitOrders={splitOrders || undefined}
           onComplete={() => setShowSuccessAnim(false)}
         />
       )}
@@ -466,13 +502,61 @@ export default function CaptainEatScreen() {
         <OrderQRCard
           order={successOrder}
           onClose={() => {
+            if (splitOrders && splitOrders.length > 1) {
+              const nextOrder = splitOrders.find(o => o.id !== successOrder.id);
+              if (nextOrder) {
+                setSuccessOrder(nextOrder);
+                setSplitOrders(null);
+                return;
+              }
+            }
             setSuccessOrder(null);
+            setSplitOrders(null);
             dispatch(fetchMyActiveOrders());
             dispatch(fetchWalletBalance());
           }}
         />
       )}
+
+      {/* QR Card from carousel tap */}
+      {selectedOrder && (
+        <OrderQRCard order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      )}
     </ScreenWrapper>
+  );
+}
+
+function OrderPulseIcon({ color }: { color: string }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const opacityAnim = useRef(new Animated.Value(0.6)).current;
+  useEffect(() => {
+    Animated.loop(Animated.parallel([
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.8, duration: 1500, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 0, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.timing(opacityAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0.6, duration: 0, useNativeDriver: true }),
+      ]),
+    ])).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View style={{ width: 48, height: 48, justifyContent: 'center', alignItems: 'center' }}>
+      <Animated.View style={{
+        position: 'absolute', width: 48, height: 48, borderRadius: 24,
+        borderWidth: 2, borderStyle: 'dashed', borderColor: color,
+        transform: [{ scale: pulseAnim }], opacity: opacityAnim,
+      }} />
+      <View style={{
+        width: 32, height: 32, borderRadius: 16,
+        borderWidth: 1.5, borderColor: color + '40', borderStyle: 'dotted',
+        justifyContent: 'center', alignItems: 'center',
+      }}>
+        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+      </View>
+    </View>
   );
 }
 
@@ -521,19 +605,21 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // Section
   section: { marginBottom: 16 },
 
-  // Active Orders
-  activeOrderCard: {
-    flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, marginBottom: 8,
-    backgroundColor: 'rgba(59,130,246,0.08)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)',
+  // Active Orders — Carousel
+  carouselCard: {
+    padding: 16, borderRadius: 18, marginRight: 8,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  activeOrderIcon: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(59,130,246,0.15)',
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
-  activeOrderInfo: { flex: 1 },
-  activeOrderItems: { fontSize: 14, fontWeight: '600', color: colors.text },
-  activeOrderMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  carouselRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  carouselInfo: { flex: 1 },
+  carouselItems: { fontSize: 14, fontWeight: '600', color: colors.text },
+  carouselMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  dotsRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
+  dotActive: { width: 18, backgroundColor: colors.accent, borderRadius: 3 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '600' },
   tokenText: { fontSize: 12, color: colors.textMuted },
 
@@ -593,8 +679,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
   },
   floatingBar: {
-    height: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderRadius: 20, paddingHorizontal: 16, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 20, padding: 14,
   },
   floatingBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   floatingBarIcon: {

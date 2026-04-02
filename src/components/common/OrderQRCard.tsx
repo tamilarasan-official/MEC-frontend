@@ -1,16 +1,12 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Animated, DeviceEventEmitter,
+  View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Animated,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Icon from './Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
-import { useAppSelector, useAppDispatch } from '../../store';
-import { fetchMyActiveOrders, fetchMyOrders } from '../../store/slices/ordersSlice';
 import { Order } from '../../types';
-import { ORDER_STATUS_POPUP_EVENT } from '../../constants/events';
-import orderService from '../../services/orderService';
 import { useSecureScreen } from '../../utils/useSecureScreen';
 
 interface OrderQRCardProps {
@@ -22,104 +18,23 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const dispatch = useAppDispatch();
   const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = useMemo(() => ({
     pending: { label: 'Order Placed', icon: 'time-outline', color: colors.amber[500], bg: colors.warningBg },
     preparing: { label: 'Preparing', icon: 'restaurant-outline', color: colors.blue[400], bg: colors.blueBg },
+    partially_ready: { label: 'Partially Ready', icon: 'hourglass-outline', color: colors.blue[400], bg: colors.blueBg },
     ready: { label: 'Ready for Pickup', icon: 'cube-outline', color: colors.orange[500], bg: colors.orangeBg },
-    partially_ready: { label: 'Partially Ready', icon: 'git-branch-outline', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
-    partially_delivered: { label: 'Partial Pickup', icon: 'cube-outline', color: colors.blue[400], bg: colors.blueBg },
     completed: { label: 'Completed', icon: 'checkmark-circle', color: colors.primary, bg: colors.successBg },
     cancelled: { label: 'Cancelled', icon: 'close-circle', color: colors.destructive, bg: colors.errorBg },
   }), [colors]);
   // Auto-expand details when partially_ready so student sees which items are ready
   const [showDetails, setShowDetails] = useState(order.status === 'partially_ready' || order.status === 'partially_delivered');
   const [currentStatus, setCurrentStatus] = useState(order.status);
+  const [showFullQR, setShowFullQR] = useState(false);
   const slideAnim = useState(new Animated.Value(300))[0];
-  const prevStatusRef = useRef(order.status);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
 
-  // Sync status from prop changes
   useEffect(() => {
-    if (order.status !== currentStatus) {
-      setCurrentStatus(order.status);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setCurrentStatus(order.status);
   }, [order.status]);
-
-  // Subscribe to Redux for real-time status updates
-  const activeOrders = useAppSelector(s => s.orders.activeOrders);
-  const reduxOrders = useAppSelector(s => s.orders.orders);
-  useEffect(() => {
-    const updated = activeOrders.find(o => o.id === order.id) || reduxOrders.find(o => o.id === order.id);
-    if (updated && updated.status !== currentStatus) {
-      setCurrentStatus(updated.status);
-    }
-  }, [activeOrders, reduxOrders, order.id, currentStatus]);
-
-  // Track currentStatus in a ref for polling closures
-  const currentStatusRef = useRef(currentStatus);
-  useEffect(() => { currentStatusRef.current = currentStatus; }, [currentStatus]);
-
-  // When status changes: close the drawer so the popup (rendered as an
-  // absolute View in RootNavigator) can show unblocked. No delay needed --
-  // React batches state updates so the popup renders after unmount.
-  useEffect(() => {
-    if (currentStatus === prevStatusRef.current) return;
-    prevStatusRef.current = currentStatus;
-
-    // Refresh both order lists for screens behind the modal
-    dispatch(fetchMyOrders());
-    dispatch(fetchMyActiveOrders());
-    // Close the drawer so the full-screen popup can show unblocked
-    onCloseRef.current();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStatus, dispatch]);
-
-  // Poll for order status updates every 8 seconds while the modal is open
-  useEffect(() => {
-    let mounted = true;
-
-    const pollStatus = async () => {
-      try {
-        const fresh = await orderService.getOrderById(order.id);
-        if (mounted && fresh && fresh.status !== currentStatusRef.current) {
-          setCurrentStatus(fresh.status);
-        }
-      } catch {
-        // Silently ignore -- poll will retry
-      }
-    };
-
-    const interval = setInterval(pollStatus, 8000);
-    pollStatus();
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [order.id]);
-
-  // Listen for ORDER_STATUS_POPUP_EVENT -- close the drawer whenever ANY order
-  // status popup fires so the full-screen popup (rendered as an absolute View
-  // in RootNavigator) is always visible and not hidden behind this Modal.
-  useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: { status: string; orderNumber: string }) => {
-      // Update status if it's for THIS order
-      const orderNum = order.orderNumber || order.pickupToken || order.id.slice(-6);
-      if (data.orderNumber === orderNum || data.orderNumber === order.pickupToken) {
-        setCurrentStatus(data.status as Order['status']);
-      }
-      // Always close -- any popup should be visible, not blocked by this Modal
-      // No need to dispatch here — socket already triggered the refetch
-      onCloseRef.current();
-    });
-    return () => subscription.remove();
-  }, [order.orderNumber, order.pickupToken, order.id, dispatch]);
-
-  // No separate Redux polling needed here — the 8s API poll above + socket events
-  // already keep the order status fresh. Redundant polling causes dispatch storms.
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: 0, friction: 8, useNativeDriver: true }).start();
@@ -131,10 +46,11 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   const status = currentStatus === 'partially_ready'
     ? { ...statusBase, label: `${order.items.filter(i => (i.itemStatus || 'preparing') === 'ready').length} of ${order.items.length} Ready` }
     : statusBase;
-  const isReady = currentStatus === 'ready' || currentStatus === 'partially_ready' || currentStatus === 'partially_delivered';
+  const isReady = currentStatus === 'ready';
 
   const qrValue = useMemo(() => {
     try {
+      // Encode order info for QR code (JSON string is sufficient for QR)
       return JSON.stringify({
         order_id: order.id,
         pickup_token: order.pickupToken,
@@ -172,7 +88,8 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
 
           {/* QR + Token side by side */}
           <View style={styles.qrRow}>
-            <View style={styles.qrWrapper}>
+            {/* QR — tap for fullscreen */}
+            <TouchableOpacity style={styles.qrWrapper} onPress={() => setShowFullQR(true)} activeOpacity={0.8}>
               <View style={styles.qrGradientBorder}>
                 <View style={styles.qrInner}>
                   <QRCode
@@ -189,8 +106,9 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
                   />
                 </View>
               </View>
-            </View>
+            </TouchableOpacity>
 
+            {/* Token */}
             <View style={styles.tokenInfo}>
               <Text style={styles.tokenLabel}>PICKUP TOKEN</Text>
               <Text style={styles.tokenValue}>
@@ -265,6 +183,33 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
           </TouchableOpacity>
         </View>
       </Animated.View>
+
+      {/* Fullscreen QR Modal */}
+      {showFullQR && (
+        <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowFullQR(false)}>
+          <TouchableOpacity style={styles.fullQRBackdrop} activeOpacity={1} onPress={() => setShowFullQR(false)}>
+            <View style={styles.fullQRContainer}>
+              <View style={styles.fullQRCard}>
+                <QRCode
+                  value={qrValue}
+                  size={260}
+                  backgroundColor="#fff"
+                  color="#000"
+                  ecl="M"
+                  logo={require('../../assets/icons/appicon.png')}
+                  logoSize={48}
+                  logoBackgroundColor="#fff"
+                  logoBorderRadius={12}
+                  logoMargin={4}
+                />
+              </View>
+              <Text style={styles.fullQRToken}>{order.pickupToken}</Text>
+              <Text style={styles.fullQRHint}>Show this QR at the counter</Text>
+              <Text style={styles.fullQRTap}>Tap anywhere to close</Text>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -295,7 +240,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   qrWrapper: {},
   qrGradientBorder: {
     padding: 3, borderRadius: 16,
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#3b82f6', // blue gradient border
   },
   qrInner: { backgroundColor: '#fff', borderRadius: 13, padding: 10 },
   tokenInfo: { flex: 1 },
@@ -338,4 +283,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: '#3b82f6', borderRadius: 16, paddingVertical: 14, alignItems: 'center',
   },
   doneBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  // Fullscreen QR
+  fullQRBackdrop: {
+    flex: 1, backgroundColor: '#7c3aed', justifyContent: 'center', alignItems: 'center',
+  },
+  fullQRContainer: { alignItems: 'center' },
+  fullQRCard: {
+    backgroundColor: '#fff', borderRadius: 24, padding: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 24, elevation: 10,
+  },
+  fullQRToken: {
+    fontSize: 56, fontWeight: '900', color: '#fff', letterSpacing: 8, marginTop: 28,
+  },
+  fullQRHint: {
+    fontSize: 16, color: 'rgba(255,255,255,0.8)', marginTop: 8,
+  },
+  fullQRTap: {
+    fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 24,
+  },
 });

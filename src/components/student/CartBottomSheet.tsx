@@ -25,9 +25,8 @@ interface CartBottomSheetProps {
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
   pending:              { bg: 'rgba(234,179,8,0.15)',   color: '#eab308', label: 'Order Placed' },
   preparing:            { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Preparing' },
-  partially_ready:      { bg: 'rgba(139,92,246,0.15)',  color: '#8b5cf6', label: 'Partially Ready' },
   ready:                { bg: 'rgba(16,185,129,0.15)',  color: '#10b981', label: 'Ready For Pickup' },
-  partially_delivered:  { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Partial Pickup' },
+  partially_delivered:  { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Partial' },
 };
 
 export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailure }: CartBottomSheetProps) {
@@ -37,14 +36,13 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
 
   const { items: cartItems, shopId, shopName } = useAppSelector(s => s.cart);
   const user = useAppSelector(s => s.auth.user);
-  const userMode = useAppSelector(s => s.user.userMode);
   const activeOrders = useAppSelector(s => s.orders.activeOrders);
   const shops = useAppSelector(s => s.menu.shops);
   const [ordering, setOrdering] = useState(false);
 
   // Check if the shop is currently open
   const shop = shops.find(s => s.id === shopId);
-  const isShopClosed = !shop || shop.isActive === false;
+  const isShopClosed = shop ? shop.isActive === false : false;
 
   const slideAnim = useMemo(() => new Animated.Value(600), []);
   const backdropAnim = useMemo(() => new Animated.Value(0), []);
@@ -95,32 +93,14 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
     const savedTotal = cartTotal;
     const savedShopName = shopName || '';
     setOrdering(true);
+
+    // Step 1: Place the order — only a real API failure should show "Order Failed"
+    let result: CreateOrderResult;
     try {
-      const result = await dispatch(createOrder({
+      result = await dispatch(createOrder({
         shopId,
         items: cartItems.map(c => ({ foodItemId: c.item.id, quantity: c.quantity })),
-        ...(userMode === 'eat' ? { mode: 'eat' as const } : {}),
       })).unwrap();
-      dispatch(clearCart());
-      setOrdering(false);
-      // Ensure order has shopName and total filled
-      const enrichedResult: CreateOrderResult = {
-        ...result,
-        order: {
-          ...result.order,
-          total: result.order.total ?? savedTotal,
-          shopName: result.order.shopName || savedShopName,
-        },
-        orders: result.orders?.map(o => ({
-          ...o,
-          total: o.total ?? 0,
-          shopName: o.shopName || savedShopName,
-        })),
-      };
-      // Show success IMMEDIATELY — the animation overlay covers the screen
-      // so the cart close happens invisibly underneath (no freeze gap)
-      onOrderSuccess(enrichedResult);
-      onClose();
     } catch (err: any) {
       let msg: string;
       if (typeof err === 'string') {
@@ -132,13 +112,38 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       } else {
         msg = 'Order failed. Please check your balance and try again.';
       }
+      if (__DEV__) console.error('[CartBottomSheet] Order failed:', typeof err);
       setOrdering(false);
-      onOrderFailure(msg);
-      onClose();
+      animateClose(() => onOrderFailure(msg), true);
+      return;
+    }
+
+    // Step 2: Order succeeded — anything below must NEVER show failure
+    dispatch(clearCart());
+    setOrdering(false);
+    try {
+      const enrichedResult: CreateOrderResult = {
+        ...result,
+        order: {
+          ...result.order,
+          total: result.order?.total ?? savedTotal,
+          shopName: result.order?.shopName || savedShopName,
+        },
+        orders: result.orders?.map(o => ({
+          ...o,
+          total: o.total ?? 0,
+          shopName: o.shopName || savedShopName,
+        })),
+      };
+      animateClose(() => onOrderSuccess(enrichedResult), true);
+    } catch {
+      // Enrichment failed but order exists — send raw result as success
+      animateClose(() => onOrderSuccess(result), true);
     }
   };
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
       <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close cart" accessibilityRole="button" />
@@ -270,13 +275,11 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
               </Text>
             )}
             <TouchableOpacity onPress={() => { mediumHaptic(); handlePayPress(); }} disabled={isShopClosed || !hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`} accessibilityRole="button">
-              <View style={styles.payBtn}>
-                <LinearGradient
-                  colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={StyleSheet.absoluteFill}
-                />
+              <LinearGradient
+                colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.payBtn}>
                 {ordering ? (
                   <ActivityIndicator color="#fff" />
                 ) : isShopClosed ? (
@@ -284,23 +287,20 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                 ) : (
                   <Text style={styles.payBtnText}>Pay Rs.{cartTotal}</Text>
                 )}
-              </View>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         )}
       </Animated.View>
-
-      {/* PIN verification — must be inside the same Modal to work on iOS.
-          iOS only supports one Modal presentation at a time; a sibling Modal
-          gets hidden behind the first one. */}
-      <PINVerifyModal
-        visible={showPinModal}
-        amount={cartTotal}
-        title={cartItems.map(c => c.item.name).join(', ')}
-        onVerified={() => { setShowPinModal(false); handlePay(); }}
-        onCancel={() => setShowPinModal(false)}
-      />
     </Modal>
+    <PINVerifyModal
+      visible={showPinModal}
+      amount={cartTotal}
+      title={cartItems.map(c => c.item.name).join(', ')}
+      onVerified={() => { setShowPinModal(false); handlePay(); }}
+      onCancel={() => setShowPinModal(false)}
+    />
+    </>
   );
 }
 
@@ -310,7 +310,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: colors.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    maxHeight: '88%',
+    maxHeight: '95%',
   },
   handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
@@ -401,6 +401,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   shopClosedText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
   insufficientText: { fontSize: 12, color: colors.danger, textAlign: 'center' },
-  payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center', overflow: 'hidden' },
+  payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center' },
   payBtnText: { fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: 0.3 },
 });
