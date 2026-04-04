@@ -274,12 +274,20 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
                 Insufficient balance. Add Rs.{cartTotal - balance} to proceed.
               </Text>
             )}
-            <TouchableOpacity onPress={() => { mediumHaptic(); handlePayPress(); }} disabled={isShopClosed || !hasBalance || ordering} activeOpacity={0.85} accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`} accessibilityRole="button">
+            <TouchableOpacity
+              style={styles.payBtnWrap}
+              onPress={() => { mediumHaptic(); handlePayPress(); }}
+              disabled={isShopClosed || !hasBalance || ordering}
+              activeOpacity={0.85}
+              accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`}
+              accessibilityRole="button"
+            >
               <LinearGradient
                 colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={styles.payBtn}>
+                style={styles.payBtn}
+              >
                 {ordering ? (
                   <ActivityIndicator color="#fff" />
                 ) : isShopClosed ? (
@@ -401,6 +409,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   shopClosedText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
   insufficientText: { fontSize: 12, color: colors.danger, textAlign: 'center' },
-  payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center' },
+  payBtnWrap: { width: '100%' },
+  payBtn: { width: '100%', borderRadius: 18, paddingVertical: 18, alignItems: 'center' },
   payBtnText: { fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: 0.3 },
 });

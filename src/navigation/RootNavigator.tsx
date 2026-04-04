@@ -255,12 +255,27 @@ export default function RootNavigator() {
   const currentPopup = popupQueue.length > 0 ? popupQueue[0] : null;
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [permissionsHandled, setPermissionsHandled] = useState(false);
+  const [showLoginSuccess, setShowLoginSuccess] = useState(false);
   const [loginSuccessData, setLoginSuccessData] = useState<{ name: string; role: string } | null>(null);
+  const [showForceLogout, setShowForceLogout] = useState(false);
+  const prevAuthRef = useRef(false);
+  const userIdRef = useRef(user?.id);
+  const userRoleRef = useRef(user?.role);
+  const userShopIdRef = useRef(user?.shopId);
+  const userModeChangedRef = useRef(false);
+  const appStateRef = useRef(AppState.currentState);
 
   // PIN setup check — show setup screen if user hasn't set up PIN
   // Use !user.isPinSetup (not === false) so users who predate the PIN feature
   // (isPinSetup is undefined) are also prompted to set up their PIN.
   const needsPinSetup = isAuthenticated && user && !user.isPinSetup && !isCheckingAuth;
+
+  useEffect(() => {
+    if (!isCheckingAuth && isAuthenticated && !prevAuthRef.current) {
+      setShowLoginSuccess(true);
+    }
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated, isCheckingAuth]);
 
   if (__DEV__ && isAuthenticated && user) {
     console.log('[RootNavigator] PIN check:', { isPinSetup: user.isPinSetup, needsPinSetup, permissionsHandled, loginSuccessData: !!loginSuccessData });
@@ -288,8 +303,6 @@ export default function RootNavigator() {
     setPopupQueue(prev => prev.slice(1));
   }, []);
 
-  // Listen for force_logout (another device logged in with this account)
-  const [showForceLogout, setShowForceLogout] = useState(false);
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(FORCE_LOGOUT_EVENT, () => {
       setShowForceLogout(true);
@@ -372,10 +385,6 @@ export default function RootNavigator() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  // Stable refs for socket — avoids re-running effects when user object changes
-  const userIdRef = useRef(user?.id);
-  const userRoleRef = useRef(user?.role);
-  const userShopIdRef = useRef(user?.shopId);
   useEffect(() => {
     userIdRef.current = user?.id;
     userRoleRef.current = user?.role;
@@ -407,8 +416,6 @@ export default function RootNavigator() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user?.id]);
 
-  // Reconnect socket when eat/work mode changes (need to rejoin/leave shop room)
-  const userModeChangedRef = useRef(false);
   useEffect(() => {
     // Skip the initial mount — the login effect above handles the first connection
     if (!userModeChangedRef.current) {
@@ -430,8 +437,6 @@ export default function RootNavigator() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userMode]);
 
-  // Background/foreground app state handling
-  const appStateRef = useRef(AppState.currentState);
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
@@ -566,16 +571,19 @@ export default function RootNavigator() {
       )}
 
       {/* Permission drawer — shown once on first app launch, only when authenticated */}
-      {isAuthenticated && !permissionsHandled && (
+      {isAuthenticated && !permissionsHandled && !showLoginSuccess && (
         <PermissionDrawer onComplete={() => setPermissionsHandled(true)} />
       )}
 
       {/* Login success animation — rendered at root level so it survives the Auth→Main navigation swap */}
-      {loginSuccessData && (
+      {showLoginSuccess && user && (
         <LoginSuccessOverlay
-          name={loginSuccessData.name}
-          role={loginSuccessData.role}
-          onDone={() => setLoginSuccessData(null)}
+          name={loginSuccessData?.name || user.name}
+          role={loginSuccessData?.role || user.userTag || user.role}
+          onDone={() => {
+            setShowLoginSuccess(false);
+            setLoginSuccessData(null);
+          }}
         />
       )}
 
@@ -585,7 +593,7 @@ export default function RootNavigator() {
 
       {/* PIN setup gate — shown AFTER permissions and login overlay are dismissed.
           Blocks the app until the user sets up a transaction PIN. */}
-      {needsPinSetup && permissionsHandled && !loginSuccessData && (
+      {needsPinSetup && permissionsHandled && !showLoginSuccess && (
         <SetupPINScreen onComplete={() => dispatch(refreshUserData())} />
       )}
     </>
