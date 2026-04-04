@@ -7,6 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, AppNotification } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { markNotificationRead, removeNotification, clearNotifications } from '../../store/slices/userSlice';
+import walletService from '../../services/walletService';
 import { lightHaptic } from '../../utils/haptics';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
@@ -46,10 +47,14 @@ export default function NotificationsScreen({ navigation }: Props) {
   const handleRemove = useCallback((id: string) => {
     lightHaptic();
     dispatch(removeNotification(id));
+    // Fire-and-forget: tell backend to delete so it doesn't return on re-fetch
+    walletService.deleteNotification(id).catch(() => {});
   }, [dispatch]);
 
   const handleClearAll = useCallback(() => {
     dispatch(clearNotifications());
+    // Fire-and-forget: tell backend to clear all
+    walletService.clearAllNotifications().catch(() => {});
   }, [dispatch]);
 
   const unreadCount = notifications.filter(n => !n.read).length;

@@ -336,7 +336,7 @@ export function setupTokenRefreshListener(userId: string): void {
 // ── Initialize everything ───────────────────────────────────────
 export async function initializeNotifications(userId: string): Promise<void> {
   try {
-    // 1. Request permissions
+    // 1. Request display permissions (controls whether notifications are shown)
     if (Platform.OS === 'ios') {
       const authStatus = await requestPermission(getMessaging());
       const enabled =
@@ -344,24 +344,28 @@ export async function initializeNotifications(userId: string): Promise<void> {
         authStatus === FBAuthorizationStatus.PROVISIONAL;
       if (!enabled) {
         if (__DEV__) console.warn('[Notifications] iOS permission not granted');
-        return;
+        // Don't return — still register FCM token for data-only messages
       }
     }
     if (Platform.OS === 'android') {
       const settings = await notifee.requestPermission();
       if (settings.authorizationStatus < AuthorizationStatus.AUTHORIZED) {
-        if (__DEV__) console.warn('[Notifications] Android permission not granted');
-        return;
+        if (__DEV__) console.warn('[Notifications] Android display permission not granted');
+        // Don't return — FCM token works independently of display permission
       }
     }
 
     // 2. Create notification channels (Android-only, no-op on iOS)
     await createChannels();
 
-    // 3. Get FCM token and register with backend
+    // 3. Get FCM token and register with backend — ALWAYS do this
+    // FCM tokens work regardless of notification display permission.
+    // The token is needed for push delivery; permission only controls display.
     const token = await getToken(getMessaging());
     if (token) {
       await registerTokenWithBackend(token, userId);
+    } else {
+      if (__DEV__) console.warn('[Notifications] getToken returned null — FCM not available');
     }
 
     // 4. Set up token refresh listener
@@ -369,7 +373,12 @@ export async function initializeNotifications(userId: string): Promise<void> {
 
     if (__DEV__) console.log('[Notifications] Initialized for user:', userId);
   } catch (error) {
+    // Don't let initialization failure crash the app — retry token registration
     if (__DEV__) console.warn('[Notifications] Initialization failed:', error);
+    try {
+      const token = await getToken(getMessaging());
+      if (token) await registerTokenWithBackend(token, userId);
+    } catch { /* final fallback — give up silently */ }
   }
 }
 

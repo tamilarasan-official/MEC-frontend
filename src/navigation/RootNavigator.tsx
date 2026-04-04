@@ -24,6 +24,7 @@ import {
   initializeNotifications,
   handleForegroundMessage,
   cleanupNotifications,
+  unregisterToken,
 } from '../services/notificationService';
 import { checkForUpdate, UpdateInfo } from '../services/versionService';
 import { checkMaintenance, MaintenanceInfo } from '../services/maintenanceService';
@@ -167,6 +168,8 @@ export default function RootNavigator() {
   const handleForceLogoutDismiss = useCallback(async () => {
     setShowForceLogout(false);
     disconnectSocket();
+    // Clean FCM token so old device stops receiving push notifications
+    try { await unregisterToken(); } catch { /* best-effort */ }
     await clearTokens();
     dispatch(resetAuth());
   }, [dispatch]);

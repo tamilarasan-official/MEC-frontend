@@ -1,8 +1,13 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TextInput, TouchableOpacity,
-  ActivityIndicator, Animated, ScrollView, Keyboard, Platform,
+  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  ActivityIndicator, Keyboard,
 } from 'react-native';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+} from '@gorhom/bottom-sheet';
 import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../common/Icon';
 import PaymentResultModal from '../common/PaymentResultModal';
@@ -31,52 +36,19 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const [verificationFailed, setVerificationFailed] = useState(false);
   const [paymentResult, setPaymentResult] = useState<{ type: 'success' | 'failed'; amount: number } | null>(null);
   const pendingPaymentRef = useRef<{ razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string } | null>(null);
-  const isClosingRef = useRef(false);
 
-  const slideAnim = useMemo(() => new Animated.Value(600), []);
-  const backdropAnim = useMemo(() => new Animated.Value(0), []);
-  const keyboardPadding = useMemo(() => new Animated.Value(0), []);
-
-  // Smooth keyboard padding — replaces KeyboardAvoidingView to avoid abrupt reflow on Android
-  useEffect(() => {
-    if (!visible) return;
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      if (isClosingRef.current) return;
-      Animated.timing(keyboardPadding, {
-        toValue: e.endCoordinates.height,
-        duration: Platform.OS === 'ios' ? (e.duration || 250) : 150,
-        useNativeDriver: false,
-      }).start();
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      if (isClosingRef.current) return;
-      Animated.timing(keyboardPadding, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: false,
-      }).start();
-    });
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, [visible, keyboardPadding]);
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['55%', '90%'], []);
+  const pendingActionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (visible) {
-      // Reset closing guard and clear any leftover payment result
-      isClosingRef.current = false;
       setPaymentResult(null);
-      keyboardPadding.setValue(0);
-      slideAnim.setValue(600);
-      backdropAnim.setValue(0);
-      Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
-        Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-      ]).start();
+      bottomSheetRef.current?.present();
     }
-  }, [visible, slideAnim, backdropAnim]);
+  }, [visible]);
 
-  // Reset state when modal closes — use a small delay so it doesn't interfere with the exit animation
+  // Reset state when modal closes
   useEffect(() => {
     if (!visible) {
       const resetTimer = setTimeout(() => {
@@ -84,18 +56,51 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         setError('');
         setVerificationFailed(false);
         pendingPaymentRef.current = null;
-        isClosingRef.current = false;
       }, 300);
       return () => clearTimeout(resetTimer);
     }
   }, [visible]);
 
+  const handleDismiss = useCallback(() => {
+    onClose();
+    if (pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      action();
+    }
+  }, [onClose]);
+
+  const handleClose = useCallback(() => {
+    if (loading) return;
+    Keyboard.dismiss();
+    bottomSheetRef.current?.dismiss();
+  }, [loading]);
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.6}
+        pressBehavior={loading ? 'none' : 'close'}
+      />
+    ),
+    [loading],
+  );
+
   const numericAmount = parseInt(amount || '0', 10);
 
   const handleChangeText = useCallback((t: string) => {
-    // Strip non-digits, then strip leading zeros
     setAmount(t.replace(/[^0-9]/g, '').replace(/^0+/, ''));
     setError('');
+  }, []);
+
+  const dismissAndShowResult = useCallback((result: { type: 'success' | 'failed'; amount: number }) => {
+    Keyboard.dismiss();
+    setPaymentResult(result);
+    pendingActionRef.current = null;
+    bottomSheetRef.current?.dismiss();
   }, []);
 
   const handleTopUp = async () => {
@@ -109,7 +114,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       const orderData = await walletService.createRazorpayOrder(numericAmount);
       const options = {
         key: orderData.keyId,
-        amount: orderData.amount * 100, // Use server amount, not local — prevents mismatch
+        amount: orderData.amount * 100,
         currency: orderData.currency || 'INR',
         name: 'CampusOne',
         description: `Wallet Top-up Rs. ${orderData.amount}`,
@@ -121,10 +126,9 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         },
         theme: { color: '#10b981' },
         retry: { enabled: true, max_count: 3 },
-        timeout: 300, // 5 minutes max for payment completion
+        timeout: 300,
       };
       const paymentResponse = await RazorpayCheckout.open(options);
-      // Store payment response for potential retry
       pendingPaymentRef.current = {
         razorpay_order_id: paymentResponse.razorpay_order_id,
         razorpay_payment_id: paymentResponse.razorpay_payment_id,
@@ -135,25 +139,14 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       setVerificationFailed(false);
       const paidAmount = numericAmount;
       dispatch(fetchWalletBalance());
-
-      // Close TopUpModal, then show success result screen
-      isClosingRef.current = true;
-      Keyboard.dismiss();
-      Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
-        Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(keyboardPadding, { toValue: 0, duration: 150, useNativeDriver: false }),
-      ]).start(() => { setAmount(''); onClose(); });
-
-      setPaymentResult({ type: 'success', amount: paidAmount });
+      setAmount('');
+      dismissAndShowResult({ type: 'success', amount: paidAmount });
     } catch (e: any) {
-      // Razorpay SDK nests the error under e.error on some versions/platforms
       const rzpError = e?.error ?? e;
       const code: string = rzpError?.code ?? '';
       const reason: string = rzpError?.reason ?? '';
       const source: string = rzpError?.source ?? '';
 
-      // Fire-and-forget: log failure details to backend for debugging
       walletService.logPaymentFailure({
         errorCode: code,
         errorReason: reason,
@@ -183,12 +176,10 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
         setVerificationFailed(false);
         setError('Too many payment attempts. Please wait a minute before trying again.');
       } else if (pendingPaymentRef.current) {
-        // Payment succeeded at Razorpay but verification failed
         setVerificationFailed(true);
         setError('Payment was successful but verification failed. Tap "Retry Verification" to try again.');
       } else {
-        // Hard failure — show full-screen failure result
-        setPaymentResult({ type: 'failed', amount: numericAmount });
+        dismissAndShowResult({ type: 'failed', amount: numericAmount });
       }
     } finally {
       setLoading(false);
@@ -205,16 +196,8 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       setVerificationFailed(false);
       const paidAmount = numericAmount;
       dispatch(fetchWalletBalance());
-
-      isClosingRef.current = true;
-      Keyboard.dismiss();
-      Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 600, duration: 200, useNativeDriver: true }),
-        Animated.timing(backdropAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-        Animated.timing(keyboardPadding, { toValue: 0, duration: 150, useNativeDriver: false }),
-      ]).start(() => { setAmount(''); onClose(); });
-
-      setPaymentResult({ type: 'success', amount: paidAmount });
+      setAmount('');
+      dismissAndShowResult({ type: 'success', amount: paidAmount });
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Verification still failing. Please contact support if this persists.');
     } finally {
@@ -222,137 +205,123 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
     }
   };
 
-  const handleClose = () => {
-    // Guard: prevent multiple concurrent close animations (back button / swipe spam)
-    if (isClosingRef.current) return;
-    isClosingRef.current = true;
-
-    Keyboard.dismiss();
-
-    Animated.parallel([
-      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
-      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(keyboardPadding, { toValue: 0, duration: 200, useNativeDriver: false }),
-    ]).start(() => {
-      onClose();
-    });
-  };
-
   return (
     <>
-    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
-      {/* Animated backdrop */}
-      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={loading ? undefined : handleClose} accessibilityLabel="Close top up" accessibilityRole="button" />
-      </Animated.View>
-
-      <Animated.View
-        style={[styles.kvWrapper, { paddingBottom: keyboardPadding }]}>
-        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
-          {/* Drag handle */}
-          <View style={styles.handleBar}>
-            <View style={styles.handle} />
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      snapPoints={snapPoints}
+      enableDynamicSizing={false}
+      enablePanDownToClose={!loading}
+      onDismiss={handleDismiss}
+      backdropComponent={renderBackdrop}
+      handleIndicatorStyle={styles.handleIndicator}
+      backgroundStyle={styles.sheetBackground}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      android_keyboardInputMode="adjustResize"
+    >
+      <BottomSheetScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Top Up Wallet</Text>
+            <Text style={styles.subtitle}>Add money to your balance</Text>
           </View>
+          <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7} accessibilityLabel="Close top up" accessibilityRole="button">
+            <Icon name="close" size={18} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Top Up Wallet</Text>
-              <Text style={styles.subtitle}>Add money to your balance</Text>
-            </View>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7} accessibilityLabel="Close top up" accessibilityRole="button">
-              <Icon name="close" size={18} color={colors.text} />
-            </TouchableOpacity>
+        {/* Current Balance */}
+        <View style={styles.balanceCard}>
+          <View style={styles.balanceIcon}>
+            <Icon name="wallet" size={20} color="#3b82f6" />
           </View>
-
-          {/* Current Balance */}
-          <View style={styles.balanceCard}>
-            <View style={styles.balanceIcon}>
-              <Icon name="wallet" size={20} color="#3b82f6" />
-            </View>
-            <View>
-              <Text style={styles.balanceLabel}>Current Balance</Text>
-              <Text style={styles.balanceValue}>Rs. {user?.balance || 0}</Text>
-            </View>
+          <View>
+            <Text style={styles.balanceLabel}>Current Balance</Text>
+            <Text style={styles.balanceValue}>Rs. {user?.balance || 0}</Text>
           </View>
+        </View>
 
-          {/* Amount Input */}
-          <Text style={styles.inputLabel}>Enter Amount</Text>
-          <View style={styles.inputWrap}>
-            <Text style={styles.inputPrefix}>Rs.</Text>
-            <TextInput
-              style={styles.input}
-              value={amount}
-              onChangeText={handleChangeText}
-              placeholder="0"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="number-pad"
-              maxLength={5}
-              autoCorrect={false}
-              accessibilityLabel="Top up amount"
-            />
-          </View>
+        {/* Amount Input */}
+        <Text style={styles.inputLabel}>Enter Amount</Text>
+        <View style={styles.inputWrap}>
+          <Text style={styles.inputPrefix}>Rs.</Text>
+          <TextInput
+            style={styles.input}
+            value={amount}
+            onChangeText={handleChangeText}
+            placeholder="0"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="number-pad"
+            maxLength={5}
+            autoCorrect={false}
+            accessibilityLabel="Top up amount"
+          />
+        </View>
 
-          {/* Quick amounts */}
-          <View style={styles.quickRow}>
-            {QUICK_AMOUNTS.map(a => (
-              <TouchableOpacity
-                key={a}
-                style={[styles.quickBtn, amount === String(a) && styles.quickBtnActive]}
-                onPress={() => { setAmount(String(a)); setError(''); }}
-                activeOpacity={0.7}
-                accessibilityLabel={`Select rupees ${a}`}
-                accessibilityRole="button">
-                <Text style={[styles.quickBtnText, amount === String(a) && styles.quickBtnTextActive]}>
-                  Rs. {a}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Error */}
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          {/* Retry Verification Button */}
-          {verificationFailed && pendingPaymentRef.current && (
+        {/* Quick amounts */}
+        <View style={styles.quickRow}>
+          {QUICK_AMOUNTS.map(a => (
             <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: '#dc2626', marginBottom: 8 }, loading && styles.submitBtnDisabled]}
-              onPress={handleRetryVerification}
-              disabled={loading}
-              activeOpacity={0.85}
-              accessibilityLabel="Retry payment verification"
+              key={a}
+              style={[styles.quickBtn, amount === String(a) && styles.quickBtnActive]}
+              onPress={() => { setAmount(String(a)); setError(''); }}
+              activeOpacity={0.7}
+              accessibilityLabel={`Select rupees ${a}`}
               accessibilityRole="button">
-              {loading ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.submitText}>Retry Verification</Text>
-              )}
+              <Text style={[styles.quickBtnText, amount === String(a) && styles.quickBtnTextActive]}>
+                Rs. {a}
+              </Text>
             </TouchableOpacity>
-          )}
+          ))}
+        </View>
 
-          {/* Submit */}
+        {/* Error */}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        {/* Retry Verification Button */}
+        {verificationFailed && pendingPaymentRef.current && (
           <TouchableOpacity
-            style={[styles.submitBtn, (loading || numericAmount < 1) && styles.submitBtnDisabled]}
-            onPress={handleTopUp}
-            disabled={loading || numericAmount < 1}
+            style={[styles.submitBtn, { backgroundColor: '#dc2626', marginBottom: 8 }, loading && styles.submitBtnDisabled]}
+            onPress={handleRetryVerification}
+            disabled={loading}
             activeOpacity={0.85}
-            accessibilityLabel={numericAmount > 0 ? `Pay rupees ${numericAmount}` : 'Enter amount'}
+            accessibilityLabel="Retry payment verification"
             accessibilityRole="button">
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.submitText}>
-                {numericAmount > 0 ? `Pay Rs. ${numericAmount}` : 'Enter Amount'}
-              </Text>
+              <Text style={styles.submitText}>Retry Verification</Text>
             )}
           </TouchableOpacity>
+        )}
 
-          <Text style={styles.helpText}>Or visit the college office for cash deposits.</Text>
-          </ScrollView>
-        </Animated.View>
-      </Animated.View>
-    </Modal>
+        {/* Submit */}
+        <TouchableOpacity
+          style={[styles.submitBtn, (loading || numericAmount < 1) && styles.submitBtnDisabled]}
+          onPress={handleTopUp}
+          disabled={loading || numericAmount < 1}
+          activeOpacity={0.85}
+          accessibilityLabel={numericAmount > 0 ? `Pay rupees ${numericAmount}` : 'Enter amount'}
+          accessibilityRole="button">
+          {loading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.submitText}>
+              {numericAmount > 0 ? `Pay Rs. ${numericAmount}` : 'Enter Amount'}
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.helpText}>Or visit the college office for cash deposits.</Text>
+      </BottomSheetScrollView>
+    </BottomSheetModal>
 
     {/* Payment Result (Success / Failed) */}
     <PaymentResultModal
@@ -373,26 +342,25 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  backdrop: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  kvWrapper: {
-    flex: 1, justifyContent: 'flex-end',
-  },
-  sheet: {
+  sheetBackground: {
     backgroundColor: colors.card,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 20, paddingBottom: 40,
-    maxHeight: '95%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
-
-  handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  handleIndicator: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingTop: 8, paddingBottom: 20,
+    paddingTop: 4, paddingBottom: 20,
   },
   title: { fontSize: 22, fontWeight: '900', color: colors.text },
   subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
@@ -416,7 +384,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   inputLabel: { fontSize: 13, fontWeight: '500', color: colors.textMuted, marginBottom: 8 },
   inputWrap: {
-    flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const,
+    flexDirection: 'row' as const, alignItems: 'center' as const,
     borderWidth: 1, borderColor: colors.border, borderRadius: 16,
     backgroundColor: colors.surface, marginBottom: 14, paddingHorizontal: 16,
   },

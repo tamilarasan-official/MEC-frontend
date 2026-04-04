@@ -138,7 +138,7 @@ export default function ProfileScreen({ navigation }: Props) {
             colors={['rgba(16,185,129,0.12)', 'rgba(16,185,129,0.04)']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={styles.profileCard}>
-            <TouchableOpacity style={styles.avatar} onPress={handleAvatarPress} activeOpacity={0.8} disabled={avatarUploading} accessibilityLabel="Change profile picture" accessibilityRole="button">
+            <View style={styles.avatar} accessibilityLabel="Profile picture managed by admin">
               {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
                 <Image
                   source={{ uri: `${resolveAvatarUrl(user?.avatarUrl)!}?t=${avatarTs}`, cache: 'reload' }}
@@ -150,12 +150,10 @@ export default function ProfileScreen({ navigation }: Props) {
               ) : (
                 <Text style={styles.avatarInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
               )}
-              <View style={styles.avatarOverlay}>
-                {avatarUploading
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Icon name="camera" size={16} color="#fff" />}
+              <View style={styles.avatarLockBadge}>
+                <Icon name="lock-closed" size={10} color="#fff" />
               </View>
-            </TouchableOpacity>
+            </View>
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{user?.name || 'Student'}</Text>
               {user?.department && (
@@ -168,6 +166,12 @@ export default function ProfileScreen({ navigation }: Props) {
               </View>
             </View>
           </LinearGradient>
+
+          {/* Admin-managed photo notice */}
+          <View style={styles.adminPhotoNotice}>
+            <Icon name="lock-closed-outline" size={13} color={colors.textMuted} />
+            <Text style={styles.adminPhotoText}>Profile photo is managed by admin</Text>
+          </View>
 
           {/* Info Cards Row — only for verified MEC students */}
           {user?.rollNumber && (
@@ -374,6 +378,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 26,
     backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center',
   },
+  avatarLockBadge: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#6b7280', borderWidth: 2, borderColor: c.card,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  adminPhotoNotice: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 5, marginTop: -4, marginBottom: 12,
+  },
+  adminPhotoText: { fontSize: 11, color: c.textMuted },
   profileInfo: { flex: 1 },
   profileName: { fontSize: 18, fontWeight: '700', color: c.text },
   profileDept: { fontSize: 13, color: c.textSecondary, marginTop: 2 },

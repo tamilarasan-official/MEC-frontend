@@ -58,7 +58,12 @@ export default function OrdersScreen() {
       selectedOrder.items[i] && item.itemStatus !== selectedOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setSelectedOrder(fresh);
+      // Auto-dismiss QR card when order is completed or cancelled
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setSelectedOrder(null);
+      } else {
+        setSelectedOrder(fresh);
+      }
     }
   }, [myOrders, selectedOrder]);
 

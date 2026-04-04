@@ -134,8 +134,20 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [styles, colors, handleTransactionPress, onTransactionPress]);
 
-  const BalanceHeader = useMemo(() => (
+  const WalletHeader = useMemo(() => (
     <>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Wallet</Text>
+          <Text style={styles.subtitle}>Balance & transactions</Text>
+        </View>
+        <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
+          <Icon name="close" size={18} color={colors.foreground} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Balance card */}
       <View style={styles.balanceCard}>
         <View style={styles.balanceLeft}>
           <View style={styles.balanceIcon}>
@@ -153,7 +165,7 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
       </View>
       <Text style={styles.sectionTitle}>Transaction History</Text>
     </>
-  ), [styles, displayBalance, handleTopUp]);
+  ), [styles, colors, displayBalance, handleTopUp, handleClose]);
 
   return (
     <BottomSheetModal
@@ -166,24 +178,16 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Wallet</Text>
-          <Text style={styles.subtitle}>Balance & transactions</Text>
-        </View>
-        <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
-          <Icon name="close" size={18} color={colors.foreground} />
-        </TouchableOpacity>
-      </View>
-
       {loading ? (
-        <BottomSheetView style={styles.loadingWrap}>
-          <ActivityIndicator size="small" color={colors.accent} />
+        <BottomSheetView style={styles.emptyContainer}>
+          {WalletHeader}
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator size="small" color={colors.accent} />
+          </View>
         </BottomSheetView>
       ) : transactions.length === 0 ? (
         <BottomSheetView style={styles.emptyContainer}>
-          {BalanceHeader}
+          {WalletHeader}
           <View style={styles.emptyWrap}>
             <Icon name="receipt-outline" size={32} color={colors.mutedForeground} />
             <Text style={styles.emptyText}>No transactions yet</Text>
@@ -194,7 +198,7 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
           data={transactions}
           keyExtractor={(item: Transaction) => item.id}
           renderItem={renderTransaction}
-          ListHeaderComponent={BalanceHeader}
+          ListHeaderComponent={WalletHeader}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
@@ -219,7 +223,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: 20, paddingTop: 4, paddingBottom: 20,
+    paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16,
   },
   title: { fontSize: 20, fontWeight: '800', color: colors.foreground },
   subtitle: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
@@ -233,7 +237,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: 16, borderRadius: 16,
     backgroundColor: 'rgba(59,130,246,0.08)',
-    borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)', marginBottom: 20,
+    borderWidth: 1, borderColor: 'rgba(59,130,246,0.2)', marginBottom: 16,
   },
   balanceLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   balanceIcon: {
@@ -253,8 +257,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.foreground, marginBottom: 12 },
 
   // List
-  listContent: { paddingHorizontal: 20, paddingBottom: 40 },
-  emptyContainer: { paddingHorizontal: 20 },
+  listContent: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 4 },
+  emptyContainer: { paddingHorizontal: 20, paddingTop: 4 },
 
   // Transaction card
   txCard: {
