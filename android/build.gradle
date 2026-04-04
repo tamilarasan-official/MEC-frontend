@@ -6,6 +6,7 @@ buildscript {
         targetSdkVersion = 35
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.1.20"
+        googlePlayServicesVersion = "21.3.0"
         // Bypass node resolution in third-party libs (e.g. gesture-handler) on Windows
         REACT_NATIVE_NODE_MODULES_DIR = file("../node_modules/react-native")
     }

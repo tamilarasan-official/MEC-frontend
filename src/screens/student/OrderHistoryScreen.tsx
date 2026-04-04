@@ -18,6 +18,14 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   cancelled: { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: 'close-circle' },
 };
 
+const ITEM_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  delivered:  { label: 'Delivered',          color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  ready:      { label: 'Ready',             color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  preparing:  { label: 'Preparing',         color: '#eab308', bg: 'rgba(234,179,8,0.12)' },
+  pending:    { label: 'Pending',           color: '#6b7280', bg: 'rgba(107,114,128,0.12)' },
+  rejected:   { label: 'Rejected & Refunded', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+};
+
 export default function OrderHistoryScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -163,29 +171,72 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                       ) : null}
                     </View>
                   ) : (
-                    order.items.map((item, idx) => (
-                      <View key={`${order.id}-${idx}`} style={styles.itemRow}>
-                        <View style={styles.itemIconWrap}>
-                          {item.image ? (
-                            <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImage} accessibilityLabel="Order item image" />
-                          ) : (
-                            <Icon name="restaurant-outline" size={18} color={colors.textSecondary} />
-                          )}
+                    order.items.map((item, idx) => {
+                      const iStatus = item.itemStatus || (order.status === 'cancelled' ? 'rejected' : 'delivered');
+                      const iConf = ITEM_STATUS_CONFIG[iStatus] || ITEM_STATUS_CONFIG.delivered;
+                      const isRejected = iStatus === 'rejected';
+                      const lineTotal = (item.offerPrice ?? item.price) * item.quantity;
+
+                      return (
+                        <View key={`${order.id}-${idx}`} style={styles.itemRow}>
+                          <View style={styles.itemIconWrap}>
+                            {item.image ? (
+                              <Image source={{ uri: resolveImageUrl(item.image)! }} style={[styles.itemImage, isRejected && styles.itemImageRejected]} accessibilityLabel="Order item image" />
+                            ) : (
+                              <Icon name="restaurant-outline" size={18} color={colors.textSecondary} />
+                            )}
+                          </View>
+                          <View style={styles.itemInfo}>
+                            <Text style={[styles.itemName, isRejected && styles.itemNameRejected]} numberOfLines={1}>{item.name}</Text>
+                            <View style={styles.itemMetaRow}>
+                              <Text style={styles.itemQty}>x{item.quantity}</Text>
+                              {/* Show per-item status badge when items have mixed statuses */}
+                              {(order.items.length > 1 || iStatus === 'rejected') && (
+                                <View style={[styles.itemStatusBadge, { backgroundColor: iConf.bg }]}>
+                                  <Text style={[styles.itemStatusText, { color: iConf.color }]}>{iConf.label}</Text>
+                                </View>
+                              )}
+                            </View>
+                            {isRejected && item.refundAmount != null && item.refundAmount > 0 && (
+                              <Text style={styles.refundText}>Rs. {item.refundAmount} refunded</Text>
+                            )}
+                          </View>
+                          <Text style={[styles.itemPrice, isRejected && styles.itemPriceRejected]}>
+                            {isRejected ? '' : `Rs. ${lineTotal}`}
+                          </Text>
                         </View>
-                        <View style={styles.itemInfo}>
-                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
-                          <Text style={styles.itemQty}>x{item.quantity}</Text>
-                        </View>
-                        <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
-                      </View>
-                    ))
+                      );
+                    })
                   )}
 
-                  {/* Total */}
-                  <View style={styles.orderFooter}>
-                    <Text style={styles.totalLabel}>Total</Text>
-                    <Text style={styles.totalValue}>Rs. {order.total}</Text>
-                  </View>
+                  {/* Total — show effective total (minus refunds) */}
+                  {(() => {
+                    const refundTotal = order.items
+                      .filter(i => i.itemStatus === 'rejected' && i.refundAmount != null)
+                      .reduce((sum, i) => sum + (i.refundAmount ?? 0), 0);
+                    const effectiveTotal = order.total - refundTotal;
+
+                    return (
+                      <View style={styles.orderFooter}>
+                        {refundTotal > 0 && (
+                          <View style={styles.totalBreakdown}>
+                            <View style={styles.totalBreakdownRow}>
+                              <Text style={styles.breakdownLabel}>Order Total</Text>
+                              <Text style={styles.breakdownValue}>Rs. {order.total}</Text>
+                            </View>
+                            <View style={styles.totalBreakdownRow}>
+                              <Text style={styles.refundLabel}>Refunded</Text>
+                              <Text style={styles.refundValue}>- Rs. {refundTotal}</Text>
+                            </View>
+                          </View>
+                        )}
+                        <View style={styles.totalRow}>
+                          <Text style={styles.totalLabel}>{refundTotal > 0 ? 'Paid' : 'Total'}</Text>
+                          <Text style={styles.totalValue}>Rs. {effectiveTotal > 0 ? effectiveTotal : 0}</Text>
+                        </View>
+                      </View>
+                    );
+                  })()}
                 </View>
               );
             })
@@ -249,8 +300,15 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   itemImage: { width: 50, height: 50, borderRadius: 25 },
   itemInfo: { flex: 1, marginLeft: 12 },
   itemName: { fontSize: 14, fontWeight: '600', color: c.text },
-  itemQty: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  itemNameRejected: { textDecorationLine: 'line-through', color: c.textSecondary },
+  itemMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  itemQty: { fontSize: 12, color: c.textSecondary },
+  itemStatusBadge: { paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 6 },
+  itemStatusText: { fontSize: 10, fontWeight: '700' },
+  refundText: { fontSize: 11, color: '#22c55e', marginTop: 2 },
   itemPrice: { fontSize: 14, fontWeight: '600', color: c.text },
+  itemPriceRejected: { fontSize: 12, color: c.textSecondary, textDecorationLine: 'line-through' },
+  itemImageRejected: { opacity: 0.4 },
 
   stationeryDetails: { marginBottom: 4 },
   stationeryGrid: {
@@ -265,9 +323,16 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   stationeryNote: { fontSize: 12, color: c.textSecondary, marginTop: 6, fontStyle: 'italic' },
 
   orderFooter: {
-    flexDirection: 'row', justifyContent: 'space-between', marginTop: 8,
-    paddingTop: 10, borderTopWidth: 1, borderTopColor: c.border,
+    marginTop: 8, paddingTop: 10,
+    borderTopWidth: 1, borderTopColor: c.border,
   },
+  totalBreakdown: { marginBottom: 8, gap: 4 },
+  totalBreakdownRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  breakdownLabel: { fontSize: 12, color: c.textSecondary },
+  breakdownValue: { fontSize: 12, color: c.textSecondary },
+  refundLabel: { fontSize: 12, color: '#22c55e' },
+  refundValue: { fontSize: 12, fontWeight: '600', color: '#22c55e' },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalLabel: { fontSize: 14, color: '#3b82f6' },
   totalValue: { fontSize: 16, fontWeight: '700', color: '#3b82f6' },
   bottomSpacer: { height: 40 },

@@ -25,6 +25,7 @@ export interface OrderUpdatePayload {
   pickupToken?: string;
   previousStatus?: string;
   updatedAt: string;
+  user?: string;
   notification?: { title: string; body: string };
   items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
 }
@@ -90,7 +91,7 @@ export const disconnectSocket = () => {
 
 export const getSocket = () => socket;
 
-export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, userMode: string) => {
+export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, userMode: string, userId?: string) => {
   if (!socket) return;
 
   socket.removeAllListeners('order:status_changed');
@@ -116,13 +117,18 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       // This must happen BEFORE dedup check — dedup only gates notifications/popups.
       dispatch(patchOrderStatus({ orderId: payload.orderId, status, items: payload.items }));
 
+      // Determine if this is the current user's own order (personal/eat-mode order)
+      const isOwnOrder = userId && payload.user && String(payload.user) === String(userId);
+
       // Re-fetch orders so the UI reflects the new status immediately
-      if (userRole === 'student' || userMode === 'eat') {
+      if (userRole === 'student' || userMode === 'eat' || isOwnOrder) {
         dispatch(fetchMyActiveOrders());
         if (status === 'cancelled' || status === 'completed') {
           dispatch(fetchWalletBalance());
         }
-      } else {
+      }
+      // Staff in work mode: always refresh shop orders too
+      if (userRole !== 'student' && userMode !== 'eat') {
         dispatch(fetchActiveShopOrders());
         dispatch(fetchDashboardStats());
       }
@@ -133,9 +139,10 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       const dedupKey = `${payload.orderId}:${status}`;
       if (isDuplicate(dedupKey)) return;
 
-      // Show popup for students and eat-mode users (captain/owner ordering food)
-      const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
-      if (isStudentOrEatMode && ['preparing', 'partially_ready', 'ready', 'completed', 'cancelled'].includes(status)) {
+      // Show popup for: students, eat-mode users, OR any user's own order
+      // (captain/owner in work mode should still see popup for their personal orders)
+      const shouldShowPopup = userRole === 'student' || userMode === 'eat' || isOwnOrder;
+      if (shouldShowPopup && ['preparing', 'partially_ready', 'ready', 'completed', 'cancelled'].includes(status)) {
         if (__DEV__) console.log('[Socket] Emitting ORDER_STATUS_POPUP_EVENT:', status, payload.orderNumber);
         const popupItemNames = (payload.items || []).map(i => i.name).filter(Boolean);
         DeviceEventEmitter.emit(ORDER_STATUS_POPUP_EVENT, {

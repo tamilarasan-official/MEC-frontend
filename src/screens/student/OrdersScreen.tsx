@@ -115,7 +115,7 @@ export default function OrdersScreen() {
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}>
         {displayOrders.length === 0 ? (
-          <AnimatedEmptyState colors={colors} styles={styles} onStartOrdering={() => navigation.getParent()?.navigate('Home')} />
+          <AnimatedEmptyState colors={colors} styles={styles} onStartOrdering={() => navigation.navigate('Home', { screen: 'Dashboard' })} />
         ) : (
           displayOrders.map(order => {
             const sc = statusConfig[order.status] || statusConfig.pending;
@@ -175,13 +175,24 @@ export default function OrdersScreen() {
                   const imgKey = `${order.id}-${idx}`;
                   const imgFailed = failedImages.has(imgKey);
                   const iStatus = item.itemStatus || 'preparing';
-                  const showItemTag = order.status === 'partially_ready' || order.status === 'partially_delivered';
+                  const isRejected = iStatus === 'rejected';
+                  const showItemTag = order.items.length > 1 || isRejected;
+
+                  const tagConfig: Record<string, { label: string; style: any; textStyle: any }> = {
+                    ready: { label: 'Ready', style: styles.itemStatusReady, textStyle: styles.itemStatusReadyText },
+                    delivered: { label: 'Delivered', style: styles.itemStatusDelivered, textStyle: styles.itemStatusDeliveredText },
+                    rejected: { label: 'Rejected', style: styles.itemStatusRejected, textStyle: styles.itemStatusRejectedText },
+                    preparing: { label: 'Preparing', style: styles.itemStatusPreparing, textStyle: styles.itemStatusPreparingText },
+                    pending: { label: 'Pending', style: styles.itemStatusPreparing, textStyle: styles.itemStatusPreparingText },
+                  };
+                  const tag = tagConfig[iStatus] || tagConfig.preparing;
+
                   return (
                     <View key={imgKey} style={styles.orderItem}>
                       {imageUri && !imgFailed ? (
                         <Image
                           source={{ uri: imageUri }}
-                          style={styles.itemImage}
+                          style={[styles.itemImage, isRejected && styles.itemImageRejected]}
                           onError={() => handleImageError(imgKey)}
                           accessibilityLabel={`${item.name} image`}
                         />
@@ -192,27 +203,52 @@ export default function OrdersScreen() {
                       )}
                       <View style={styles.flex1}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          <Text style={[styles.itemName, isRejected && styles.itemNameRejected]} numberOfLines={1}>{item.name}</Text>
                           {showItemTag && (
-                            <View style={[styles.itemStatusTag, iStatus === 'ready' ? styles.itemStatusReady : iStatus === 'delivered' ? styles.itemStatusDelivered : styles.itemStatusPreparing]}>
-                              <Text style={[styles.itemStatusTagText, iStatus === 'ready' ? styles.itemStatusReadyText : iStatus === 'delivered' ? styles.itemStatusDeliveredText : styles.itemStatusPreparingText]}>
-                                {iStatus === 'ready' ? 'Ready' : iStatus === 'delivered' ? 'Delivered' : 'Preparing'}
-                              </Text>
+                            <View style={[styles.itemStatusTag, tag.style]}>
+                              <Text style={[styles.itemStatusTagText, tag.textStyle]}>{tag.label}</Text>
                             </View>
                           )}
                         </View>
                         <Text style={styles.itemQty}>x{item.quantity}</Text>
+                        {isRejected && item.refundAmount > 0 && (
+                          <Text style={styles.refundText}>Rs. {item.refundAmount} refunded</Text>
+                        )}
                       </View>
-                      <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                      {!isRejected && (
+                        <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                      )}
                     </View>
                   );
                 })}
 
-                {/* Total */}
-                <View style={styles.orderFooter}>
-                  <Text style={styles.orderTotalLabel}>Total</Text>
-                  <Text style={styles.orderTotalValue}>Rs. {order.total}</Text>
-                </View>
+                {/* Total — adjusted for refunds */}
+                {(() => {
+                  const refundTotal = order.items
+                    .filter((i: any) => i.itemStatus === 'rejected' && i.refundAmount)
+                    .reduce((sum: number, i: any) => sum + (i.refundAmount ?? 0), 0);
+                  const effectiveTotal = order.total - refundTotal;
+                  return (
+                    <View style={styles.orderFooter}>
+                      {refundTotal > 0 && (
+                        <>
+                          <View style={styles.refundBreakdownRow}>
+                            <Text style={styles.orderTotalLabel}>Order Total</Text>
+                            <Text style={styles.orderTotalLabel}>Rs. {order.total}</Text>
+                          </View>
+                          <View style={styles.refundBreakdownRow}>
+                            <Text style={styles.refundLabel}>Refunded</Text>
+                            <Text style={styles.refundValue}>- Rs. {refundTotal}</Text>
+                          </View>
+                        </>
+                      )}
+                      <View style={styles.totalFinalRow}>
+                        <Text style={styles.orderTotalLabel}>{refundTotal > 0 ? 'Paid' : 'Total'}</Text>
+                        <Text style={styles.orderTotalValue}>Rs. {effectiveTotal > 0 ? effectiveTotal : 0}</Text>
+                      </View>
+                    </View>
+                  );
+                })()}
               </View>
             );
           })
@@ -388,8 +424,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   itemName: { fontSize: 14, fontWeight: '500', color: colors.text, flexShrink: 1 },
+  itemNameRejected: { textDecorationLine: 'line-through', color: colors.textMuted },
   itemQty: { fontSize: 12, color: '#3b82f6', marginTop: 1 },
   itemPrice: { fontSize: 14, fontWeight: '600', color: colors.text },
+  itemImageRejected: { opacity: 0.4 },
+  refundText: { fontSize: 11, color: '#22c55e', marginTop: 2 },
   itemStatusTag: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
   },
@@ -399,13 +438,22 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   itemStatusDeliveredText: { color: '#10b981' },
   itemStatusPreparing: { backgroundColor: 'rgba(234,179,8,0.12)' },
   itemStatusPreparingText: { color: '#eab308' },
+  itemStatusRejected: { backgroundColor: 'rgba(239,68,68,0.12)' },
+  itemStatusRejectedText: { color: '#ef4444' },
   itemStatusTagText: { fontSize: 10, fontWeight: '700' },
 
   // Footer
   orderFooter: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 10, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  refundBreakdownRow: {
+    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4,
+  },
+  refundLabel: { fontSize: 12, color: '#22c55e' },
+  refundValue: { fontSize: 12, fontWeight: '600', color: '#22c55e' },
+  totalFinalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4,
   },
   orderTotalLabel: { fontSize: 13, color: colors.textMuted },
   orderTotalValue: { fontSize: 17, fontWeight: '700', color: '#3b82f6' },

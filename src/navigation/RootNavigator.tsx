@@ -26,7 +26,16 @@ import {
   cleanupNotifications,
 } from '../services/notificationService';
 import { checkForUpdate, UpdateInfo } from '../services/versionService';
+import { checkMaintenance, MaintenanceInfo } from '../services/maintenanceService';
 import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
+import MaintenanceScreen from '../screens/shared/MaintenanceScreen';
+import {
+  isLocationPermissionGranted,
+  requestLocationPermission,
+  startLocationTracking,
+  stopLocationTracking,
+} from '../services/locationService';
+import LocationPermissionGate from '../components/common/LocationPermissionGate';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -49,6 +58,7 @@ export default function RootNavigator() {
   const [popupQueue, setPopupQueue] = useState<PopupData[]>([]);
   const currentPopup = popupQueue.length > 0 ? popupQueue[0] : null;
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [maintenanceInfo, setMaintenanceInfo] = useState<MaintenanceInfo | null>(null);
   const [showLoginSuccess, setShowLoginSuccess] = useState(false);
   const prevAuthRef = useRef(false);
 
@@ -62,6 +72,75 @@ export default function RootNavigator() {
 
   // PIN setup check — show setup screen if user hasn't set up PIN
   const needsPinSetup = isAuthenticated && user && user.isPinSetup === false && !isCheckingAuth;
+
+  // ── Location permission & tracking ────────────────────────────
+  const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'never_ask_again' | 'checking'>('checking');
+
+  // Check + request location permission after authentication
+  useEffect(() => {
+    if (!isAuthenticated || !user || isCheckingAuth) {
+      setLocationPermission('checking');
+      return;
+    }
+
+    let cancelled = false;
+    // Delay location permission request to avoid clashing with the notification
+    // permission dialog — Android only shows one permission dialog at a time.
+    // The notification useEffect (initializeNotifications) fires in the same
+    // render cycle and requests POST_NOTIFICATIONS first.
+    const timer = setTimeout(async () => {
+      try {
+        const granted = await isLocationPermissionGranted();
+        if (cancelled) return;
+        if (granted) {
+          setLocationPermission('granted');
+          startLocationTracking();
+        } else {
+          const result = await requestLocationPermission();
+          if (cancelled) return;
+          setLocationPermission(result);
+          if (result === 'granted') {
+            startLocationTracking();
+          }
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[Location] Permission flow error:', e);
+        if (!cancelled) setLocationPermission('denied');
+      }
+    }, 4000); // 4s — enough for notification dialog to be answered
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      stopLocationTracking();
+    };
+  }, [isAuthenticated, user?.id, isCheckingAuth]);
+
+  // Re-check permission when app comes to foreground (user may have changed in Settings)
+  useEffect(() => {
+    if (!isAuthenticated || !user || locationPermission === 'checking') return;
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'active' && locationPermission !== 'granted') {
+        const granted = await isLocationPermissionGranted();
+        if (granted) {
+          setLocationPermission('granted');
+          startLocationTracking();
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated, user?.id, locationPermission]);
+
+  const handleRequestLocation = useCallback(async () => {
+    const result = await requestLocationPermission();
+    setLocationPermission(result);
+    if (result === 'granted') {
+      startLocationTracking();
+    }
+  }, []);
+
+  const showLocationGate = isAuthenticated && !isCheckingAuth && locationPermission !== 'granted' && locationPermission !== 'checking';
+
   // Listen for order status popup events (from socket + FCM) — queued
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(ORDER_STATUS_POPUP_EVENT, (data: PopupData) => {
@@ -105,6 +184,48 @@ export default function RootNavigator() {
     return () => sub.remove();
   }, []);
 
+  // Listen for maintenance mode — from Socket.IO (real-time) and 503 interceptor
+  useEffect(() => {
+    // Socket.IO: maintenance:enabled event (broadcast from superadmin toggle)
+    const { getSocket } = require('../services/socketService');
+    const socket = typeof getSocket === 'function' ? getSocket() : null;
+
+    const handleEnabled = (data: { message: string; estimatedDuration: number; startedAt: string }) => {
+      setMaintenanceInfo({
+        maintenanceEnabled: true,
+        message: data.message || 'App is under maintenance',
+        estimatedDuration: data.estimatedDuration || 1,
+        startedAt: data.startedAt || null,
+      });
+    };
+    const handleDisabled = () => {
+      setMaintenanceInfo(null);
+    };
+
+    if (socket) {
+      socket.on('maintenance:enabled', handleEnabled);
+      socket.on('maintenance:disabled', handleDisabled);
+    }
+
+    // DeviceEventEmitter: 503 from API interceptor
+    const sub503 = DeviceEventEmitter.addListener('MAINTENANCE_MODE_DETECTED', () => {
+      // Re-check the actual maintenance status endpoint
+      checkMaintenance().then((info) => {
+        if (info?.maintenanceEnabled) {
+          setMaintenanceInfo(info);
+        }
+      });
+    });
+
+    return () => {
+      if (socket) {
+        socket.off('maintenance:enabled', handleEnabled);
+        socket.off('maintenance:disabled', handleDisabled);
+      }
+      sub503.remove();
+    };
+  }, [isAuthenticated]);
+
   // On mount, check for stored tokens and try to restore session
   useEffect(() => {
     const checkAuth = async () => {
@@ -142,6 +263,13 @@ export default function RootNavigator() {
         setUpdateInfo(info);
       }
     });
+
+    // Maintenance check — fire-and-forget, non-blocking
+    checkMaintenance().then((info) => {
+      if (info?.maintenanceEnabled) {
+        setMaintenanceInfo(info);
+      }
+    });
   }, [dispatch]);
 
   // Connect/disconnect socket based on auth state
@@ -151,7 +279,7 @@ export default function RootNavigator() {
     if (isAuthenticated && user) {
       try {
         connectSocket(user.id, user.role, user.shopId);
-        setupSocketListeners(dispatch, user.role, userModeRef.current);
+        setupSocketListeners(dispatch, user.role, userModeRef.current, user.id);
       } catch {
         // Socket connection failed — app continues without real-time updates
       }
@@ -164,7 +292,7 @@ export default function RootNavigator() {
   // Re-setup socket listeners when eat/work mode changes (no reconnect needed)
   useEffect(() => {
     if (isAuthenticated && user) {
-      setupSocketListeners(dispatch, user.role, userMode);
+      setupSocketListeners(dispatch, user.role, userMode, user.id);
     }
   }, [userMode, isAuthenticated, user?.id, dispatch]);
 
@@ -180,7 +308,7 @@ export default function RootNavigator() {
           // Await socket connection before setting up listeners — prevents
           // setupSocketListeners from running while socket is still null
           await connectSocket(user.id, user.role, user.shopId);
-          setupSocketListeners(dispatch, user.role, userModeRef.current);
+          setupSocketListeners(dispatch, user.role, userModeRef.current, user.id);
           // Refresh critical data on app resume — socket was disconnected in
           // background so events (orders, wallet, notifications) may have been missed
           dispatch(fetchWalletBalance());
@@ -249,6 +377,17 @@ export default function RootNavigator() {
     }).catch(() => {});
   }, [isAuthenticated]);
 
+  // Maintenance retry handler — re-checks the endpoint and clears if resolved
+  const handleMaintenanceRetry = useCallback(() => {
+    checkMaintenance().then((info) => {
+      if (!info?.maintenanceEnabled) {
+        setMaintenanceInfo(null);
+      } else {
+        setMaintenanceInfo(info);
+      }
+    });
+  }, []);
+
   if (isCheckingAuth) {
     return (
       <View style={staticStyles.splash}>
@@ -307,6 +446,17 @@ export default function RootNavigator() {
 
       {needsPinSetup && !showLoginSuccess && (
         <SetupPINScreen onComplete={() => dispatch(refreshUserData())} />
+      )}
+
+      {showLocationGate && (
+        <LocationPermissionGate
+          permissionStatus={locationPermission as 'denied' | 'never_ask_again'}
+          onRequestPermission={handleRequestLocation}
+        />
+      )}
+
+      {maintenanceInfo?.maintenanceEnabled && (
+        <MaintenanceScreen info={maintenanceInfo} onRetry={handleMaintenanceRetry} />
       )}
     </>
   );

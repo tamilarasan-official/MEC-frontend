@@ -1,11 +1,13 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Animated,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList, AppNotification } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { markNotificationRead, clearNotifications } from '../../store/slices/userSlice';
+import { markNotificationRead, removeNotification, clearNotifications } from '../../store/slices/userSlice';
+import { lightHaptic } from '../../utils/haptics';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { useTheme } from '../../theme/ThemeContext';
@@ -41,6 +43,11 @@ export default function NotificationsScreen({ navigation }: Props) {
     dispatch(markNotificationRead(id));
   }, [dispatch]);
 
+  const handleRemove = useCallback((id: string) => {
+    lightHaptic();
+    dispatch(removeNotification(id));
+  }, [dispatch]);
+
   const handleClearAll = useCallback(() => {
     dispatch(clearNotifications());
   }, [dispatch]);
@@ -50,26 +57,14 @@ export default function NotificationsScreen({ navigation }: Props) {
   const renderItem = ({ item }: { item: AppNotification }) => {
     const config = NOTIF_ICONS[item.type] || NOTIF_ICONS.system;
     return (
-      <TouchableOpacity
-        style={[styles.notifCard, !item.read && styles.notifUnread]}
-        onPress={() => handleMarkRead(item.id)}
-        activeOpacity={0.7}
-        accessibilityLabel={`Notification: ${item.title}`}
-        accessibilityRole="button">
-        <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
-          <Icon name={config.icon} size={20} color={config.color} />
-        </View>
-        <View style={styles.notifContent}>
-          <View style={styles.notifHeader}>
-            <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
-              {item.title}
-            </Text>
-            {!item.read && <View style={styles.unreadDot} />}
-          </View>
-          <Text style={styles.notifMessage} numberOfLines={2}>{item.message}</Text>
-          <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
-        </View>
-      </TouchableOpacity>
+      <SwipeableNotification
+        item={item}
+        config={config}
+        styles={styles}
+        colors={colors}
+        onPress={handleMarkRead}
+        onRemove={handleRemove}
+      />
     );
   };
 
@@ -123,6 +118,76 @@ export default function NotificationsScreen({ navigation }: Props) {
   );
 }
 
+/* ─── Swipeable Notification Card ─── */
+
+function SwipeableNotification({
+  item, config, styles, colors, onPress, onRemove,
+}: {
+  item: AppNotification;
+  config: { icon: string; color: string; bg: string };
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+  onPress: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const swipeRef = useRef<Swipeable>(null);
+
+  const renderRightActions = useCallback(
+    (_progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+      const scale = dragX.interpolate({
+        inputRange: [-80, 0],
+        outputRange: [1, 0.5],
+        extrapolate: 'clamp',
+      });
+      return (
+        <View style={styles.swipeDeleteWrap}>
+          <Animated.View style={[styles.swipeDeleteInner, { transform: [{ scale }] }]}>
+            <Icon name="trash-outline" size={20} color="#fff" />
+            <Text style={styles.swipeDeleteText}>Delete</Text>
+          </Animated.View>
+        </View>
+      );
+    },
+    [styles],
+  );
+
+  const handleSwipeOpen = useCallback(() => {
+    onRemove(item.id);
+  }, [item.id, onRemove]);
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      rightThreshold={60}
+      overshootRight={false}
+      onSwipeableOpen={handleSwipeOpen}
+    >
+      <TouchableOpacity
+        style={[styles.notifCard, !item.read && styles.notifUnread]}
+        onPress={() => onPress(item.id)}
+        activeOpacity={0.7}
+        accessibilityLabel={`Notification: ${item.title}`}
+        accessibilityRole="button"
+      >
+        <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
+          <Icon name={config.icon} size={20} color={config.color} />
+        </View>
+        <View style={styles.notifContent}>
+          <View style={styles.notifHeader}>
+            <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            {!item.read && <View style={styles.unreadDot} />}
+          </View>
+          <Text style={styles.notifMessage} numberOfLines={2}>{item.message}</Text>
+          <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
+  );
+}
+
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -149,6 +214,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
   statusText: { fontSize: 11, fontWeight: '500', color: colors.primary },
   listContent: { padding: 16, paddingBottom: 40 },
+
+  // Notification card
   notifCard: {
     flexDirection: 'row', gap: 12, padding: 14, borderRadius: 14,
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8,
@@ -164,6 +231,18 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
   notifMessage: { fontSize: 13, color: colors.textMuted, lineHeight: 18, marginBottom: 4 },
   notifTime: { fontSize: 11, color: colors.textMuted },
+
+  // Swipe delete action
+  swipeDeleteWrap: {
+    width: 80, justifyContent: 'center', alignItems: 'center', marginBottom: 8,
+  },
+  swipeDeleteInner: {
+    width: 60, height: '85%', borderRadius: 14, backgroundColor: '#ef4444',
+    justifyContent: 'center', alignItems: 'center', gap: 2,
+  },
+  swipeDeleteText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+
+  // Empty state
   empty: { alignItems: 'center', paddingTop: 80, gap: 10, paddingHorizontal: 40 },
   emptyIconWrap: {
     width: 80, height: 80, borderRadius: 24, backgroundColor: colors.surface,

@@ -155,6 +155,9 @@ const userSlice = createSlice({
       const n = s.notifications.find(x => x.id === a.payload);
       if (n) n.read = true;
     },
+    removeNotification: (s, a: PayloadAction<string>) => {
+      s.notifications = s.notifications.filter(n => n.id !== a.payload);
+    },
     clearNotifications: (s) => { s.notifications = []; },
     resetUserState: () => initialState,
   },
@@ -202,6 +205,6 @@ const userSlice = createSlice({
 
 export const {
   clearError, setBalance, setDietFilter, setUserMode,
-  setOrderStatusPopup, addNotification, markNotificationRead, clearNotifications, resetUserState,
+  setOrderStatusPopup, addNotification, markNotificationRead, removeNotification, clearNotifications, resetUserState,
 } = userSlice.actions;
 export default userSlice.reducer;

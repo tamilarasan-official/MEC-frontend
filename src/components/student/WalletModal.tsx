@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, FlatList,
-  ActivityIndicator, Animated,
-} from 'react-native';
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetFlatList,
+  BottomSheetView,
+} from '@gorhom/bottom-sheet';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -26,37 +29,31 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
   const transactions = useAppSelector(s => s.user.transactions);
   const [loading, setLoading] = useState(true);
 
-  const slideAnim = useMemo(() => new Animated.Value(600), []);
-  const backdropAnim = useMemo(() => new Animated.Value(0), []);
-  const isClosingRef = useRef(false);
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['55%', '95%'], []);
+  const pendingActionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (visible) {
-      isClosingRef.current = false;
-      slideAnim.setValue(600);
-      backdropAnim.setValue(0);
-      Animated.parallel([
-        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
-        Animated.timing(backdropAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
+      bottomSheetRef.current?.present();
       loadData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const handleAnimateClose = useCallback((callback?: () => void) => {
-    if (isClosingRef.current) return;
-    isClosingRef.current = true;
-    Animated.parallel([
-      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
-      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => {
-      onClose();
-      callback?.();
-    });
-  }, [slideAnim, backdropAnim, onClose]);
+  const handleDismiss = useCallback(() => {
+    onClose();
+    if (pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      action();
+    }
+  }, [onClose]);
 
-  const handleClose = useCallback(() => handleAnimateClose(), [handleAnimateClose]);
+  const dismissAndThen = useCallback((action: () => void) => {
+    pendingActionRef.current = action;
+    bottomSheetRef.current?.dismiss();
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -71,10 +68,32 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
 
   const displayBalance = balance ?? user?.balance ?? 0;
 
-  const handleTopUp = () => {
-    // Close the wallet modal first, then open top-up to avoid stacking modals
-    handleAnimateClose(() => onTopUp());
-  };
+  const handleTopUp = useCallback(() => {
+    dismissAndThen(() => onTopUp());
+  }, [dismissAndThen, onTopUp]);
+
+  const handleTransactionPress = useCallback((item: Transaction) => {
+    if (onTransactionPress) {
+      dismissAndThen(() => onTransactionPress(item));
+    }
+  }, [dismissAndThen, onTransactionPress]);
+
+  const handleClose = useCallback(() => {
+    bottomSheetRef.current?.dismiss();
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.6}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -85,10 +104,14 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
     }).toLowerCase();
   };
 
-  const renderTransaction = ({ item }: { item: Transaction }) => {
+  const renderTransaction = useCallback(({ item }: { item: Transaction }) => {
     const isCredit = item.type === 'credit' || item.type === 'refund';
     return (
-      <TouchableOpacity style={styles.txCard} activeOpacity={0.7} onPress={onTransactionPress ? () => handleAnimateClose(() => onTransactionPress(item)) : undefined}>
+      <TouchableOpacity
+        style={styles.txCard}
+        activeOpacity={0.7}
+        onPress={onTransactionPress ? () => handleTransactionPress(item) : undefined}
+      >
         <View style={[styles.txIcon, { backgroundColor: isCredit ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }]}>
           <Icon
             name={isCredit ? 'arrow-down-outline' : 'arrow-up-outline'}
@@ -108,117 +131,95 @@ export default function WalletModal({ visible, onClose, onTopUp, onTransactionPr
         </View>
       </TouchableOpacity>
     );
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styles, colors, handleTransactionPress, onTransactionPress]);
+
+  const BalanceHeader = useMemo(() => (
+    <>
+      <View style={styles.balanceCard}>
+        <View style={styles.balanceLeft}>
+          <View style={styles.balanceIcon}>
+            <Icon name="wallet" size={20} color="#3b82f6" />
+          </View>
+          <View>
+            <Text style={styles.balanceLabel}>Personal Balance</Text>
+            <Text style={styles.balanceValue}>Rs. {displayBalance}</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUp} activeOpacity={0.7}>
+          <Icon name="add" size={14} color="#fff" />
+          <Text style={styles.topUpText}>Top Up</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.sectionTitle}>Transaction History</Text>
+    </>
+  ), [styles, displayBalance, handleTopUp]);
 
   return (
-    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={handleClose}>
-      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]} pointerEvents="box-none">
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-      </Animated.View>
-
-      <View style={styles.kvWrapper}>
-        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-          {/* Drag handle */}
-          <View style={styles.handleBar}>
-            <View style={styles.handle} />
-          </View>
-
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Wallet</Text>
-              <Text style={styles.subtitle}>Balance & transactions</Text>
-            </View>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
-              <Icon name="close" size={18} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Balance Card + Transactions — all scrollable together */}
-          {loading ? (
-            <View style={styles.loadingWrap}>
-              <ActivityIndicator size="small" color={colors.accent} />
-            </View>
-          ) : transactions.length === 0 ? (
-            <>
-              {/* Balance Card */}
-              <View style={styles.balanceCard}>
-                <View style={styles.balanceLeft}>
-                  <View style={styles.balanceIcon}>
-                    <Icon name="wallet" size={20} color="#3b82f6" />
-                  </View>
-                  <View>
-                    <Text style={styles.balanceLabel}>Personal Balance</Text>
-                    <Text style={styles.balanceValue}>Rs. {displayBalance}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUp} activeOpacity={0.7}>
-                  <Icon name="add" size={14} color="#fff" />
-                  <Text style={styles.topUpText}>Top Up</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.sectionTitle}>Transaction History</Text>
-              <View style={styles.emptyWrap}>
-                <Icon name="receipt-outline" size={32} color={colors.mutedForeground} />
-                <Text style={styles.emptyText}>No transactions yet</Text>
-              </View>
-            </>
-          ) : (
-            <FlatList
-              data={transactions}
-              keyExtractor={item => item.id}
-              renderItem={renderTransaction}
-              ListHeaderComponent={
-                <>
-                  {/* Balance Card */}
-                  <View style={styles.balanceCard}>
-                    <View style={styles.balanceLeft}>
-                      <View style={styles.balanceIcon}>
-                        <Icon name="wallet" size={20} color="#3b82f6" />
-                      </View>
-                      <View>
-                        <Text style={styles.balanceLabel}>Personal Balance</Text>
-                        <Text style={styles.balanceValue}>Rs. {displayBalance}</Text>
-                      </View>
-                    </View>
-                    <TouchableOpacity style={styles.topUpBtn} onPress={handleTopUp} activeOpacity={0.7}>
-                      <Icon name="add" size={14} color="#fff" />
-                      <Text style={styles.topUpText}>Top Up</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.sectionTitle}>Transaction History</Text>
-                </>
-              }
-              style={styles.txList}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </Animated.View>
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      snapPoints={snapPoints}
+      enableDynamicSizing={false}
+      enablePanDownToClose
+      onDismiss={handleDismiss}
+      backdropComponent={renderBackdrop}
+      handleIndicatorStyle={styles.handleIndicator}
+      backgroundStyle={styles.sheetBackground}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Wallet</Text>
+          <Text style={styles.subtitle}>Balance & transactions</Text>
+        </View>
+        <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
+          <Icon name="close" size={18} color={colors.foreground} />
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      {loading ? (
+        <BottomSheetView style={styles.loadingWrap}>
+          <ActivityIndicator size="small" color={colors.accent} />
+        </BottomSheetView>
+      ) : transactions.length === 0 ? (
+        <BottomSheetView style={styles.emptyContainer}>
+          {BalanceHeader}
+          <View style={styles.emptyWrap}>
+            <Icon name="receipt-outline" size={32} color={colors.mutedForeground} />
+            <Text style={styles.emptyText}>No transactions yet</Text>
+          </View>
+        </BottomSheetView>
+      ) : (
+        <BottomSheetFlatList
+          data={transactions}
+          keyExtractor={(item: Transaction) => item.id}
+          renderItem={renderTransaction}
+          ListHeaderComponent={BalanceHeader}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </BottomSheetModal>
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  backdrop: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  kvWrapper: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '95%',
-  },
-  sheet: {
+  sheetBackground: {
     backgroundColor: colors.card,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, maxHeight: '100%', flex: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
-  handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  handleIndicator: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
 
+  // Header
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingTop: 8, paddingBottom: 20,
+    paddingHorizontal: 20, paddingTop: 4, paddingBottom: 20,
   },
   title: { fontSize: 20, fontWeight: '800', color: colors.foreground },
   subtitle: { fontSize: 13, color: colors.mutedForeground, marginTop: 2 },
@@ -251,8 +252,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // Section title
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.foreground, marginBottom: 12 },
 
-  // Transaction list
-  txList: { flex: 1 },
+  // List
+  listContent: { paddingHorizontal: 20, paddingBottom: 40 },
+  emptyContainer: { paddingHorizontal: 20 },
+
+  // Transaction card
   txCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 14, borderRadius: 14,
@@ -270,7 +274,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   txAmount: { fontSize: 14, fontWeight: '700' },
 
   // Loading & empty
-  loadingWrap: { paddingVertical: 40, alignItems: 'center' },
+  loadingWrap: { flex: 1, paddingVertical: 40, alignItems: 'center' },
   emptyWrap: { paddingVertical: 40, alignItems: 'center', gap: 8 },
   emptyText: { fontSize: 13, color: colors.mutedForeground },
 });

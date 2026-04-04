@@ -290,7 +290,6 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
               keyboardType="number-pad"
               maxLength={5}
               autoCorrect={false}
-              textAlign="center"
               accessibilityLabel="Top up amount"
             />
           </View>
@@ -424,7 +423,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   inputPrefix: { fontSize: 18, fontWeight: '600' as const, color: colors.textMuted, marginRight: 4 },
   input: {
     flex: 1, paddingVertical: 14, fontSize: 22, fontWeight: '700' as const,
-    color: colors.text, textAlign: 'center' as const,
+    color: colors.text,
   },
 
   quickRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
