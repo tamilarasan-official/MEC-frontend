@@ -66,7 +66,12 @@ export default function StationeryScreen({ route, navigation }: Props) {
       createdOrder.items[i] && item.itemStatus !== createdOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setCreatedOrder(fresh);
+      // Auto-dismiss QR card when order is completed or cancelled
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setCreatedOrder(null);
+      } else {
+        setCreatedOrder(fresh);
+      }
     }
   }, [activeOrders, allOrders, createdOrder]);
 

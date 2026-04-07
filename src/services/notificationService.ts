@@ -301,6 +301,16 @@ async function registerTokenWithBackend(token: string, _userId: string): Promise
   }
 }
 
+// ── Re-register FCM token on app foreground ────────────────────
+// Lightweight: just re-posts the existing token. Ensures tokens
+// wiped by server-side cleanup (logout, cron) are restored.
+export async function refreshTokenRegistration(userId: string): Promise<void> {
+  try {
+    const token = await getToken(getMessaging());
+    if (token) await registerTokenWithBackend(token, userId);
+  } catch { /* non-critical */ }
+}
+
 // ── Unregister FCM token (called on logout) ─────────────────────
 export async function unregisterToken(): Promise<void> {
   try {

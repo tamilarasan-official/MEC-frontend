@@ -130,7 +130,13 @@ export default function StudentDashboard({ navigation }: Props) {
       successOrder.items[i] && item.itemStatus !== successOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setSuccessOrder(fresh);
+      // Auto-dismiss QR card when order is completed or cancelled
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setSuccessOrder(null);
+        setSplitOrders(null);
+      } else {
+        setSuccessOrder(fresh);
+      }
     }
   }, [activeOrders, allOrders, successOrder]);
 
@@ -145,7 +151,12 @@ export default function StudentDashboard({ navigation }: Props) {
       selectedOrder.items[i] && item.itemStatus !== selectedOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setSelectedOrder(fresh);
+      // Auto-dismiss QR card when order is completed or cancelled
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setSelectedOrder(null);
+      } else {
+        setSelectedOrder(fresh);
+      }
     }
   }, [activeOrders, allOrders, selectedOrder]);
 

@@ -216,7 +216,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.sheetBackground}
-      keyboardBehavior="interactive"
+      keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
     >
@@ -256,6 +256,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
             style={styles.input}
             value={amount}
             onChangeText={handleChangeText}
+            onFocus={() => bottomSheetRef.current?.snapToIndex(1)}
             placeholder="0"
             placeholderTextColor={colors.textMuted}
             keyboardType="number-pad"

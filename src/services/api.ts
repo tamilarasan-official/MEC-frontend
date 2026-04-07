@@ -158,6 +158,13 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // 503 Service Unavailable — app may be in maintenance mode
+    if (error.response?.status === 503) {
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit('MAINTENANCE_MODE_DETECTED');
+      return Promise.reject(error);
+    }
+
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     const isAuthRoute = original.url?.includes('/auth/login') || original.url?.includes('/auth/register') || original.url?.includes('/auth/verify-otp') || original.url?.includes('/auth/register-with-otp');
     if (error.response?.status === 401 && !original._retry && !isAuthRoute) {

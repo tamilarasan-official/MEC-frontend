@@ -46,7 +46,6 @@ export default function StationeryAnalyticsScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const qrPayments = useAppSelector(s => s.user.qrPayments);
-  const balance = useAppSelector(s => s.user.balance);
   const [refreshing, setRefreshing] = useState(false);
   const [revenueFilter, setRevenueFilter] = useState<TimeFilter>('month');
   const [paymentFilter, setPaymentFilter] = useState<TimeFilter>('month');
@@ -255,17 +254,6 @@ export default function StationeryAnalyticsScreen() {
             ))}
           </View>
         )}
-
-        {/* Wallet Balance */}
-        <View style={[styles.section, { backgroundColor: 'rgba(16,185,129,0.08)', borderColor: 'rgba(16,185,129,0.2)' }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Icon name="wallet-outline" size={22} color="#10b981" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.metricLabel}>Wallet Balance</Text>
-              <Text style={[styles.bigValue, { color: '#10b981' }]}>Rs. {balance}</Text>
-            </View>
-          </View>
-        </View>
 
         <View style={{ height: 100 }} />
       </ScrollView>

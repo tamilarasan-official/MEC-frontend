@@ -170,7 +170,12 @@ export const registerWithOtp = createAsyncThunk(
 
 export const logout = createAsyncThunk('auth/logout', async (_, { dispatch }) => {
   try { await unregisterToken(); } catch { /* ignore */ }
-  try { await api.post('/auth/logout'); } catch { /* ignore */ }
+  // Send deviceId so the server only removes THIS device's FCM tokens,
+  // not all tokens (which would break push on re-login if re-registration fails)
+  try {
+    const deviceId = await getDeviceId();
+    await api.post('/auth/logout', { deviceId });
+  } catch { /* ignore */ }
   cleanupNotifications();
   await clearTokens();
   dispatch(resetOrders());

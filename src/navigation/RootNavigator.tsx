@@ -22,6 +22,7 @@ import { getMessaging, onMessage, getInitialNotification } from '@react-native-f
 import notifee, { EventType } from '@notifee/react-native';
 import {
   initializeNotifications,
+  refreshTokenRegistration,
   handleForegroundMessage,
   cleanupNotifications,
   unregisterToken,
@@ -312,6 +313,9 @@ export default function RootNavigator() {
           // setupSocketListeners from running while socket is still null
           await connectSocket(user.id, user.role, user.shopId);
           setupSocketListeners(dispatch, user.role, userModeRef.current, user.id);
+          // Re-register FCM token — ensures tokens wiped by server-side
+          // cleanup (logout, cron, force logout) are restored
+          refreshTokenRegistration(user.id);
           // Refresh critical data on app resume — socket was disconnected in
           // background so events (orders, wallet, notifications) may have been missed
           dispatch(fetchWalletBalance());
