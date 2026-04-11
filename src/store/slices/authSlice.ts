@@ -111,11 +111,22 @@ export const loginWithOtp = createAsyncThunk(
     } catch (error: any) {
       const status = error.response?.status;
       const errorCode = error.response?.data?.error?.code;
-      const serverMsg = error.response?.data?.error?.message || error.response?.data?.message;
-      if (status === 403 && errorCode === 'ACCOUNT_DEACTIVATED') {
-        return rejectWithValue('Your account has been deactivated. Please contact administration.');
+      if (__DEV__) console.error('[loginWithOtp]', status, error.response?.data);
+      let msg = 'OTP verification failed. Please try again.';
+      if (!error.response) {
+        msg = 'Network error. Please check your connection.';
+      } else if (status === 400 || status === 401) {
+        msg = 'Invalid or expired OTP. Please try again.';
+      } else if (status === 403 && errorCode === 'ACCOUNT_DEACTIVATED') {
+        msg = 'Your account has been deactivated. Please contact administration.';
+      } else if (status === 403) {
+        msg = 'Access denied. Please contact support.';
+      } else if (status === 429) {
+        msg = 'Too many attempts. Please try again later.';
+      } else if (status >= 500) {
+        msg = 'Server error. Please try again later.';
       }
-      return rejectWithValue(serverMsg || 'OTP verification failed');
+      return rejectWithValue(msg);
     }
   },
 );
@@ -127,7 +138,19 @@ export const register = createAsyncThunk(
       const response = await api.post<{ success: boolean; data: { user: User } }>('/auth/register', data);
       return response.data.data.user;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Registration failed');
+      const status = error.response?.status;
+      if (__DEV__) console.error('[register]', status, error.response?.data);
+      let msg = 'Registration failed. Please try again.';
+      if (!error.response) {
+        msg = 'Network error. Please check your connection.';
+      } else if (status === 409) {
+        msg = 'An account with this phone number already exists. Please login instead.';
+      } else if (status === 429) {
+        msg = 'Too many attempts. Please try again later.';
+      } else if (status >= 500) {
+        msg = 'Server error. Please try again later.';
+      }
+      return rejectWithValue(msg);
     }
   },
 );
@@ -160,8 +183,6 @@ export const registerWithOtp = createAsyncThunk(
         msg = 'An account with this phone number already exists. Please login instead.';
       } else if (status === 429) {
         msg = 'Too many attempts. Please try again later.';
-      } else if (serverMsg) {
-        msg = serverMsg;
       }
       return rejectWithValue(msg);
     }
@@ -191,7 +212,8 @@ export const refreshUserData = createAsyncThunk(
       await updateLastActivity();
       return response.data.data?.user || response.data.data;
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to refresh user data');
+      if (__DEV__) console.error('[refreshUserData]', error.response?.status, error.response?.data);
+      return rejectWithValue('Failed to load profile. Please restart the app.');
     }
   },
 );

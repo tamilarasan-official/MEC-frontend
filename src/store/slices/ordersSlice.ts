@@ -80,10 +80,25 @@ export const createOrder = createAsyncThunk(
       };
       res = await api.post('/orders', payload);
     } catch (e: any) {
-      const errMsg = e.response?.data?.message || e.response?.data?.error?.message || e.message || 'Failed to create order';
-      const errCode = e.response?.data?.error?.code || e.response?.status || 'NETWORK';
-      if (__DEV__) console.error('[createOrder] Stage 1 FAILED:', errCode, errMsg, 'status:', e.response?.status);
-      return rejectWithValue(`${errMsg} (${errCode})`);
+      const status = e.response?.status;
+      if (__DEV__) console.error('[createOrder] FAILED:', e.response?.data, 'status:', status);
+      let msg = 'Failed to place order. Please try again.';
+      if (!e.response) {
+        msg = 'Network error. Please check your connection.';
+      } else if (status === 400) {
+        msg = 'Invalid order. Please check your cart and try again.';
+      } else if (status === 402) {
+        msg = 'Insufficient wallet balance. Please top up and try again.';
+      } else if (status === 404) {
+        msg = 'Shop or item not found. Please refresh and try again.';
+      } else if (status === 409) {
+        msg = 'Shop is currently closed or item is unavailable.';
+      } else if (status === 429) {
+        msg = 'Too many requests. Please try again later.';
+      } else if (status >= 500) {
+        msg = 'Server error. Please try again later.';
+      }
+      return rejectWithValue(msg);
     }
 
     // Step 2: Map the response — if this fails, the order WAS created so
@@ -131,7 +146,8 @@ export const fetchMyOrders = createAsyncThunk(
       const res = await api.get('/orders/my', { params: qp });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to fetch orders');
+      if (__DEV__) console.error('[fetchMyOrders]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to load orders. Please try again.');
     }
   },
 );
@@ -143,7 +159,8 @@ export const fetchMyActiveOrders = createAsyncThunk(
       const res = await api.get('/orders/my', { params: { status: 'pending,preparing,partially_ready,ready,partially_delivered', limit: 50 } });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to fetch active orders');
+      if (__DEV__) console.error('[fetchMyActiveOrders]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to load active orders. Please try again.');
     }
   },
 );
@@ -156,7 +173,8 @@ export const fetchShopOrders = createAsyncThunk(
       const res = await api.get('/orders/shop', { params });
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to fetch shop orders');
+      if (__DEV__) console.error('[fetchShopOrders]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to load shop orders. Please try again.');
     }
   },
 );
@@ -168,7 +186,8 @@ export const fetchActiveShopOrders = createAsyncThunk(
       const res = await api.get('/orders/shop/active');
       return mapOrders(res.data.data || res.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to fetch active shop orders');
+      if (__DEV__) console.error('[fetchActiveShopOrders]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to load active shop orders. Please try again.');
     }
   },
 );
@@ -182,7 +201,19 @@ export const updateOrderStatus = createAsyncThunk(
       const res = await api.put(`/orders/${orderId}/status`, body);
       return mapOrder(res.data.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to update order');
+      const status = e.response?.status;
+      if (__DEV__) console.error('[updateOrderStatus]', e.response?.data, 'status:', status);
+      let msg = 'Failed to update order. Please try again.';
+      if (!e.response) {
+        msg = 'Network error. Please check your connection.';
+      } else if (status === 404) {
+        msg = 'Order not found.';
+      } else if (status === 409) {
+        msg = 'Order cannot be changed at this stage.';
+      } else if (status >= 500) {
+        msg = 'Server error. Please try again later.';
+      }
+      return rejectWithValue(msg);
     }
   },
 );
@@ -194,7 +225,8 @@ export const markItemDelivered = createAsyncThunk(
       const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`, { delivered, itemStatus });
       return mapOrder(res.data.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to mark item');
+      if (__DEV__) console.error('[markItemDelivered]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to update item. Please try again.');
     }
   },
 );
@@ -206,7 +238,8 @@ export const acceptItem = createAsyncThunk(
       const res = await api.post(`/orders/${orderId}/items/${itemIndex}/accept`);
       return mapOrder(res.data.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to accept item');
+      if (__DEV__) console.error('[acceptItem]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to accept item. Please try again.');
     }
   },
 );
@@ -218,7 +251,8 @@ export const rejectItem = createAsyncThunk(
       const res = await api.post(`/orders/${orderId}/items/${itemIndex}/reject`, { reason });
       return mapOrder(res.data.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to reject item');
+      if (__DEV__) console.error('[rejectItem]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to reject item. Please try again.');
     }
   },
 );
@@ -230,7 +264,8 @@ export const acceptAllItems = createAsyncThunk(
       const res = await api.put(`/orders/${orderId}/accept-all`);
       return mapOrder(res.data.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to accept all items');
+      if (__DEV__) console.error('[acceptAllItems]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to accept items. Please try again.');
     }
   },
 );
@@ -242,7 +277,8 @@ export const rejectAllItems = createAsyncThunk(
       const res = await api.put(`/orders/${orderId}/reject-all`, { reason });
       return mapOrder(res.data.data);
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'Failed to reject order');
+      if (__DEV__) console.error('[rejectAllItems]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to reject order. Please try again.');
     }
   },
 );
@@ -255,7 +291,8 @@ export const verifyQRCode = createAsyncThunk(
       const d = res.data.data;
       return { order: mapOrder(d.order || d), valid: d.valid ?? true };
     } catch (e: any) {
-      return rejectWithValue(e.response?.data?.message || 'QR verification failed');
+      if (__DEV__) console.error('[verifyQRCode]', e.response?.status, e.response?.data);
+      return rejectWithValue('QR verification failed. Please try again.');
     }
   },
 );
