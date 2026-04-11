@@ -18,6 +18,10 @@ const SOCKET_URL = API_ORIGIN;
 
 let socket: Socket | null = null;
 
+// force_logout rate limit — only process once every 5 minutes to prevent MITM injection DoS
+let lastForceLogoutTs = 0;
+const FORCE_LOGOUT_COOLDOWN_MS = 5 * 60 * 1000;
+
 export interface OrderUpdatePayload {
   orderId: string;
   orderNumber: string;
@@ -375,7 +379,32 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   });
 
   // Force logout — another device logged in with this account
-  socket.on('force_logout', (payload: { reason: string }) => {
+  // Guards: payload validation + timestamp freshness + rate limit (prevents MITM DoS injection)
+  socket.on('force_logout', (payload: { reason: string; ts?: number }) => {
+    const now = Date.now();
+
+    // 1. Validate payload structure
+    if (!payload || typeof payload.reason !== 'string' || !payload.reason.trim()) {
+      if (__DEV__) console.warn('[Socket] force_logout rejected: invalid payload');
+      return;
+    }
+
+    // 2. If server includes a timestamp, reject stale events (> 60 seconds old)
+    //    This requires the backend to include `ts: Date.now()` in the event payload
+    if (payload.ts !== undefined) {
+      if (typeof payload.ts !== 'number' || Math.abs(now - payload.ts) > 60_000) {
+        if (__DEV__) console.warn('[Socket] force_logout rejected: stale timestamp');
+        return;
+      }
+    }
+
+    // 3. Rate limit: only process one force_logout per 5 minutes (prevents injection loop DoS)
+    if (now - lastForceLogoutTs < FORCE_LOGOUT_COOLDOWN_MS) {
+      if (__DEV__) console.warn('[Socket] force_logout rate-limited, ignoring duplicate');
+      return;
+    }
+    lastForceLogoutTs = now;
+
     if (__DEV__) console.log('[Socket] Force logout received:', payload.reason);
     DeviceEventEmitter.emit(FORCE_LOGOUT_EVENT, { reason: payload.reason });
   });

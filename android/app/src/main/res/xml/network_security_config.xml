@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SSL Certificate Pinning — campusoneapi.madrascollege.ac.in
+  Security fix: C4 — prevents MITM attacks on campus WiFi.
+
+  HOW TO UPDATE PINS (do this every time the Let's Encrypt cert renews, ~90 days):
+    Leaf pin:
+      openssl s_client -servername campusoneapi.madrascollege.ac.in -connect campusoneapi.madrascollege.ac.in:443 2>/dev/null \
+        | openssl x509 -noout -pubkey | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+
+    Intermediate CA pin (backup — more stable):
+      openssl s_client -showcerts -servername campusoneapi.madrascollege.ac.in -connect campusoneapi.madrascollege.ac.in:443 2>/dev/null \
+        | awk '/-----BEGIN CERTIFICATE-----/{c++} c==2{print}' \
+        | openssl x509 -noout -pubkey | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+
+  IMPORTANT: Always keep at least 2 pins. If you only have the leaf pin and the cert renews,
+  ALL users on the old APK will be locked out of the app permanently until they update.
+-->
+<network-security-config>
+
+  <!-- Debug builds: disable pin enforcement so developers can test freely -->
+  <debug-overrides>
+    <trust-anchors>
+      <certificates src="system" overridePins="true" />
+    </trust-anchors>
+  </debug-overrides>
+
+  <!-- Release builds: enforce pinning on our API domain -->
+  <domain-config cleartextTrafficPermitted="false">
+    <domain includeSubdomains="false">campusoneapi.madrascollege.ac.in</domain>
+    <pin-set>
+      <!-- Leaf certificate pin — generated 2026-04-11, expires ~90 days after cert renewal -->
+      <pin digest="SHA-256">cLKLGCyyKgF0uAIv2SNjy4KXsPOEzL+rbJ97M3OFLUk=</pin>
+      <!-- Backup: Let's Encrypt R13 intermediate CA — more stable than leaf -->
+      <pin digest="SHA-256">AlSQhgtJirc8ahLyekmtX+Iw+v46yPYRLJt9Cq1GlB0=</pin>
+    </pin-set>
+  </domain-config>
+
+</network-security-config>

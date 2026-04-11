@@ -3,8 +3,8 @@
  * React Native Application Entry Point
  */
 
-import React from 'react';
-import { StatusBar } from 'react-native';
+import React, { useEffect } from 'react';
+import { StatusBar, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
@@ -14,8 +14,24 @@ import { store } from './src/store';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import ErrorBoundary from './src/components/common/ErrorBoundary';
+import { runSecurityChecks, shouldBlockApp, shouldWarnUser } from './src/utils/securityCheck';
 
 function AppContent(): React.JSX.Element {
+  useEffect(() => {
+    runSecurityChecks().then(result => {
+      if (shouldBlockApp(result)) {
+        // Rooted device or repackaged APK — block with non-dismissible alert
+        Alert.alert(
+          'Security Check Failed',
+          'CampusOne cannot run on rooted or modified devices. Please use a standard device.',
+          [],
+          { cancelable: false }
+        );
+      } else if (shouldWarnUser(result)) {
+        if (__DEV__) console.warn('[Security] Running on emulator — security features reduced');
+      }
+    });
+  }, []);
   const { isDark, colors } = useTheme();
 
   const navTheme = isDark

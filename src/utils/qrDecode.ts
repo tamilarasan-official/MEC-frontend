@@ -73,6 +73,19 @@ function base64Decode(str: string): string {
   }
 }
 
+// QR codes expire after 10 minutes to prevent replay attacks (M8 fix)
+const QR_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Check if a parsed QR payload has expired.
+ * Requires the backend to include a `ts` (Unix ms timestamp) in the QR payload.
+ * Returns true (expired) if ts is present and older than QR_TTL_MS.
+ */
+function isQrExpired(parsed: Record<string, unknown>): boolean {
+  if (typeof parsed.ts !== 'number') return false; // No timestamp — backward compat, allow
+  return (Date.now() - parsed.ts) > QR_TTL_MS;
+}
+
 export function decodeQrData(scanned: string): string | null {
   const trimmed = scanned.trim();
 
@@ -81,6 +94,7 @@ export function decodeQrData(scanned: string): string | null {
   if (codeMatch) {
     try {
       const decoded = JSON.parse(base64Decode(decodeURIComponent(codeMatch[1])));
+      if (isQrExpired(decoded)) return null; // Expired QR — reject
       const id = extractOrderId(decoded);
       if (id) return id;
     } catch { /* fall through */ }
@@ -90,6 +104,7 @@ export function decodeQrData(scanned: string): string | null {
   try {
     const parsed = JSON.parse(trimmed);
     if (typeof parsed === 'object' && parsed !== null) {
+      if (isQrExpired(parsed)) return null; // Expired QR — reject
       const id = extractOrderId(parsed);
       if (id) return id;
     }
@@ -98,11 +113,13 @@ export function decodeQrData(scanned: string): string | null {
   // 3. Try base64 decode
   try {
     const decoded = JSON.parse(base64Decode(trimmed));
+    if (isQrExpired(decoded)) return null; // Expired QR — reject
     const id = extractOrderId(decoded);
     if (id) return id;
   } catch { /* fall through */ }
 
   // 4. If it looks like a raw MongoDB ObjectId, return as-is
+  // Note: raw ObjectIds have no timestamp — backend must validate shop ownership
   if (/^[0-9a-fA-F]{24}$/.test(trimmed)) {
     return trimmed;
   }

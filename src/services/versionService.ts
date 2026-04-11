@@ -11,8 +11,11 @@ import { API_ORIGIN } from './api';
 // App version derived from package.json — single source of truth
 const APP_VERSION: string = require('../../package.json').version;
 
-// API key for mobile app verification — loaded from .env via react-native-config
-const APP_API_KEY = Config.APP_API_KEY || '272183449088151d1938eca9e9de6cd2cb7a7001ad073cc050352117c1b52ca3';
+// API key for mobile app verification — must be set in .env as APP_API_KEY
+const APP_API_KEY = Config.APP_API_KEY as string;
+if (!APP_API_KEY) {
+  throw new Error('[Security] APP_API_KEY is not configured. Set APP_API_KEY in your .env file.');
+}
 
 export interface UpdateInfo {
   updateAvailable: boolean;

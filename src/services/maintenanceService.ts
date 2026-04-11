@@ -7,7 +7,10 @@ import axios from 'axios';
 import Config from 'react-native-config';
 import { API_ORIGIN } from './api';
 
-const APP_API_KEY = Config.APP_API_KEY || '272183449088151d1938eca9e9de6cd2cb7a7001ad073cc050352117c1b52ca3';
+const APP_API_KEY = Config.APP_API_KEY as string;
+if (!APP_API_KEY) {
+  throw new Error('[Security] APP_API_KEY is not configured. Set APP_API_KEY in your .env file.');
+}
 
 export interface MaintenanceInfo {
   maintenanceEnabled: boolean;

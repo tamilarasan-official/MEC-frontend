@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as Keychain from 'react-native-keychain';
 import Config from 'react-native-config';
+import uuid from 'react-native-uuid';
 
 // ── Server origin ───────────────────────────────────────────────
 export const API_ORIGIN = 'https://campusoneapi.madrascollege.ac.in';
@@ -11,9 +12,12 @@ const KEYCHAIN_TOKEN_SERVICE = 'com.campusone.tokens';
 const KEYCHAIN_ACTIVITY_SERVICE = 'com.campusone.activity';
 const KEYCHAIN_DEVICE_ID_SERVICE = 'com.campusone.deviceid';
 
-// API key for mobile app verification — loaded from .env via react-native-config
-// Hardcoded fallback ensures the app works even if Config fails to inject at build time
-const APP_API_KEY = Config.APP_API_KEY || '272183449088151d1938eca9e9de6cd2cb7a7001ad073cc050352117c1b52ca3';
+// API key for mobile app verification — must be set in .env as APP_API_KEY
+// Never hardcode a fallback — if the key is missing the app should fail loudly at startup
+const APP_API_KEY = Config.APP_API_KEY as string;
+if (!APP_API_KEY) {
+  throw new Error('[Security] APP_API_KEY is not configured. Set APP_API_KEY in your .env file.');
+}
 const APP_VERSION: string = require('../../package.json').version;
 
 // Session inactivity limit — 3 days in milliseconds
@@ -114,10 +118,8 @@ export async function getOrCreateDeviceId(): Promise<string> {
   try {
     const stored = await Keychain.getGenericPassword({ service: KEYCHAIN_DEVICE_ID_SERVICE });
     if (stored) return stored.password;
-    // Generate a 32-char hex device ID and persist it
-    const id = Array.from({ length: 32 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('');
+    // Generate a cryptographically random device ID using uuid v4
+    const id = (uuid.v4() as string).replace(/-/g, '');
     await Keychain.setGenericPassword('device', id, { service: KEYCHAIN_DEVICE_ID_SERVICE });
     return id;
   } catch {
