@@ -1,17 +1,25 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Image,
-  ActivityIndicator, Animated, unstable_batchedUpdates,
+  View, Text, StyleSheet, TouchableOpacity, Image,
+  ActivityIndicator,
 } from 'react-native';
-import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { lightHaptic, mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  BottomSheetFooter,
+} from '@gorhom/bottom-sheet';
+import type { BottomSheetFooterProps } from '@gorhom/bottom-sheet';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { updateQuantity, removeFromCart, clearCart } from '../../store/slices/cartSlice';
 import { createOrder } from '../../store/slices/ordersSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../common/Icon';
-import { Order, CreateOrderResult } from '../../types';
+import { CreateOrderResult } from '../../types';
 import { resolveImageUrl } from '../../utils/imageUrl';
 import PINVerifyModal from '../common/PINVerifyModal';
 
@@ -31,6 +39,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
 
 export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailure }: CartBottomSheetProps) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
 
@@ -40,44 +49,56 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
   const shops = useAppSelector(s => s.menu.shops);
   const [ordering, setOrdering] = useState(false);
 
-  // Check if the shop is currently open
   const shop = shops.find(s => s.id === shopId);
   const isShopClosed = shop ? shop.isActive === false : false;
 
-  const slideAnim = useMemo(() => new Animated.Value(600), []);
-  const backdropAnim = useMemo(() => new Animated.Value(0), []);
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['65%', '95%'], []);
+  const pendingActionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (visible) {
-      slideAnim.setValue(600);
-      backdropAnim.setValue(0);
-      Animated.parallel([
-        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }),
-        Animated.timing(backdropAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-      ]).start();
+      bottomSheetRef.current?.present();
     }
-  }, [visible, slideAnim, backdropAnim]);
+  }, [visible]);
+
+  const handleDismiss = useCallback(() => {
+    if (pendingActionRef.current) {
+      const action = pendingActionRef.current;
+      pendingActionRef.current = null;
+      action();
+    } else {
+      onClose();
+    }
+  }, [onClose]);
 
   const handleClose = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
-      Animated.timing(backdropAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
-    ]).start(() => onClose());
-  }, [slideAnim, backdropAnim, onClose]);
+    bottomSheetRef.current?.dismiss();
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.6}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   const cartTotal = cartItems.reduce((sum, c) => sum + (c.item.offerPrice ?? c.item.price) * c.quantity, 0);
   const totalCount = cartItems.reduce((sum, c) => sum + c.quantity, 0);
   const balance = user?.balance || 0;
   const hasBalance = balance >= cartTotal;
 
-  const animateClose = useCallback((callback: () => void, skipClose = false) => {
-    Animated.parallel([
-      Animated.timing(slideAnim, { toValue: 600, duration: 250, useNativeDriver: true }),
-      Animated.timing(backdropAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => { unstable_batchedUpdates(() => { if (!skipClose) onClose(); callback(); }); });
-  }, [slideAnim, backdropAnim, onClose]);
-
   const [showPinModal, setShowPinModal] = useState(false);
+
+  useEffect(() => {
+    if (!visible) setShowPinModal(false);
+  }, [visible]);
 
   const handlePayPress = () => {
     if (isShopClosed || !hasBalance || !shopId || cartItems.length === 0) return;
@@ -94,7 +115,6 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
     const savedShopName = shopName || '';
     setOrdering(true);
 
-    // Step 1: Place the order — only a real API failure should show "Order Failed"
     let result: CreateOrderResult;
     try {
       result = await dispatch(createOrder({
@@ -114,11 +134,11 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       }
       if (__DEV__) console.error('[CartBottomSheet] Order failed:', typeof err);
       setOrdering(false);
-      animateClose(() => onOrderFailure(msg), true);
+      pendingActionRef.current = () => onOrderFailure(msg);
+      bottomSheetRef.current?.dismiss();
       return;
     }
 
-    // Step 2: Order succeeded — anything below must NEVER show failure
     dispatch(clearCart());
     setOrdering(false);
     try {
@@ -135,27 +155,86 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
           shopName: o.shopName || savedShopName,
         })),
       };
-      animateClose(() => onOrderSuccess(enrichedResult), true);
+      pendingActionRef.current = () => onOrderSuccess(enrichedResult);
+      bottomSheetRef.current?.dismiss();
     } catch {
-      // Enrichment failed but order exists — send raw result as success
-      animateClose(() => onOrderSuccess(result), true);
+      pendingActionRef.current = () => onOrderSuccess(result);
+      bottomSheetRef.current?.dismiss();
     }
   };
 
+  const renderFooter = useCallback((props: BottomSheetFooterProps) => {
+    if (cartItems.length === 0) return null;
+    return (
+      <BottomSheetFooter {...props} bottomInset={0}>
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.walletRow}>
+            <Text style={styles.walletLabel}>Wallet Balance</Text>
+            <Text style={styles.walletValue}>Rs.{balance}</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Subtotal</Text>
+            <Text style={styles.summaryValue}>Rs.{cartTotal}</Text>
+          </View>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>Rs.{cartTotal}</Text>
+          </View>
+          {isShopClosed && (
+            <View style={styles.shopClosedBanner}>
+              <Icon name="storefront-outline" size={20} color="#ef4444" />
+              <Text style={styles.shopClosedText}>Shop is currently closed</Text>
+            </View>
+          )}
+          {!isShopClosed && !hasBalance && (
+            <Text style={styles.insufficientText}>
+              Insufficient balance. Add Rs.{cartTotal - balance} to proceed.
+            </Text>
+          )}
+          <TouchableOpacity
+            style={styles.payBtn}
+            onPress={() => { mediumHaptic(); handlePayPress(); }}
+            disabled={isShopClosed || !hasBalance || ordering}
+            activeOpacity={0.85}
+            accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`}
+            accessibilityRole="button"
+          >
+            <LinearGradient
+              colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {ordering ? (
+              <ActivityIndicator color="#fff" />
+            ) : isShopClosed ? (
+              <Text style={styles.payBtnText}>Shop Closed</Text>
+            ) : (
+              <Text style={styles.payBtnText}>Pay Rs.{cartTotal}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </BottomSheetFooter>
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartItems.length, cartTotal, balance, hasBalance, isShopClosed, ordering, styles, colors, insets.bottom]);
+
   return (
     <>
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
-      <Animated.View style={[styles.backdrop, { opacity: backdropAnim }]}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} accessibilityLabel="Close cart" accessibilityRole="button" />
-      </Animated.View>
-
-      <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-        {/* Drag handle */}
-        <View style={styles.handleBar}>
-          <View style={styles.handle} />
-        </View>
-
-        {/* Active orders at top */}
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      snapPoints={snapPoints}
+      enableDynamicSizing={false}
+      enablePanDownToClose={!ordering}
+      onDismiss={handleDismiss}
+      backdropComponent={renderBackdrop}
+      footerComponent={renderFooter}
+      backgroundStyle={{ backgroundColor: colors.card }}
+      handleIndicatorStyle={{ backgroundColor: colors.border, width: 40 }}
+    >
+      <View style={styles.sheetContent}>
+      {/* Active orders at top */}
         {(activeOrders ?? []).slice(0, 2).map(order => {
           const sc = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
           return (
@@ -192,136 +271,77 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
           </TouchableOpacity>
         </View>
 
-        {/* Cart items */}
-        <ScrollView
-          style={styles.body}
+        {/* Cart items — scrollable */}
+        <BottomSheetScrollView
           contentContainerStyle={styles.bodyContent}
-          showsVerticalScrollIndicator={false}>
-          {cartItems.map(c => {
-            const price = c.item.offerPrice ?? c.item.price;
-            return (
-              <View key={c.item.id} style={styles.itemCard}>
-                {resolveImageUrl(c.item.image) ? (
-                  <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.itemImg} accessibilityLabel={`${c.item.name} image`} />
-                ) : (
-                  <View style={[styles.itemImg, styles.itemImgFallback]}>
-                    <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
-                  </View>
-                )}
-                <View style={styles.itemInfo}>
-                  <View style={styles.itemTop}>
-                    <Text style={styles.itemName} numberOfLines={2}>{c.item.name}</Text>
+          showsVerticalScrollIndicator={false}
+        >
+        {cartItems.map(c => {
+          const price = c.item.offerPrice ?? c.item.price;
+          return (
+            <View key={c.item.id} style={styles.itemCard}>
+              {resolveImageUrl(c.item.image) ? (
+                <Image source={{ uri: resolveImageUrl(c.item.image)! }} style={styles.itemImg} accessibilityLabel={`${c.item.name} image`} />
+              ) : (
+                <View style={[styles.itemImg, styles.itemImgFallback]}>
+                  <Icon name="restaurant-outline" size={22} color={colors.textMuted} />
+                </View>
+              )}
+              <View style={styles.itemInfo}>
+                <View style={styles.itemTop}>
+                  <Text style={styles.itemName} numberOfLines={2}>{c.item.name}</Text>
+                  <TouchableOpacity
+                    onPress={() => { lightHaptic(); dispatch(removeFromCart(c.item.id)); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel={`Remove ${c.item.name}`}
+                    accessibilityRole="button">
+                    <Icon name="trash-outline" size={18} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.itemCategory}>{c.item.category}</Text>
+                <View style={styles.itemBottom}>
+                  <Text style={styles.itemPrice}>Rs.{price}</Text>
+                  <View style={styles.stepper}>
                     <TouchableOpacity
-                      onPress={() => { lightHaptic(); dispatch(removeFromCart(c.item.id)); }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityLabel={`Remove ${c.item.name}`}
+                      style={styles.stepBtn}
+                      onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity - 1 })); }}
+                      accessibilityLabel="Decrease quantity"
                       accessibilityRole="button">
-                      <Icon name="trash-outline" size={18} color={colors.textMuted} />
+                      <Icon name="remove" size={16} color={colors.text} />
                     </TouchableOpacity>
-                  </View>
-                  <Text style={styles.itemCategory}>{c.item.category}</Text>
-                  <View style={styles.itemBottom}>
-                    <Text style={styles.itemPrice}>Rs.{price}</Text>
-                    <View style={styles.stepper}>
-                      <TouchableOpacity
-                        style={styles.stepBtn}
-                        onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity - 1 })); }}
-                        accessibilityLabel="Decrease quantity"
-                        accessibilityRole="button">
-                        <Icon name="remove" size={16} color={colors.text} />
-                      </TouchableOpacity>
-                      <Text style={styles.stepQty}>{c.quantity}</Text>
-                      <TouchableOpacity
-                        style={[styles.stepBtn, c.quantity >= 10 && { opacity: 0.3 }]}
-                        onPress={() => { if (c.quantity < 10) { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 })); } }}
-                        disabled={c.quantity >= 10}
-                        accessibilityLabel="Increase quantity"
-                        accessibilityRole="button">
-                        <Icon name="add" size={16} color={colors.text} />
-                      </TouchableOpacity>
-                    </View>
+                    <Text style={styles.stepQty}>{c.quantity}</Text>
+                    <TouchableOpacity
+                      style={[styles.stepBtn, c.quantity >= 10 && { opacity: 0.3 }]}
+                      onPress={() => { if (c.quantity < 10) { lightHaptic(); dispatch(updateQuantity({ itemId: c.item.id, quantity: c.quantity + 1 })); } }}
+                      disabled={c.quantity >= 10}
+                      accessibilityLabel="Increase quantity"
+                      accessibilityRole="button">
+                      <Icon name="add" size={16} color={colors.text} />
+                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
-            );
-          })}
-        </ScrollView>
+            </View>
+          );
+        })}
+        </BottomSheetScrollView>
+      </View>
+    </BottomSheetModal>
 
-        {/* Footer */}
-        {cartItems.length > 0 && (
-          <View style={styles.footer}>
-            <View style={styles.walletRow}>
-              <Text style={styles.walletLabel}>Wallet Balance</Text>
-              <Text style={styles.walletValue}>Rs.{balance}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>Rs.{cartTotal}</Text>
-            </View>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>Rs.{cartTotal}</Text>
-            </View>
-            {isShopClosed && (
-              <View style={styles.shopClosedBanner}>
-                <Icon name="storefront-outline" size={20} color="#ef4444" />
-                <Text style={styles.shopClosedText}>Shop is currently closed</Text>
-              </View>
-            )}
-            {!isShopClosed && !hasBalance && (
-              <Text style={styles.insufficientText}>
-                Insufficient balance. Add Rs.{cartTotal - balance} to proceed.
-              </Text>
-            )}
-            <TouchableOpacity
-              style={styles.payBtnWrap}
-              onPress={() => { mediumHaptic(); handlePayPress(); }}
-              disabled={isShopClosed || !hasBalance || ordering}
-              activeOpacity={0.85}
-              accessibilityLabel={isShopClosed ? 'Shop is closed' : `Pay rupees ${cartTotal}`}
-              accessibilityRole="button"
-            >
-              <LinearGradient
-                colors={!isShopClosed && hasBalance && !ordering ? ['#3b82f6', '#06d6a0'] : ['#4b5563', '#4b5563']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.payBtn}
-              >
-                {ordering ? (
-                  <ActivityIndicator color="#fff" />
-                ) : isShopClosed ? (
-                  <Text style={styles.payBtnText}>Shop Closed</Text>
-                ) : (
-                  <Text style={styles.payBtnText}>Pay Rs.{cartTotal}</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        )}
-      </Animated.View>
-    </Modal>
+    {/* PIN modal — shown as separate overlay */}
     <PINVerifyModal
       visible={showPinModal}
       amount={cartTotal}
       title={cartItems.map(c => c.item.name).join(', ')}
       onVerified={() => { setShowPinModal(false); handlePay(); }}
-      onCancel={() => setShowPinModal(false)}
+      onCancel={() => { setShowPinModal(false); }}
     />
     </>
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    maxHeight: '95%',
-  },
-  handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  sheetContent: { flex: 1 },
 
   // Active orders
   activeOrderRow: {
@@ -357,7 +377,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
 
   // Body
-  body: { maxHeight: 280 },
   bodyContent: { paddingHorizontal: 20, paddingBottom: 8 },
 
   // Item card
@@ -384,10 +403,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   stepBtn: { padding: 8 },
   stepQty: { fontSize: 13, fontWeight: '700', color: colors.text, width: 28, textAlign: 'center' },
 
-  // Footer
+  // Footer (pinned via footerComponent)
   footer: {
     borderTopWidth: 1, borderTopColor: colors.border,
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28, gap: 10,
+    backgroundColor: colors.card,
+    paddingHorizontal: 20, paddingTop: 16, gap: 10,
   },
   walletRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -409,7 +429,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   shopClosedText: { fontSize: 14, fontWeight: '600', color: '#ef4444' },
   insufficientText: { fontSize: 12, color: colors.danger, textAlign: 'center' },
-  payBtnWrap: { width: '100%' },
-  payBtn: { width: '100%', borderRadius: 18, paddingVertical: 18, alignItems: 'center' },
+  payBtn: { borderRadius: 18, paddingVertical: 18, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   payBtnText: { fontSize: 17, fontWeight: '700', color: '#fff', letterSpacing: 0.3 },
 });

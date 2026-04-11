@@ -194,13 +194,15 @@ export function OrderAnimation({ type, orderType = 'instant', pickupToken, order
                 <Text style={styles.splitInfoText}>
                   Your order was split — <Text style={{ color: '#f97316', fontWeight: '700' }}>instant items</Text> are ready now!
                 </Text>
-
-                {/* Done button */}
-                <TouchableOpacity style={styles.splitDoneBtn} onPress={handleDismiss} activeOpacity={0.8}>
-                  <Text style={styles.splitDoneBtnText}>Done</Text>
-                </TouchableOpacity>
               </Animated.View>
             </ScrollView>
+
+            {/* Done button — fixed at bottom, above toast */}
+            <Animated.View style={[styles.splitBottomBar, { opacity: contentOpacity }]}>
+              <TouchableOpacity style={styles.splitDoneBtn} onPress={handleDismiss} activeOpacity={0.8}>
+                <Text style={styles.splitDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </Animated.View>
 
             {/* Money Deducted toast */}
             <Animated.View style={[styles.moneyToast, { opacity: toastOpacity, transform: [{ translateY: toastSlide }] }]}>
@@ -394,7 +396,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   splitScrollContent: {
     flexGrow: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 32, paddingVertical: 48, paddingBottom: 100,
+    paddingHorizontal: 32, paddingVertical: 48, paddingBottom: 16,
   },
   splitIconCircle: {
     width: 120, height: 120, borderRadius: 60,
@@ -432,6 +434,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   splitInfoText: {
     fontSize: 13, color: 'rgba(255,255,255,0.55)',
     textAlign: 'center', marginTop: 12, marginBottom: 24, lineHeight: 20,
+  },
+  splitBottomBar: {
+    paddingHorizontal: 32, paddingBottom: 120, paddingTop: 8, alignItems: 'center',
   },
   splitDoneBtn: {
     backgroundColor: '#3b82f6', borderRadius: 14,

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Alert, FlatList, Image, AppState, Modal, Animated, PanResponder, Dimensions,
+  RefreshControl, Alert, Image, AppState, Modal, Animated, PanResponder, Dimensions,
 } from 'react-native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { RootState } from '../../store';
@@ -73,7 +73,6 @@ export default function CaptainHomeScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
-  const user = useAppSelector((s: RootState) => s.auth.user);
   const shopOrders = useAppSelector((s: RootState) => s.orders.shopOrders);
   const dashboardStats = useAppSelector((s: RootState) => s.user.dashboardStats);
   const [refreshing, setRefreshing] = useState(false);
@@ -93,6 +92,7 @@ export default function CaptainHomeScreen() {
     mode: 'order' | 'item'; itemIndex: number; itemName: string; refundAmount: number;
   }>({ visible: false, orderId: '', token: '', mode: 'order', itemIndex: 0, itemName: '', refundAmount: 0 });
   const [rejectLoading, setRejectLoading] = useState(false);
+  const resetSwipeRef = useRef<(() => void) | null>(null);
 
   // Item confirmation modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -304,17 +304,6 @@ export default function CaptainHomeScreen() {
     setUpdatingId(null);
   };
 
-  // Show themed confirmation modal for item status change
-  const handleMarkItemReady = (orderId: string, itemIndex: number, itemName: string) => {
-    mediumHaptic();
-    setConfirmModal({ visible: true, type: 'ready', itemName, orderId, itemIndex });
-  };
-
-  const handleDeliverItem = (orderId: string, itemIndex: number, itemName: string) => {
-    mediumHaptic();
-    setConfirmModal({ visible: true, type: 'deliver', itemName, orderId, itemIndex });
-  };
-
   const handleConfirmAction = async () => {
     const { orderId, itemIndex, type } = confirmModal;
     setConfirmLoading(true);
@@ -335,17 +324,6 @@ export default function CaptainHomeScreen() {
 
   const handleDismissConfirm = () => {
     if (!confirmLoading) setConfirmModal(prev => ({ ...prev, visible: false }));
-  };
-
-  // Legacy handler (kept for compatibility with onItemDelivered prop)
-  const handleItemDelivered = (orderId: string, itemIndex: number) => {
-    if (__DEV__) console.log('[OrderCard] handleItemDelivered:', orderId, 'idx:', itemIndex);
-    const order = shopOrders.find(o => o.id === orderId);
-    const item = order?.items[itemIndex];
-    if (!item) { if (__DEV__) console.log('[OrderCard] item not found at index', itemIndex, 'order items:', order?.items.length); return; }
-    const status = item.itemStatus || 'preparing';
-    if (status === 'preparing') handleMarkItemReady(orderId, itemIndex, item.name);
-    else if (status === 'ready') handleDeliverItem(orderId, itemIndex, item.name);
   };
 
   const handleToggleSearch = () => {
@@ -467,9 +445,10 @@ export default function CaptainHomeScreen() {
                 swipeRight={swipeCfg.right}
                 swipeLeft={swipeCfg.left}
                 filter={filter}
-                onRejectItem={(orderId, itemIndex, itemName, refundAmount) =>
-                  setRejectModal({ visible: true, orderId, token: order.pickupToken, mode: 'item', itemIndex, itemName, refundAmount })
-                }
+                onRejectItem={(orderId, itemIndex, itemName, refundAmount, resetSwipe) => {
+                  resetSwipeRef.current = resetSwipe || null;
+                  setRejectModal({ visible: true, orderId, token: order.pickupToken, mode: 'item', itemIndex, itemName, refundAmount });
+                }}
               />
             );
           })
@@ -533,8 +512,20 @@ export default function CaptainHomeScreen() {
       </Modal>
 
       {/* Reject Modal (order-level OR item-level) */}
-      <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
-        <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
+      <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {
+        if (!rejectLoading) {
+          resetSwipeRef.current?.();
+          resetSwipeRef.current = null;
+          setRejectModal(prev => ({ ...prev, visible: false }));
+        }
+      }}>
+        <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={() => {
+          if (!rejectLoading) {
+            resetSwipeRef.current?.();
+            resetSwipeRef.current = null;
+            setRejectModal(prev => ({ ...prev, visible: false }));
+          }
+        }}>
           <TouchableOpacity activeOpacity={1} style={styles.confirmDialog}>
             <View style={[styles.confirmIconWrap, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
               <Icon name="close-circle" size={28} color="#ef4444" />
@@ -548,7 +539,11 @@ export default function CaptainHomeScreen() {
                 : `Reject order #${rejectModal.token}? Full amount will be refunded.`}
             </Text>
             <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setRejectModal(prev => ({ ...prev, visible: false }))} disabled={rejectLoading} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => {
+                resetSwipeRef.current?.();
+                resetSwipeRef.current = null;
+                setRejectModal(prev => ({ ...prev, visible: false }));
+              }} disabled={rejectLoading} activeOpacity={0.7}>
                 <Text style={styles.confirmCancelText}>CANCEL</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -563,6 +558,7 @@ export default function CaptainHomeScreen() {
                     }
                   } catch { Alert.alert('Error', 'Failed to reject'); }
                   setRejectLoading(false);
+                  resetSwipeRef.current = null;
                   setRejectModal(prev => ({ ...prev, visible: false }));
                 }}
                 disabled={rejectLoading}
@@ -614,7 +610,7 @@ const ITEM_SWIPE_THRESHOLD = 70;
 const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, orderId, filter, colors, styles, dispatch, onRejectItem }: {
   item: any; apiIdx: number; orderId: string; filter: FilterKey;
   colors: ThemeColors; styles: any; dispatch: any;
-  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number) => void;
+  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number, resetSwipe?: () => void) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const iStatus = item.itemStatus || 'pending';
@@ -641,6 +637,9 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
   const leftRef = useRef(leftAction);
   rightRef.current = rightAction;
   leftRef.current = leftAction;
+  const resetSwipe = useCallback(() => {
+    Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
+  }, [translateX]);
 
   const panResponder = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
@@ -665,7 +664,7 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
       } else if (g.dx < -ITEM_SWIPE_THRESHOLD && leftRef.current) {
         Animated.timing(translateX, { toValue: -400, duration: 200, useNativeDriver: true }).start(() => {
           mediumHaptic();
-          onRejectItem(orderId, apiIdx, item.name, subtotal);
+          onRejectItem(orderId, apiIdx, item.name, subtotal, resetSwipe);
         });
       } else {
         Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
@@ -731,7 +730,7 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
 
 /* ─── Swipeable Order Card (All Tabs) ─── */
 const SWIPE_THRESHOLD = 80;
-const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, colors, styles, isUpdating, swipeRight, swipeLeft, filter, dispatch, onRejectItem }: {
+const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, colors, styles, isUpdating: _isUpdating, swipeRight, swipeLeft, filter, dispatch, onRejectItem }: {
   order: Order;
   colors: ThemeColors;
   styles: any;
@@ -740,7 +739,7 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
   swipeLeft: SwipeAction | null;
   filter: FilterKey;
   dispatch: any;
-  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number) => void;
+  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number, resetSwipe?: () => void) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const sc = statusColors[order.status];
@@ -863,159 +862,6 @@ const StatItem = React.memo(({ value, label, color, styles }: { value: number; l
     <View style={styles.statItem}>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-});
-
-/* ─── OLD OrderCard removed — SwipeableOrderCard replaces it ─── */
-const OrderCard = React.memo(function OrderCard({ order, colors, styles, isUpdating, onStatusUpdate, onItemDelivered, onReject }: {
-  order: Order;
-  colors: ThemeColors;
-  styles: any;
-  isUpdating: boolean;
-  onStatusUpdate: (id: string, status: OrderStatus) => void;
-  onItemDelivered: (id: string, idx: number) => void;
-  onReject: (id: string, token: string) => void;
-}) {
-  const sc = statusColors[order.status];
-  const timeSince = new Date(order.createdAt).toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit',
-  });
-
-  // Status icon and header color
-  const getHeaderStyle = () => {
-    if (order.isReadyServe) return { bg: 'rgba(249,115,22,0.1)', iconBg: 'rgba(249,115,22,0.2)', iconColor: '#f97316', icon: 'flash' };
-    switch (order.status) {
-      case 'pending': return { bg: 'rgba(249,115,22,0.1)', iconBg: 'rgba(249,115,22,0.2)', iconColor: '#f97316', icon: 'time' };
-      case 'preparing': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'restaurant' };
-      case 'partially_ready': return { bg: 'rgba(139,92,246,0.1)', iconBg: 'rgba(139,92,246,0.2)', iconColor: '#8b5cf6', icon: 'hourglass' };
-      case 'ready': return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'checkmark-circle' };
-      default: return { bg: 'rgba(59,130,246,0.1)', iconBg: 'rgba(59,130,246,0.2)', iconColor: '#3b82f6', icon: 'time' };
-    }
-  };
-  const headerStyle = getHeaderStyle();
-
-  // Show item controls for all active non-instant orders
-  const canCheckDeliver = !order.isReadyServe && (order.status === 'preparing' || order.status === 'partially_ready' || order.status === 'ready' || order.status === 'partially_delivered');
-
-  // Status badge label
-  const getBadgeLabel = () => {
-    if (order.isReadyServe) return 'Ready to Serve';
-    return sc?.label || order.status;
-  };
-  const getBadgeColor = () => {
-    if (order.isReadyServe) return { text: '#f97316', bg: 'rgba(249,115,22,0.12)' };
-    return { text: sc?.text || '#f59e0b', bg: sc?.bg || 'rgba(245,158,11,0.12)' };
-  };
-  const badge = getBadgeColor();
-
-  const displayTotal = (order as any)._splitView
-    ? order.items.reduce((sum, i) => sum + (i.offerPrice || i.price) * i.quantity, 0)
-    : order.total;
-
-  return (
-    <View style={[styles.orderCard, (order.isReadyServe || order.status === 'ready') && styles.orderCardWithTick]}>
-      {/* Card content */}
-      <View style={styles.cardContent}>
-        {/* Header: token + time + status + total */}
-        <View style={styles.cardHeader}>
-          <Text style={styles.tokenText}>#{order.pickupToken}</Text>
-          <Text style={styles.timeText}>{timeSince}</Text>
-          <Text style={styles.customerName} numberOfLines={1}>{order.userName || '—'}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
-            <Text style={[styles.statusBadgeText, { color: badge.text }]}>{getBadgeLabel()}</Text>
-          </View>
-          <Text style={styles.totalValue}>₹{displayTotal}</Text>
-        </View>
-
-      {/* Items */}
-      {order.items.map((item, idx) => {
-        const iStatus = item.itemStatus || 'preparing';
-        const isReady = iStatus === 'ready';
-        const isItemDelivered = iStatus === 'delivered';
-        const apiIdx = (item as any)._originalIdx ?? idx;
-        return (
-          <View key={apiIdx} style={styles.itemRow}>
-            {canCheckDeliver && (
-              <TouchableOpacity
-                onPress={() => { onItemDelivered(order.id, apiIdx); }}
-                style={styles.checkboxBtn}
-                disabled={isItemDelivered}
-              >
-                <Icon
-                  name={isItemDelivered ? 'checkmark-circle' : isReady ? 'checkbox' : 'square-outline'}
-                  size={16}
-                  color={isItemDelivered ? '#22c55e' : isReady ? '#3b82f6' : colors.mutedForeground}
-                />
-              </TouchableOpacity>
-            )}
-            {resolveImageUrl(item.image) ? (
-              <Image source={{ uri: resolveImageUrl(item.image)! }} style={styles.itemImg} />
-            ) : (
-              <View style={styles.itemImgPlaceholder}>
-                <Icon name="restaurant-outline" size={10} color={colors.mutedForeground} />
-              </View>
-            )}
-            <Text style={[styles.itemName, isItemDelivered && styles.itemDone]} numberOfLines={1}>
-              {item.quantity}x {item.name}
-            </Text>
-            {isReady && <Text style={styles.readyTag}>READY</Text>}
-            {isItemDelivered && <Text style={styles.doneTag}>DONE</Text>}
-            <Text style={styles.itemPrice}>₹{(item.offerPrice || item.price) * item.quantity}</Text>
-          </View>
-        );
-      })}
-
-      {/* Action Buttons */}
-      <View style={styles.actionRow}>
-        {order.status === 'pending' && (
-          <>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.startBtn]}
-              onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'preparing'); }}
-              disabled={isUpdating}
-              activeOpacity={0.7}
-            >
-              {isUpdating ? <ActivityIndicator size="small" color="#fff" /> :
-                <Text style={styles.startBtnText}>Start Preparing</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.rejectBtn]}
-              onPress={() => { mediumHaptic(); onReject(order.id, order.pickupToken); }}
-              disabled={isUpdating}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.rejectText}>Reject</Text>
-            </TouchableOpacity>
-          </>
-        )}
-        {/* Ready orders use tick strip — no button needed here */}
-        {order.status === 'partially_delivered' && (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.completeBtn]}
-            onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
-            disabled={isUpdating}
-            activeOpacity={0.7}
-          >
-            {isUpdating ? <ActivityIndicator size="small" color="#fff" /> :
-              <Text style={styles.completeBtnText}>Complete All</Text>}
-          </TouchableOpacity>
-        )}
-      </View>
-      </View>
-
-      {/* Tick strip for ready-to-serve and ready orders */}
-      {(order.isReadyServe || order.status === 'ready') && (
-        <TouchableOpacity
-          style={styles.tickStrip}
-          onPress={() => { mediumHaptic(); onStatusUpdate(order.id, 'completed'); }}
-          disabled={isUpdating}
-          activeOpacity={0.7}
-        >
-          {isUpdating ? <ActivityIndicator size="small" color="#fff" /> :
-            <Icon name="checkmark" size={20} color="#fff" />}
-        </TouchableOpacity>
-      )}
     </View>
   );
 });

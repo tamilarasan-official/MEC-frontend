@@ -10,7 +10,6 @@ import type { FirebaseMessagingTypes } from '@react-native-firebase/messaging';
 import notifee, {
   AndroidImportance,
   AndroidCategory,
-  EventType,
   AuthorizationStatus,
 } from '@notifee/react-native';
 import { Platform, DeviceEventEmitter } from 'react-native';
@@ -436,6 +435,22 @@ async function registerTokenWithBackend(token: string, _userId: string): Promise
   }
 }
 
+export async function refreshTokenRegistration(userId: string): Promise<void> {
+  try {
+    let token: string | null = null;
+    if (Platform.OS === 'ios') {
+      token = await getIosApnsToken();
+    } else {
+      token = await getToken(getMessaging());
+    }
+    if (token) {
+      await registerTokenWithBackend(token, userId);
+    }
+  } catch {
+    // Non-critical
+  }
+}
+
 // ── Unregister device token (called on logout) ─────────────────
 export async function unregisterToken(): Promise<void> {
   try {
@@ -489,22 +504,21 @@ export function setupTokenRefreshListener(userId: string): void {
 // ── Initialize everything ───────────────────────────────────────
 export async function initializeNotifications(userId: string): Promise<void> {
   try {
-    // 1. Request permissions
+    // 1. Request permissions (but ALWAYS continue to register token —
+    //    FCM tokens work even without display permission)
     if (Platform.OS === 'ios') {
       const authStatus = await requestPermission(getMessaging());
       const enabled =
         authStatus === FBAuthorizationStatus.AUTHORIZED ||
         authStatus === FBAuthorizationStatus.PROVISIONAL;
       if (!enabled) {
-        if (__DEV__) console.warn('[Notifications] iOS permission not granted');
-        return;
+        if (__DEV__) console.warn('[Notifications] iOS permission not granted — continuing token registration');
       }
     }
     if (Platform.OS === 'android') {
       const settings = await notifee.requestPermission();
       if (settings.authorizationStatus < AuthorizationStatus.AUTHORIZED) {
-        if (__DEV__) console.warn('[Notifications] Android permission not granted');
-        return;
+        if (__DEV__) console.warn('[Notifications] Android permission not granted — continuing token registration');
       }
     }
 
@@ -530,6 +544,23 @@ export async function initializeNotifications(userId: string): Promise<void> {
     if (__DEV__) console.log('[Notifications] Initialized for user:', userId);
   } catch (error) {
     if (__DEV__) console.warn('[Notifications] Initialization failed:', error);
+    // Retry token registration after 5 seconds — token is critical for push
+    setTimeout(async () => {
+      try {
+        let token: string | null = null;
+        if (Platform.OS === 'ios') {
+          token = await getIosApnsToken();
+        } else {
+          token = await getToken(getMessaging());
+        }
+        if (token) {
+          await registerTokenWithBackend(token, userId);
+          if (__DEV__) console.log('[Notifications] Token registered on retry');
+        }
+      } catch (retryError) {
+        if (__DEV__) console.warn('[Notifications] Retry token registration failed:', retryError);
+      }
+    }, 5000);
   }
 }
 

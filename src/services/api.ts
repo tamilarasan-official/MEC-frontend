@@ -3,7 +3,7 @@ import * as Keychain from 'react-native-keychain';
 import Config from 'react-native-config';
 
 // ── Server origin ───────────────────────────────────────────────
-export const API_ORIGIN = 'https://campusoneapi.madrascollege.ac.in';
+export const API_ORIGIN = Config.API_ORIGIN || 'http://127.0.0.1:5000';
 
 const BASE_URL = `${API_ORIGIN}/api/v1`;
 
@@ -155,6 +155,13 @@ api.interceptors.response.use(
     if (error.response?.status === 426) {
       const { DeviceEventEmitter } = require('react-native');
       DeviceEventEmitter.emit('FORCE_UPDATE_REQUIRED', error.response.data);
+      return Promise.reject(error);
+    }
+
+    // 503 Service Unavailable — app may be in maintenance mode
+    if (error.response?.status === 503) {
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit('MAINTENANCE_MODE_DETECTED');
       return Promise.reject(error);
     }
 

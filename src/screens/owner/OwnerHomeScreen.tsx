@@ -96,6 +96,7 @@ export default function OwnerHomeScreen() {
     mode: 'order' | 'item'; itemIndex: number; itemName: string; refundAmount: number;
   }>({ visible: false, orderId: '', token: '', mode: 'order', itemIndex: 0, itemName: '', refundAmount: 0 });
   const [rejectLoading, setRejectLoading] = useState(false);
+  const resetSwipeRef = useRef<(() => void) | null>(null);
 
   // Item confirmation modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -294,16 +295,6 @@ export default function OwnerHomeScreen() {
     setUpdatingId(null);
   };
 
-  const handleMarkItemReady = (orderId: string, itemIndex: number, itemName: string) => {
-    mediumHaptic();
-    setConfirmModal({ visible: true, type: 'ready', itemName, orderId, itemIndex });
-  };
-
-  const handleDeliverItem = (orderId: string, itemIndex: number, itemName: string) => {
-    mediumHaptic();
-    setConfirmModal({ visible: true, type: 'deliver', itemName, orderId, itemIndex });
-  };
-
   const handleConfirmAction = async () => {
     const { orderId, itemIndex, type } = confirmModal;
     setConfirmLoading(true);
@@ -324,17 +315,6 @@ export default function OwnerHomeScreen() {
 
   const handleDismissConfirm = () => {
     if (!confirmLoading) setConfirmModal(prev => ({ ...prev, visible: false }));
-  };
-
-  // Legacy handler (kept for compatibility with onItemDelivered prop)
-  const handleItemDelivered = (orderId: string, itemIndex: number) => {
-    if (__DEV__) console.log('[OrderCard] handleItemDelivered:', orderId, 'idx:', itemIndex);
-    const order = shopOrders.find(o => o.id === orderId);
-    const item = order?.items[itemIndex];
-    if (!item) { if (__DEV__) console.log('[OrderCard] item not found at index', itemIndex, 'order items:', order?.items.length); return; }
-    const status = item.itemStatus || 'preparing';
-    if (status === 'preparing') handleMarkItemReady(orderId, itemIndex, item.name);
-    else if (status === 'ready') handleDeliverItem(orderId, itemIndex, item.name);
   };
 
   const handleToggleSearch = () => {
@@ -455,9 +435,10 @@ export default function OwnerHomeScreen() {
                 swipeRight={swipeCfg.right}
                 swipeLeft={swipeCfg.left}
                 filter={filter}
-                onRejectItem={(orderId, itemIndex, itemName, refundAmount) =>
-                  setRejectModal({ visible: true, orderId, token: order.pickupToken, mode: 'item', itemIndex, itemName, refundAmount })
-                }
+                onRejectItem={(orderId, itemIndex, itemName, refundAmount, resetSwipe) => {
+                  resetSwipeRef.current = resetSwipe || null;
+                  setRejectModal({ visible: true, orderId, token: order.pickupToken, mode: 'item', itemIndex, itemName, refundAmount });
+                }}
               />
             );
           })
@@ -524,8 +505,20 @@ export default function OwnerHomeScreen() {
       </Modal>
 
       {/* Reject Modal (order-level OR item-level) */}
-      <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
-        <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={() => !rejectLoading && setRejectModal(prev => ({ ...prev, visible: false }))}>
+      <Modal visible={rejectModal.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {
+        if (!rejectLoading) {
+          resetSwipeRef.current?.();
+          resetSwipeRef.current = null;
+          setRejectModal(prev => ({ ...prev, visible: false }));
+        }
+      }}>
+        <TouchableOpacity style={styles.confirmOverlay} activeOpacity={1} onPress={() => {
+          if (!rejectLoading) {
+            resetSwipeRef.current?.();
+            resetSwipeRef.current = null;
+            setRejectModal(prev => ({ ...prev, visible: false }));
+          }
+        }}>
           <TouchableOpacity activeOpacity={1} style={styles.confirmDialog}>
             <View style={[styles.confirmIconWrap, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
               <Icon name="close-circle" size={28} color="#ef4444" />
@@ -539,7 +532,11 @@ export default function OwnerHomeScreen() {
                 : `Reject order #${rejectModal.token}? Full amount will be refunded.`}
             </Text>
             <View style={styles.confirmActions}>
-              <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setRejectModal(prev => ({ ...prev, visible: false }))} disabled={rejectLoading} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => {
+                resetSwipeRef.current?.();
+                resetSwipeRef.current = null;
+                setRejectModal(prev => ({ ...prev, visible: false }));
+              }} disabled={rejectLoading} activeOpacity={0.7}>
                 <Text style={styles.confirmCancelText}>CANCEL</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -554,6 +551,7 @@ export default function OwnerHomeScreen() {
                     }
                   } catch { Alert.alert('Error', 'Failed to reject'); }
                   setRejectLoading(false);
+                  resetSwipeRef.current = null;
                   setRejectModal(prev => ({ ...prev, visible: false }));
                 }}
                 disabled={rejectLoading}
@@ -605,7 +603,7 @@ const ITEM_SWIPE_THRESHOLD = 70;
 const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, orderId, filter, colors, styles, dispatch, onRejectItem }: {
   item: any; apiIdx: number; orderId: string; filter: FilterKey;
   colors: ThemeColors; styles: any; dispatch: any;
-  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number) => void;
+  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number, resetSwipe?: () => void) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const iStatus = item.itemStatus || 'pending';
@@ -632,6 +630,9 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
   const leftRef = useRef(leftAction);
   rightRef.current = rightAction;
   leftRef.current = leftAction;
+  const resetSwipe = useCallback(() => {
+    Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
+  }, [translateX]);
 
   const panResponder = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
@@ -655,7 +656,7 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
       } else if (g.dx < -ITEM_SWIPE_THRESHOLD && leftRef.current) {
         Animated.timing(translateX, { toValue: -400, duration: 200, useNativeDriver: true }).start(() => {
           mediumHaptic();
-          onRejectItem(orderId, apiIdx, item.name, subtotal);
+          onRejectItem(orderId, apiIdx, item.name, subtotal, resetSwipe);
         });
       } else {
         Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
@@ -721,7 +722,7 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
 
 /* ─── Swipeable Order Card (All Tabs) ─── */
 const SWIPE_THRESHOLD = 80;
-const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, colors, styles, isUpdating, swipeRight, swipeLeft, filter, dispatch, onRejectItem }: {
+const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, colors, styles, isUpdating: _isUpdating, swipeRight, swipeLeft, filter, dispatch, onRejectItem }: {
   order: Order;
   colors: ThemeColors;
   styles: any;
@@ -730,7 +731,7 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
   swipeLeft: SwipeAction | null;
   filter: FilterKey;
   dispatch: any;
-  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number) => void;
+  onRejectItem: (orderId: string, itemIndex: number, itemName: string, refundAmount: number, resetSwipe?: () => void) => void;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const sc = statusColors[order.status];

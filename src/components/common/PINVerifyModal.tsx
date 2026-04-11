@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated,
-  ActivityIndicator, Dimensions, TouchableWithoutFeedback,
+  ActivityIndicator, Dimensions, TouchableWithoutFeedback, Modal,
 } from 'react-native';
 import Icon from './Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -19,10 +19,21 @@ interface PINVerifyModalProps {
   title: string;
   onVerified: () => void;
   onCancel: () => void;
+  /**
+   * When true, render as an inline absolute-positioned overlay (no native RN Modal).
+   * Use this when the parent is already a RN <Modal> and you want to stack this
+   * overlay inside it — iOS doesn't play nice with Modal-in-Modal.
+   *
+   * When false (default), wrap the overlay in a transparent RN <Modal> so it
+   * presents above anything in the React tree — including @gorhom/bottom-sheet
+   * BottomSheetModal content, which is teleported via its provider and would
+   * otherwise paint over an inline absolute View.
+   */
+  inline?: boolean;
 }
 
 export default function PINVerifyModal({
-  visible, amount, title, onVerified, onCancel,
+  visible, amount, title, onVerified, onCancel, inline = false,
 }: PINVerifyModalProps) {
   useSecureScreen();
   const { colors } = useTheme();
@@ -229,11 +240,16 @@ export default function PINVerifyModal({
 
   if (!visible) return null;
 
-  // Render as an absolute-positioned overlay instead of a <Modal>.
-  // iOS only supports one Modal presentation at a time — PINVerifyModal is shown
-  // while CartBottomSheet or QRPaymentConfirmModal (both Modals) are still open,
-  // so using a second Modal causes it to render behind the first or not at all.
-  return (
+  // The content is an absolute-positioned overlay (backdrop + bottom sheet).
+  // - When `inline` is true (e.g. mounted inside QRPaymentConfirmModal's RN
+  //   <Modal>), we render it in place so iOS doesn't have to stack a second
+  //   native modal on top of an existing one.
+  // - Otherwise we wrap in a transparent RN <Modal> so the overlay is
+  //   presented above everything in the React tree — in particular above
+  //   @gorhom/bottom-sheet BottomSheetModal content (which is teleported via
+  //   its provider and would otherwise paint over an inline absolute View,
+  //   e.g. the cart → PIN flow).
+  const content = (
     <View style={styles.absoluteFill} pointerEvents="auto">
       {/* Backdrop */}
       <TouchableWithoutFeedback onPress={handleDismiss}>
@@ -294,6 +310,21 @@ export default function PINVerifyModal({
         {renderKeypad()}
       </Animated.View>
     </View>
+  );
+
+  if (inline) return content;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      presentationStyle="overFullScreen"
+      onRequestClose={handleDismiss}
+    >
+      {content}
+    </Modal>
   );
 }
 
