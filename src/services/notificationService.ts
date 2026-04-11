@@ -13,8 +13,7 @@ import notifee, {
   AuthorizationStatus,
 } from '@notifee/react-native';
 import { Platform, DeviceEventEmitter } from 'react-native';
-import api from './api';
-import { getDeviceId } from '../store/slices/authSlice';
+import api, { getOrCreateDeviceId } from './api';
 import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance } from '../store/slices/userSlice';
 import { ORDER_STATUS_POPUP_EVENT, FORCE_LOGOUT_EVENT } from '../constants/events';
@@ -288,7 +287,7 @@ export async function handleBackgroundMessage(
 async function registerTokenWithBackend(token: string, _userId: string): Promise<void> {
   try {
     const { getCurrentVersion } = require('./versionService');
-    const deviceId = await getDeviceId();
+    const deviceId = await getOrCreateDeviceId();
     await api.post('/auth/fcm-token', {
       token,
       deviceId,
@@ -322,7 +321,7 @@ export async function unregisterToken(): Promise<void> {
   } catch (error) {
     // Fallback: try to unregister by deviceId so the token doesn't linger
     try {
-      const deviceId = await getDeviceId();
+      const deviceId = await getOrCreateDeviceId();
       if (deviceId) {
         await api.delete('/auth/fcm-token', { data: { deviceId } });
       }

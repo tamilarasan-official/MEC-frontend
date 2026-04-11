@@ -1,21 +1,15 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { User, LoginResponse, RegisterData, RegisterWithOtpData } from '../../types';
-import api, { setTokens, clearTokens, updateLastActivity } from '../../services/api';
+import api, { setTokens, clearTokens, updateLastActivity, getOrCreateDeviceId } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import uuid from 'react-native-uuid';
 import { unregisterToken, cleanupNotifications } from '../../services/notificationService';
 import { fetchWalletBalance, resetUserState } from './userSlice';
 import { createOrder, resetOrders } from './ordersSlice';
 
-const DEVICE_ID_KEY = '@campusone_device_id';
-export async function getDeviceId(): Promise<string> {
-  let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
-  if (!deviceId) {
-    deviceId = `mobile-${uuid.v4()}`;
-    await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
-  }
-  return deviceId;
-}
+// Device ID is managed exclusively via Keychain in api.ts (getOrCreateDeviceId).
+// AsyncStorage device ID has been removed — it was plaintext on disk and created
+// a second mismatched ID that confused backend rate limiting (H2 fix).
 
 interface AuthState {
   user: User | null;
@@ -35,7 +29,7 @@ export const login = createAsyncThunk(
   'auth/login',
   async ({ username, password }: { username: string; password: string }, { rejectWithValue }) => {
     try {
-      const deviceId = await getDeviceId();
+      const deviceId = await getOrCreateDeviceId();
       const response = await api.post<{ success: boolean; data: LoginResponse }>('/auth/login', {
         username,
         password,
@@ -98,7 +92,7 @@ export const loginWithOtp = createAsyncThunk(
   'auth/loginWithOtp',
   async ({ phone, otp, sessionId }: { phone: string; otp: string; sessionId: string }, { rejectWithValue }) => {
     try {
-      const deviceId = await getDeviceId();
+      const deviceId = await getOrCreateDeviceId();
       const response = await api.post<{ success: boolean; data: LoginResponse }>('/auth/verify-otp', {
         phone,
         otp,
@@ -159,7 +153,7 @@ export const registerWithOtp = createAsyncThunk(
   'auth/registerWithOtp',
   async ({ name, phone, otp, sessionId }: RegisterWithOtpData, { rejectWithValue }) => {
     try {
-      const deviceId = await getDeviceId();
+      const deviceId = await getOrCreateDeviceId();
       const response = await api.post<{ success: boolean; data: LoginResponse }>('/auth/register-with-otp', {
         name,
         phone,
@@ -194,7 +188,7 @@ export const logout = createAsyncThunk('auth/logout', async (_, { dispatch }) =>
   // Send deviceId so the server only removes THIS device's FCM tokens,
   // not all tokens (which would break push on re-login if re-registration fails)
   try {
-    const deviceId = await getDeviceId();
+    const deviceId = await getOrCreateDeviceId();
     await api.post('/auth/logout', { deviceId });
   } catch { /* ignore */ }
   cleanupNotifications();

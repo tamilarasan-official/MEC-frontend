@@ -44,7 +44,10 @@ export const fetchWalletBalance = createAsyncThunk('user/fetchWallet', async (_,
   try {
     const res = await api.get('/student/wallet');
     return res.data.data as { balance: number };
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  } catch (e: any) {
+    if (__DEV__) console.error('[fetchWalletBalance]', e.response?.status, e.response?.data);
+    return rejectWithValue('Failed to load wallet. Please try again.');
+  }
 });
 
 export const fetchTransactions = createAsyncThunk(
@@ -59,7 +62,10 @@ export const fetchTransactions = createAsyncThunk(
         id: tx.id || tx._id || '',
         userId: tx.userId || (typeof tx.user === 'object' && tx.user ? tx.user._id || tx.user.id : tx.user) || '',
       })) as Transaction[];
-    } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+    } catch (e: any) {
+      if (__DEV__) console.error('[fetchTransactions]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to load transactions. Please try again.');
+    }
   }
 );
 
@@ -67,28 +73,40 @@ export const fetchDashboardStats = createAsyncThunk('user/fetchDashboardStats', 
   try {
     const res = await api.get('/orders/shop/stats');
     return res.data.data as DashboardStats;
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  } catch (e: any) {
+    if (__DEV__) console.error('[fetchDashboardStats]', e.response?.status, e.response?.data);
+    return rejectWithValue('Failed to load dashboard. Please try again.');
+  }
 });
 
 export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (params: { startDate?: string; endDate?: string } | undefined, { rejectWithValue }) => {
   try {
     const res = await api.get('/orders/shop/analytics', { params });
     return res.data.data as AnalyticsData;
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  } catch (e: any) {
+    if (__DEV__) console.error('[fetchAnalytics]', e.response?.status, e.response?.data);
+    return rejectWithValue('Failed to load analytics. Please try again.');
+  }
 });
 
 export const fetchShopDetails = createAsyncThunk('user/fetchShopDetails', async (_, { rejectWithValue }) => {
   try {
     const res = await api.get('/owner/shop');
     return res.data.data as { isActive: boolean; name: string; category: string; canGenerateQR: boolean };
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  } catch (e: any) {
+    if (__DEV__) console.error('[fetchShopDetails]', e.response?.status, e.response?.data);
+    return rejectWithValue('Failed to load shop details. Please try again.');
+  }
 });
 
 export const toggleShopStatus = createAsyncThunk('user/toggleShopStatus', async (_, { rejectWithValue }) => {
   try {
     const res = await api.patch('/owner/shop/toggle');
     return res.data.data as { isActive: boolean };
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  } catch (e: any) {
+    if (__DEV__) console.error('[toggleShopStatus]', e.response?.status, e.response?.data);
+    return rejectWithValue('Failed to update shop status. Please try again.');
+  }
 });
 
 export const fetchNotifications = createAsyncThunk('user/fetchNotifications', async (_, { rejectWithValue }) => {
@@ -104,7 +122,10 @@ export const fetchNotifications = createAsyncThunk('user/fetchNotifications', as
       createdAt: n.createdAt || new Date().toISOString(),
       read: n.isRead ?? false,
     })) as AppNotification[];
-  } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed to fetch notifications'); }
+  } catch (e: any) {
+    if (__DEV__) console.error('[fetchNotifications]', e.response?.status, e.response?.data);
+    return rejectWithValue('Failed to load notifications. Please try again.');
+  }
 });
 
 export const fetchQRPayments = createAsyncThunk('user/fetchQRPayments', async (_, { rejectWithValue }) => {
@@ -116,7 +137,7 @@ export const fetchQRPayments = createAsyncThunk('user/fetchQRPayments', async (_
     return payments;
   } catch (e: any) {
     if (__DEV__) console.error('[fetchQRPayments] FAILED:', e.response?.status, e.response?.data?.message || e.message);
-    return rejectWithValue(e.response?.data?.message || 'Failed');
+    return rejectWithValue('Failed to load QR payments. Please try again.');
   }
 });
 
@@ -126,7 +147,15 @@ export const createQRPayment = createAsyncThunk(
     try {
       const res = await api.post('/owner/qr-payments', payload);
       return res.data.data as QRPayment;
-    } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed to create QR payment'); }
+    } catch (e: any) {
+      const status = e.response?.status;
+      if (__DEV__) console.error('[createQRPayment]', status, e.response?.data);
+      let msg = 'Failed to create QR payment. Please try again.';
+      if (status === 400) msg = 'Invalid QR payment details. Please check and try again.';
+      else if (status === 402) msg = 'Insufficient balance for this QR payment.';
+      else if (status >= 500) msg = 'Server error. Please try again later.';
+      return rejectWithValue(msg);
+    }
   }
 );
 
