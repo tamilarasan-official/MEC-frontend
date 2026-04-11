@@ -1,5 +1,6 @@
 import api from './api';
 import { FoodItem, Shop } from '../types';
+import { assertObjectId } from '../utils/validateId';
 
 const menuService = {
   getShops: async (): Promise<Shop[]> => {
@@ -8,13 +9,19 @@ const menuService = {
     return Array.isArray(d) ? d : d.shops || [];
   },
   getShopMenu: async (shopId: string, category?: string, search?: string): Promise<FoodItem[]> => {
+    assertObjectId(shopId, 'shopId');
     const params: any = {};
     if (category) params.categoryId = category;
-    if (search) params.search = search;
+    if (search) {
+      // Trim and cap search term to 100 chars to limit log exposure of user queries
+      const sanitized = search.trim().slice(0, 100);
+      if (sanitized) params.search = sanitized;
+    }
     const res = await api.get(`/shops/${shopId}/menu`, { params });
     return res.data.data || res.data;
   },
   getShopCategories: async (shopId: string): Promise<string[]> => {
+    assertObjectId(shopId, 'shopId');
     const res = await api.get(`/shops/${shopId}/categories`);
     return res.data.data || res.data;
   },
@@ -34,24 +41,29 @@ const menuService = {
     return res.data.data;
   },
   updateItem: async (id: string, data: Partial<FoodItem>): Promise<FoodItem> => {
+    assertObjectId(id, 'itemId');
     const res = await api.put(`/owner/menu/${id}`, data);
     return res.data.data;
   },
   toggleAvailability: async (id: string, isAvailable: boolean): Promise<FoodItem> => {
+    assertObjectId(id, 'itemId');
     const res = await api.patch(`/owner/menu/${id}/availability`, { isAvailable });
     return res.data.data;
   },
   setOffer: async (id: string, discountPercent: number, validUntil?: string): Promise<FoodItem> => {
+    assertObjectId(id, 'itemId');
     const payload: Record<string, any> = { discountPercent };
     payload.validUntil = validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const res = await api.post(`/owner/menu/${id}/offer`, payload);
     return res.data.data;
   },
   removeOffer: async (id: string): Promise<FoodItem> => {
+    assertObjectId(id, 'itemId');
     const res = await api.delete(`/owner/menu/${id}/offer`);
     return res.data.data;
   },
   deleteItem: async (id: string): Promise<void> => {
+    assertObjectId(id, 'itemId');
     await api.delete(`/owner/menu/${id}`);
   },
   getOffers: async (): Promise<FoodItem[]> => {
@@ -59,6 +71,7 @@ const menuService = {
     return res.data.data || res.data || [];
   },
   getShopById: async (shopId: string): Promise<Shop> => {
+    assertObjectId(shopId, 'shopId');
     const res = await api.get(`/shops/${shopId}`);
     return res.data.data;
   },
@@ -72,10 +85,12 @@ const menuService = {
     return res.data.data;
   },
   updateOwnerCategory: async (id: string, data: { name?: string; description?: string; sortOrder?: number }): Promise<any> => {
+    assertObjectId(id, 'categoryId');
     const res = await api.put(`/owner/categories/${id}`, data);
     return res.data.data;
   },
   deleteOwnerCategory: async (id: string): Promise<void> => {
+    assertObjectId(id, 'categoryId');
     await api.delete(`/owner/categories/${id}`);
   },
 };

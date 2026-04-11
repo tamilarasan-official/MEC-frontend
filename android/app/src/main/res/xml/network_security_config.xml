@@ -8,9 +8,9 @@
       openssl s_client -servername campusoneapi.madrascollege.ac.in -connect campusoneapi.madrascollege.ac.in:443 2>/dev/null \
         | openssl x509 -noout -pubkey | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
 
-    Intermediate CA pin (backup — more stable):
-      openssl s_client -showcerts -servername campusoneapi.madrascollege.ac.in -connect campusoneapi.madrascollege.ac.in:443 2>/dev/null \
-        | awk '/-----BEGIN CERTIFICATE-----/{c++} c==2{print}' \
+    Intermediate CA pin (backup, more stable):
+      openssl s_client -showcerts -servername campusoneapi.madrascollege.ac.in -connect campusoneapi.madrascollege.ac.in:443 2>/dev/null
+        | awk '/BEGIN CERTIFICATE/{c++} c==2{print}'
         | openssl x509 -noout -pubkey | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
 
   IMPORTANT: Always keep at least 2 pins. If you only have the leaf pin and the cert renews,

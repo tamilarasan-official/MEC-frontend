@@ -51,7 +51,7 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
 
   socket = io(SOCKET_URL, {
     auth: { token },
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 3000,

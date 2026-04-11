@@ -96,7 +96,7 @@ android {
         applicationId "com.mec.campusone"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 22   // Manually increment before each Play Store upload: 1 → 2 → 3 → ... → 21 → 22
+        versionCode 23   // Manually increment before each Play Store upload: 1 → 2 → 3 → ... → 22 → 23
         versionName appVersionName  // Auto-read from package.json
         manifestPlaceholders = [usesCleartextTraffic: "false"]
     }

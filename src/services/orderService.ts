@@ -1,5 +1,6 @@
 import api from './api';
 import { Order, CartItem, OrderStatus, LaundryDetails, StationeryDetails } from '../types';
+import { assertObjectId } from '../utils/validateId';
 
 // ---- API → Frontend mappers ----
 // The backend returns `shop` as a populated object and `user` as string or object.
@@ -85,12 +86,14 @@ const orderService = {
     return res.data.data;
   },
   updateOrderStatus: async (orderId: string, status: OrderStatus, reason?: string): Promise<Order> => {
+    assertObjectId(orderId, 'orderId');
     const body: any = { status };
     if (reason) body.cancellationReason = reason;
     const res = await api.put(`/orders/${orderId}/status`, body);
     return mapOrder(res.data.data);
   },
   markItemDelivered: async (orderId: string, itemIndex: number, delivered: boolean = true): Promise<Order> => {
+    assertObjectId(orderId, 'orderId');
     const res = await api.patch(`/orders/${orderId}/items/${itemIndex}/deliver`, { delivered });
     return mapOrder(res.data.data);
   },
@@ -100,6 +103,7 @@ const orderService = {
     return { order: mapOrder(d.order || d), valid: d.valid ?? true };
   },
   completeOrder: async (orderId: string): Promise<Order> => {
+    assertObjectId(orderId, 'orderId');
     const res = await api.post(`/orders/${orderId}/complete`);
     return mapOrder(res.data.data);
   },
@@ -113,6 +117,7 @@ const orderService = {
     return { completed, cancelled };
   },
   getOrderById: async (orderId: string): Promise<Order> => {
+    assertObjectId(orderId, 'orderId');
     const res = await api.get(`/orders/${orderId}`);
     return mapOrder(res.data.data);
   },

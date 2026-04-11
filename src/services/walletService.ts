@@ -1,5 +1,6 @@
 import api from './api';
 import { Transaction } from '../types';
+import { assertObjectId } from '../utils/validateId';
 
 const walletService = {
   getBalance: async (): Promise<{ balance: number }> => {
@@ -53,6 +54,7 @@ const walletService = {
     }));
   },
   payAdhocPayment: async (paymentId: string): Promise<any> => {
+    assertObjectId(paymentId, 'paymentId');
     const res = await api.post(`/student/payments/${paymentId}/pay`);
     return res.data.data;
   },
@@ -70,9 +72,11 @@ const walletService = {
     await api.patch('/student/notifications/read-all');
   },
   markNotificationRead: async (notificationId: string): Promise<void> => {
+    assertObjectId(notificationId, 'notificationId');
     await api.patch(`/student/notifications/${notificationId}/read`);
   },
   deleteNotification: async (notificationId: string): Promise<void> => {
+    assertObjectId(notificationId, 'notificationId');
     await api.delete(`/student/notifications/${notificationId}`);
   },
   clearAllNotifications: async (): Promise<void> => {
@@ -80,6 +84,7 @@ const walletService = {
   },
   // Transaction detail
   getTransactionDetail: async (transactionId: string): Promise<any> => {
+    assertObjectId(transactionId, 'transactionId');
     const res = await api.get(`/student/wallet/transactions/${transactionId}`);
     return res.data.data;
   },

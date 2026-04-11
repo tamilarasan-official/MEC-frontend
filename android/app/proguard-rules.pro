@@ -67,6 +67,15 @@
 -keep class com.reactnativecommunity.asyncstorage.** { *; }
 -dontwarn com.reactnativecommunity.asyncstorage.**
 
+# react-native-config (env vars — must not be stripped or Config.APP_API_KEY returns undefined)
+# RNCConfigModuleImpl reads BuildConfig fields via reflection — R8 strips them without this rule
+-keep class com.lugg.** { *; }
+-dontwarn com.lugg.**
+-keep class com.mec.campusone.BuildConfig { *; }
+-keepclassmembers class com.mec.campusone.BuildConfig {
+    public static <fields>;
+}
+
 # React Native Screens (used by React Navigation)
 -keep class com.swmansion.rnscreens.** { *; }
 -dontwarn com.swmansion.rnscreens.**

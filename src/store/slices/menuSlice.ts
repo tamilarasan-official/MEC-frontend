@@ -216,13 +216,20 @@ export const setItemOffer = createAsyncThunk(
   'menu/setOffer',
   async ({ itemId, discountPercent, price, validUntil }: { itemId: string; discountPercent: number; price: number; validUntil?: string }, { rejectWithValue }) => {
     try {
+      // Enforce 0–100 bounds before hitting the API
+      if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100) {
+        return rejectWithValue('Discount must be between 1% and 100%.');
+      }
       // Backend expects offerPrice (absolute) and offerEndDate, not discountPercent/validUntil
       const offerPrice = Math.round(price * (1 - discountPercent / 100));
       const offerEndDate = validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const res = await api.post(`/owner/menu/${itemId}/offer`, { offerPrice, offerEndDate });
       const item = res.data?.data?.item || res.data?.data || res.data;
       return mapMenuItem(item) as FoodItem;
-    } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+    } catch (e: any) {
+      if (__DEV__) console.error('[setItemOffer]', e.response?.status, e.response?.data);
+      return rejectWithValue('Failed to set offer. Please try again.');
+    }
   },
 );
 
