@@ -53,9 +53,15 @@ function getSwipeConfig(
         left: { label: 'Reject All', icon: 'close', color: '#ef4444', onAction: () => onReject(order.id, order.pickupToken) },
       };
     case 'preparing':
-      return { right: null, left: null };
+      return {
+        right: { label: 'All Ready', icon: 'checkmark-done', color: '#22c55e', onAction: () => onBatchReady(order.id) },
+        left: null,
+      };
     case 'partially_ready':
-      return { right: null, left: null };
+      return {
+        right: { label: 'All Ready', icon: 'checkmark-done', color: '#22c55e', onAction: () => onBatchReady(order.id) },
+        left: null,
+      };
     case 'ready':
       return {
         right: { label: 'Delivered', icon: 'checkmark', color: '#22c55e', onAction: () => onStatusUpdate(order.id, 'completed') },
@@ -131,7 +137,7 @@ export default function OwnerHomeScreen() {
       interval = setInterval(() => {
         dispatch(fetchActiveShopOrders());
         dispatch(fetchDashboardStats());
-      }, 30000);
+      }, 10000);
     };
     startPolling();
     const sub = AppState.addEventListener('change', (state) => {
@@ -260,24 +266,23 @@ export default function OwnerHomeScreen() {
   };
 
   // Actions
-  // Accept all items (for pending tab order-level swipe right)
+  // Accept all items / mark all ready (order-level swipe right)
   const handleAcceptAll = async (orderId: string) => {
     const order = shopOrders.find(o => o.id === orderId);
     if (!order) return;
     setUpdatingId(orderId);
     try {
       if (order.status === 'pending') {
+        // pending → preparing: use acceptAllItems (sets individual item statuses)
         await dispatch(acceptAllItems({ orderId })).unwrap();
       } else {
-        // Batch mark all preparing items as ready
-        for (let i = 0; i < order.items.length; i++) {
-          if ((order.items[i].itemStatus || 'preparing') === 'preparing') {
-            await dispatch(markItemDelivered({ orderId, itemIndex: i, itemStatus: 'ready' })).unwrap();
-          }
-        }
+        // preparing / partially_ready → ready: set order status directly.
+        // Avoids per-item markItemDelivered loop which breaks when items have
+        // null itemStatus in DB (deriveOrderStatus treats null as 'pending').
+        await dispatch(updateOrderStatus({ orderId, status: 'ready' })).unwrap();
       }
     } catch {
-      Alert.alert('Error', 'Failed to update items');
+      Alert.alert('Error', 'Failed to update order');
     }
     setUpdatingId(null);
   };
@@ -602,8 +607,36 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
   rightRef.current = rightAction;
   leftRef.current = leftAction;
 
+  // Action refs — updated every render so the PanResponder (created once) always
+  // dispatches the CURRENT action, not a stale closure value.
+  const swipeRightActionRef = useRef<(() => void) | null>(null);
+  const swipeLeftActionRef = useRef<(() => void) | null>(null);
+  // filterRef — lets the PanResponder (created once) read the current filter
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+
+  if (filter === 'pending' && iStatus === 'pending') {
+    swipeRightActionRef.current = () => dispatch(acceptItem({ orderId, itemIndex: apiIdx }));
+    swipeLeftActionRef.current = () => onRejectItem(orderId, apiIdx, item.name, subtotal, () => translateX.setValue(0));
+  } else if (filter !== 'pending' && !isRejected && !isDelivered) {
+    if (isPreparing) {
+      swipeRightActionRef.current = () => dispatch(markItemDelivered({ orderId, itemIndex: apiIdx, itemStatus: 'ready' }));
+    } else if (isReady) {
+      swipeRightActionRef.current = () => dispatch(markItemDelivered({ orderId, itemIndex: apiIdx, itemStatus: 'delivered' }));
+    } else {
+      swipeRightActionRef.current = null;
+    }
+    swipeLeftActionRef.current = null;
+  } else {
+    swipeRightActionRef.current = null;
+    swipeLeftActionRef.current = null;
+  }
+
   const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    // Only intercept gestures in the pending tab — in other tabs (preparing, ready, etc.)
+    // the outer SwipeableOrderCard handles the swipe for order-level actions.
+    // Claiming the gesture here for non-pending tabs would steal it from the outer card.
+    onMoveShouldSetPanResponder: (_, g) => filterRef.current === 'pending' && Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
     onPanResponderMove: (_, g) => {
       if (g.dx > 0 && !rightRef.current) return;
       if (g.dx < 0 && !leftRef.current) return;
@@ -613,20 +646,12 @@ const SwipeableItemCard = React.memo(function SwipeableItemCard({ item, apiIdx, 
       if (g.dx > ITEM_SWIPE_THRESHOLD && rightRef.current) {
         Animated.timing(translateX, { toValue: 400, duration: 200, useNativeDriver: true }).start(() => {
           mediumHaptic();
-          if (filter === 'pending') {
-            dispatch(acceptItem({ orderId, itemIndex: apiIdx }));
-          } else if (isPreparing) {
-            dispatch(markItemDelivered({ orderId, itemIndex: apiIdx, itemStatus: 'ready' }));
-          } else if (isReady) {
-            dispatch(markItemDelivered({ orderId, itemIndex: apiIdx, itemStatus: 'delivered' }));
-          }
+          swipeRightActionRef.current?.();
         });
       } else if (g.dx < -ITEM_SWIPE_THRESHOLD && leftRef.current) {
         Animated.timing(translateX, { toValue: -400, duration: 200, useNativeDriver: true }).start(() => {
           mediumHaptic();
-          onRejectItem(orderId, apiIdx, item.name, subtotal, () => {
-            translateX.setValue(0);
-          });
+          swipeLeftActionRef.current?.();
         });
       } else {
         Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
@@ -713,28 +738,33 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
     ? order.items.reduce((sum: number, i: any) => sum + (i.offerPrice || i.price) * i.quantity, 0)
     : order.total;
 
-  // Order-level swipe (pending: accept-all/reject-all, ready: delivered)
+  // Order-level swipe (pending: accept-all/reject-all, preparing: all-ready, ready: delivered)
   const hasOrderSwipe = !!swipeRight || !!swipeLeft;
+  const hasOrderSwipeRef = useRef(hasOrderSwipe);
+  hasOrderSwipeRef.current = hasOrderSwipe;
   const swipeRightRef = useRef(swipeRight);
   const swipeLeftRef = useRef(swipeLeft);
   swipeRightRef.current = swipeRight;
   swipeLeftRef.current = swipeLeft;
 
   const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => hasOrderSwipe && Math.abs(g.dx) > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onMoveShouldSetPanResponder: (_, g) => hasOrderSwipeRef.current && Math.abs(g.dx) > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
     onPanResponderMove: (_, g) => {
       if (g.dx > 0 && !swipeRightRef.current) return;
       if (g.dx < 0 && !swipeLeftRef.current) return;
       translateX.setValue(g.dx);
     },
     onPanResponderRelease: (_, g) => {
-      if (g.dx > SWIPE_THRESHOLD && swipeRightRef.current) {
+      // Trigger on slow drag past threshold OR fast flick (velocity > 0.3)
+      const rightTriggered = swipeRightRef.current && (g.dx > SWIPE_THRESHOLD || (g.dx > 20 && g.vx > 0.3));
+      const leftTriggered = swipeLeftRef.current && (g.dx < -SWIPE_THRESHOLD || (g.dx < -20 && g.vx < -0.3));
+      if (rightTriggered) {
         Animated.timing(translateX, { toValue: Dimensions.get('window').width, duration: 200, useNativeDriver: true }).start(() => {
           mediumHaptic();
           swipeRightRef.current?.onAction();
           setTimeout(() => translateX.setValue(0), 300);
         });
-      } else if (g.dx < -SWIPE_THRESHOLD && swipeLeftRef.current) {
+      } else if (leftTriggered) {
         Animated.timing(translateX, { toValue: -Dimensions.get('window').width, duration: 200, useNativeDriver: true }).start(() => {
           mediumHaptic();
           swipeLeftRef.current?.onAction();
@@ -778,7 +808,9 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
         style={[styles.swipeCard, { transform: [{ translateX }] }]}
         {...(hasOrderSwipe && filter !== 'pending' ? panResponder.panHandlers : {})}
       >
-        {/* Header — swipeable area for order-level actions in pending tab */}
+        {/* Header — swipe zone for order-level actions in pending tab.
+            In non-pending tabs the whole card is swipeable (item cards don't
+            intercept because their onMoveShouldSetPanResponder gates on filter==='pending'). */}
         <View style={styles.cardHeader} {...(hasOrderSwipe && filter === 'pending' ? panResponder.panHandlers : {})}>
           <Text style={styles.tokenText}>#{order.pickupToken}</Text>
           <Text style={styles.timeText}>{timeSince}</Text>
@@ -807,7 +839,7 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, color
           );
         })}
 
-        {/* Swipe hint (order-level) */}
+        {/* Swipe hint — order-level for pending/ready, item-level for preparing */}
         {hintText ? (
           <View style={styles.swipeHint}>
             <Text style={styles.swipeHintText}>{hintText}</Text>
@@ -865,7 +897,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Swipeable card
   swipeContainer: {
-    marginBottom: 6, borderRadius: 12, overflow: 'hidden',
+    marginBottom: 6, borderRadius: 12, overflow: 'visible',
   },
   swipeBgFull: {
     ...StyleSheet.absoluteFillObject,

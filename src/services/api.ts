@@ -228,4 +228,26 @@ api.interceptors.response.use(
   },
 );
 
+/**
+ * Silently refresh the access token using the stored refresh token.
+ * Used by the socket service to get a valid token on reconnect
+ * without going through the full HTTP interceptor cycle.
+ * Returns the new access token, or null if refresh fails.
+ */
+export const refreshAccessTokenSilently = async (): Promise<string | null> => {
+  try {
+    const refresh = await getRefreshToken();
+    if (!refresh) return null;
+    const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken: refresh }, {
+      headers: { 'X-App-Key': APP_API_KEY },
+    });
+    const tokenData = res.data.data?.tokens || res.data.data;
+    const { accessToken, refreshToken: newRefreshToken } = tokenData;
+    await setTokens(accessToken, newRefreshToken || refresh);
+    return accessToken;
+  } catch {
+    return null;
+  }
+};
+
 export default api;

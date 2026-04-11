@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { RootState, AppDispatch } from '../../store';
 import { fetchDashboardStats } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
@@ -53,7 +53,12 @@ export default function OwnerHistoryScreen() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Refetch every time this tab gains focus so newly completed/cancelled orders
+  // appear immediately without needing a manual pull-to-refresh.
+  useFocusEffect(useCallback(() => {
+    setLoading(true);
+    fetchData();
+  }, [fetchData]));
 
   const onRefresh = async () => {
     setRefreshing(true);

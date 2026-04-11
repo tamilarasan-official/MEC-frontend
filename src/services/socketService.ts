@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { DeviceEventEmitter } from 'react-native';
-import { getAccessToken, API_ORIGIN } from './api';
+import { getAccessToken, refreshAccessTokenSilently, API_ORIGIN } from './api';
 import { AppDispatch } from '../store';
 import { addNotification, fetchWalletBalance, fetchTransactions, fetchDashboardStats, fetchQRPayments } from '../store/slices/userSlice';
 import { fetchMyActiveOrders, fetchActiveShopOrders, patchOrderStatus } from '../store/slices/ordersSlice';
@@ -56,7 +56,9 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
   });
 
   socket.io.on('reconnect_attempt', async () => {
-    const freshToken = await getAccessToken();
+    // Proactively refresh the access token before reconnecting —
+    // the stored token may be expired (15-min TTL) which causes "jwt expired" on socket auth.
+    const freshToken = await refreshAccessTokenSilently() ?? await getAccessToken();
     if (freshToken && socket) {
       socket.auth = { token: freshToken };
     }
@@ -94,6 +96,7 @@ export const getSocket = () => socket;
 export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, userMode: string, userId?: string) => {
   if (!socket) return;
 
+  socket.removeAllListeners('connect');
   socket.removeAllListeners('order:status_changed');
   socket.removeAllListeners('order:new');
   socket.removeAllListeners('wallet:updated');
@@ -102,6 +105,15 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
   socket.removeAllListeners('shop:status_changed');
   socket.removeAllListeners('payment:received');
   socket.removeAllListeners('force_logout');
+
+  // On every (re)connect — refetch shop orders for staff so any orders that arrived
+  // while the socket was dead (expired token) are loaded immediately.
+  socket.on('connect', () => {
+    if (userRole !== 'student' && userMode !== 'eat') {
+      dispatch(fetchActiveShopOrders());
+      dispatch(fetchDashboardStats());
+    }
+  });
 
   // Order status changed
   // NOTE: Captain/owner sockets are in BOTH user:userId AND shop:shopId rooms,

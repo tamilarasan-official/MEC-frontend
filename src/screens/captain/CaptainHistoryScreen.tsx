@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
@@ -8,6 +8,7 @@ import type { ThemeColors } from '../../theme/colors';
 import orderService from '../../services/orderService';
 import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
+import { useFocusEffect } from '@react-navigation/native';
 import CaptainHeader from '../../components/captain/CaptainHeader';
 import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
 
@@ -37,7 +38,10 @@ export default function CaptainHistoryScreen() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useFocusEffect(useCallback(() => {
+    setLoading(true);
+    fetchData();
+  }, [fetchData]));
 
   const onRefresh = async () => {
     setRefreshing(true);
