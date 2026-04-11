@@ -30,12 +30,6 @@ const PREFS_INITIAL: NotifPref[] = [
     enabled: true,
   },
   {
-    key: 'promotions', title: 'Promotions & Offers',
-    subtitle: 'Receive special deals and discount alerts',
-    icon: 'notifications', iconColor: '#a855f7', iconBg: 'rgba(168,85,247,0.12)',
-    enabled: false,
-  },
-  {
     key: 'walletAlerts', title: 'Wallet Alerts',
     subtitle: 'Low balance and transaction notifications',
     icon: 'wallet', iconColor: '#10b981', iconBg: 'rgba(16,185,129,0.12)',

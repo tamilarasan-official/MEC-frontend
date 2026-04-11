@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  RefreshControl, ActivityIndicator, TextInput, Switch,
+  ActivityIndicator, TextInput, Switch,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -30,19 +30,10 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { shopId, shopName } = route.params || {};
-
-  if (!shopId) {
-    navigation.goBack();
-    return null;
-  }
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
+  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Print tab form
   const [pageCount, setPageCount] = useState(1);
   const [copies, setCopies] = useState(1);
   const [colorType, setColorType] = useState<'bw' | 'color'>('bw');
@@ -53,7 +44,12 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
   const submittingRef = useRef(false);
-  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
+
+  useEffect(() => {
+    if (!shopId) {
+      navigation.goBack();
+    }
+  }, [navigation, shopId]);
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
   useEffect(() => {
@@ -66,14 +62,13 @@ export default function StationeryScreen({ route, navigation }: Props) {
       createdOrder.items[i] && item.itemStatus !== createdOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setCreatedOrder(fresh);
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setCreatedOrder(null);
+      } else {
+        setCreatedOrder(fresh);
+      }
     }
   }, [activeOrders, allOrders, createdOrder]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    setRefreshing(false);
-  };
 
   const calculateTotal = () => {
     const basePrice = colorType === 'bw' ? 1 : 5;
@@ -81,6 +76,10 @@ export default function StationeryScreen({ route, navigation }: Props) {
     const doubleSidedMultiplier = doubleSided ? 1.5 : 1;
     return Math.ceil(basePrice * sizeMultiplier * doubleSidedMultiplier * pageCount * copies);
   };
+
+  if (!shopId) {
+    return null;
+  }
 
   const handleSubmitPrint = async () => {
     if (submittingRef.current) return;

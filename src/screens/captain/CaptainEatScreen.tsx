@@ -395,35 +395,38 @@ export default function CaptainEatScreen() {
 
       {/* Floating Cart Bar */}
       {totalItems > 0 && (
-        <TouchableOpacity
-          style={styles.floatingBarWrap}
-          onPress={() => setShowCart(true)}
-          activeOpacity={0.9}
-          accessibilityLabel="View cart"
-          accessibilityRole="button">
-          <LinearGradient
-            colors={['#3b82f6', '#06d6a0']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.floatingBar}>
-            <View style={styles.floatingBarLeft}>
-              <View style={styles.floatingBarIcon}>
-                <Icon name="bag-handle" size={22} color="#fff" />
-                <View style={styles.floatingBarBadge}>
-                  <Text style={styles.floatingBarBadgeText}>{totalItems}</Text>
+        <View style={styles.floatingBarWrap} pointerEvents="box-none">
+          <TouchableOpacity
+            onPress={() => { mediumHaptic(); setShowCart(true); }}
+            activeOpacity={0.9}
+            accessibilityLabel="View cart"
+            accessibilityRole="button">
+            <View style={styles.floatingBar}>
+              <LinearGradient
+                colors={['#3b82f6', '#06d6a0']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.floatingBarLeft}>
+                <View style={styles.floatingBarIcon}>
+                  <Icon name="bag-handle" size={22} color="#fff" />
+                  <View style={styles.floatingBarBadge}>
+                    <Text style={styles.floatingBarBadgeText}>{totalItems}</Text>
+                  </View>
+                </View>
+                <View>
+                  <Text style={styles.floatingBarSub}>{totalItems} item{totalItems > 1 ? 's' : ''}</Text>
+                  <Text style={styles.floatingBarTotal}>Rs. {cartTotal}</Text>
                 </View>
               </View>
-              <View>
-                <Text style={styles.floatingBarSub}>{totalItems} item{totalItems > 1 ? 's' : ''}</Text>
-                <Text style={styles.floatingBarTotal}>Rs. {cartTotal}</Text>
+              <View style={styles.floatingBarRight}>
+                <Text style={styles.floatingBarAction}>View Cart</Text>
+                <Icon name="arrow-forward" size={18} color="#fff" />
               </View>
             </View>
-            <View style={styles.floatingBarRight}>
-              <Text style={styles.floatingBarAction}>View Cart</Text>
-              <Icon name="arrow-forward" size={18} color="#fff" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Modals */}
@@ -679,8 +682,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
   },
   floatingBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderRadius: 20, padding: 14,
+    height: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 20, paddingHorizontal: 16, overflow: 'hidden',
   },
   floatingBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   floatingBarIcon: {

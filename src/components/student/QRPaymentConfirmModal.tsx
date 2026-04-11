@@ -172,7 +172,8 @@ export default function QRPaymentConfirmModal({
           )}
         </View>
       </View>
-      {/* PIN verification — rendered inside the same Modal for iOS compatibility */}
+      {/* PIN verification — rendered inline inside the same RN Modal so iOS
+          doesn't have to stack a second native modal on top of this one. */}
       {data && (
         <PINVerifyModal
           visible={showPinModal}
@@ -180,6 +181,7 @@ export default function QRPaymentConfirmModal({
           title={data.title || 'QR Payment'}
           onVerified={() => { setShowPinModal(false); handlePay(); }}
           onCancel={() => setShowPinModal(false)}
+          inline
         />
       )}
     </Modal>

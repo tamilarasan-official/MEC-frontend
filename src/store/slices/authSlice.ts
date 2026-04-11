@@ -182,7 +182,10 @@ export const registerWithOtp = createAsyncThunk(
 
 export const logout = createAsyncThunk('auth/logout', async (_, { dispatch }) => {
   try { await unregisterToken(); } catch { /* ignore */ }
-  try { await api.post('/auth/logout'); } catch { /* ignore */ }
+  try {
+    const deviceId = await getDeviceId();
+    await api.post('/auth/logout', { deviceId });
+  } catch { /* ignore */ }
   cleanupNotifications();
   try { await clearTokens(); } catch { /* ignore */ }
   dispatch(resetOrders());

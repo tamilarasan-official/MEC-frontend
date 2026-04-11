@@ -25,10 +25,21 @@ import {
   initializeNotifications,
   handleForegroundMessage,
   cleanupNotifications,
+  unregisterToken,
+  refreshTokenRegistration,
 } from '../services/notificationService';
+import {
+  isLocationPermissionGranted,
+  requestLocationPermission,
+  startLocationTracking,
+  stopLocationTracking,
+} from '../services/locationService';
+import LocationPermissionGate from '../components/common/LocationPermissionGate';
 import { checkForUpdate, UpdateInfo } from '../services/versionService';
 import { UpdatePromptModal } from '../components/common/UpdatePromptModal';
 import { PermissionDrawer } from '../components/common/PermissionDrawer';
+import MaintenanceScreen from '../screens/shared/MaintenanceScreen';
+import { checkMaintenance, MaintenanceInfo } from '../services/maintenanceService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -258,6 +269,8 @@ export default function RootNavigator() {
   const [showLoginSuccess, setShowLoginSuccess] = useState(false);
   const [loginSuccessData, setLoginSuccessData] = useState<{ name: string; role: string } | null>(null);
   const [showForceLogout, setShowForceLogout] = useState(false);
+  const [locationPermissionNeeded, setLocationPermissionNeeded] = useState(false);
+  const [maintenanceInfo, setMaintenanceInfo] = useState<MaintenanceInfo | null>(null);
   const prevAuthRef = useRef(false);
   const userIdRef = useRef(user?.id);
   const userRoleRef = useRef(user?.role);
@@ -310,8 +323,22 @@ export default function RootNavigator() {
     return () => subscription.remove();
   }, []);
 
+  const handleMaintenanceRetry = useCallback(async () => {
+    const info = await checkMaintenance();
+    setMaintenanceInfo(info);
+  }, []);
+
+  useEffect(() => {
+    const sub503 = DeviceEventEmitter.addListener('MAINTENANCE_MODE_DETECTED', () => {
+      handleMaintenanceRetry();
+    });
+    return () => sub503.remove();
+  }, [handleMaintenanceRetry]);
+
   const handleForceLogoutDismiss = useCallback(async () => {
     setShowForceLogout(false);
+    // Clean FCM tokens before clearing auth so the old device stops receiving push
+    unregisterToken().catch(() => {});
     disconnectSocket();
     await clearTokens();
     dispatch(resetAuth());
@@ -335,6 +362,7 @@ export default function RootNavigator() {
 
   // On mount, check for stored tokens and try to restore session
   useEffect(() => {
+    handleMaintenanceRetry();
     const checkAuth = async () => {
       try {
         const token = await getAccessToken();
@@ -405,7 +433,7 @@ export default function RootNavigator() {
       try {
         const sock = await connectSocket(userId, role, shopId, userModeRef.current);
         if (sock) {
-          setupSocketListeners(dispatch, role, userModeRef.current);
+          setupSocketListeners(dispatch, role, userModeRef.current, userIdRef.current);
         }
       } catch {
         // Socket connection failed — app continues without real-time updates
@@ -430,7 +458,7 @@ export default function RootNavigator() {
         userIdRef.current!, userRoleRef.current!, userShopIdRef.current, userMode
       );
       if (!cancelled && sock) {
-        setupSocketListeners(dispatch, userRoleRef.current!, userMode);
+        setupSocketListeners(dispatch, userRoleRef.current!, userMode, userIdRef.current);
       }
     })();
     return () => { cancelled = true; };
@@ -449,16 +477,24 @@ export default function RootNavigator() {
         if (Platform.OS === 'android') {
           disconnectSocket();
         }
+        // Stop GPS tracking on background to save battery
+        stopLocationTracking();
       } else if (prev.match(/background/) && nextAppState === 'active') {
+        handleMaintenanceRetry();
         const id = userIdRef.current;
         const role = userRoleRef.current;
         const shopId = userShopIdRef.current;
         if (id && role) {
           const sock = await connectSocket(id, role, shopId, userModeRef.current);
           if (sock) {
-            setupSocketListeners(dispatch, role, userModeRef.current);
+            setupSocketListeners(dispatch, role, userModeRef.current, userIdRef.current);
           }
+          refreshTokenRegistration(id);
         }
+        // Resume location tracking on foreground
+        isLocationPermissionGranted().then(granted => {
+          if (granted) startLocationTracking();
+        });
         // Refresh data on resume — events were missed while backgrounded
         dispatch(fetchWalletBalance());
         dispatch(fetchNotifications());
@@ -473,7 +509,7 @@ export default function RootNavigator() {
     });
     return () => subscription.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, handleMaintenanceRetry]);
 
   // Initialize push notifications + request camera permission after authentication
   useEffect(() => {
@@ -507,6 +543,30 @@ export default function RootNavigator() {
       cleanupNotifications();
     };
   }, [isAuthenticated, user, dispatch]);
+
+  // Request location permission 4 seconds after auth (avoid clashing with notification dialog)
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
+    const timer = setTimeout(async () => {
+      const granted = await isLocationPermissionGranted();
+      if (granted) {
+        startLocationTracking();
+      } else {
+        // Request permission
+        const result = await requestLocationPermission();
+        if (result === 'granted') {
+          startLocationTracking();
+        } else {
+          setLocationPermissionNeeded(true);
+        }
+      }
+    }, 4000);
+    return () => {
+      clearTimeout(timer);
+      stopLocationTracking();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, user?.id]);
 
   // Handle cold-start notification (app opened by tapping a notification)
   useEffect(() => {
@@ -591,10 +651,22 @@ export default function RootNavigator() {
         <ForceLogoutOverlay onDismiss={handleForceLogoutDismiss} />
       )}
 
+      {/* Location permission gate — shown when location permission is denied */}
+      {isAuthenticated && locationPermissionNeeded && !showLoginSuccess && !showForceLogout && (
+        <LocationPermissionGate onGranted={() => {
+          setLocationPermissionNeeded(false);
+          startLocationTracking();
+        }} />
+      )}
+
       {/* PIN setup gate — shown AFTER permissions and login overlay are dismissed.
           Blocks the app until the user sets up a transaction PIN. */}
       {needsPinSetup && permissionsHandled && !showLoginSuccess && (
         <SetupPINScreen onComplete={() => dispatch(refreshUserData())} />
+      )}
+
+      {maintenanceInfo?.maintenanceEnabled && (
+        <MaintenanceScreen info={maintenanceInfo} onRetry={handleMaintenanceRetry} />
       )}
     </>
   );

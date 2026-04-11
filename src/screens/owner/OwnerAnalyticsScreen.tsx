@@ -166,6 +166,7 @@ export default function OwnerAnalyticsScreen() {
   const [showDatePicker, setShowDatePicker] = useState<'start' | 'end' | null>(null);
   const [showDateRangeModal, setShowDateRangeModal] = useState(false);
   const [customLoading, setCustomLoading] = useState(false);
+  const [itemSalesFilter, setItemSalesFilter] = useState<'today' | 'week' | 'month' | 'all'>('today');
 
   const fetchData = useCallback(async (startDate?: string, endDate?: string) => {
     try {
@@ -309,6 +310,24 @@ export default function OwnerAnalyticsScreen() {
       case 'custom': return `${formatDateShort(customStartDate)} – ${formatDateShort(customEndDate)}`;
     }
   };
+
+  type ItemSale = { name: string; quantity: number; revenue: number };
+  const getItemSales = (): ItemSale[] => {
+    const s = (analytics as any)?.itemSales as { today?: ItemSale[]; week?: ItemSale[]; month?: ItemSale[]; alltime?: ItemSale[] } | undefined;
+    if (!s) return [];
+    switch (itemSalesFilter) {
+      case 'today': return s.today || [];
+      case 'week':  return s.week  || [];
+      case 'month': return s.month || [];
+      case 'all':   return s.alltime || [];
+    }
+  };
+  const ITEM_FILTER_LABELS: { key: 'today' | 'week' | 'month' | 'all'; label: string }[] = [
+    { key: 'today', label: 'Today' },
+    { key: 'week',  label: 'Week'  },
+    { key: 'month', label: 'Month' },
+    { key: 'all',   label: 'All'   },
+  ];
 
   const getMedalColor = (index: number) => {
     if (index === 0) return { bg: 'rgba(234,179,8,0.2)', text: '#eab308' };
@@ -590,6 +609,78 @@ export default function OwnerAnalyticsScreen() {
           )}
         </View>
 
+        {/* ── Item Sales (Production Planning) ── */}
+        {(() => {
+          const items = getItemSales();
+          const totalQty = items.reduce((s, i) => s + i.quantity, 0);
+          const totalRev = items.reduce((s, i) => s + i.revenue, 0);
+          const maxQty = items.length > 0 ? items[0].quantity : 1;
+          return (
+            <View style={styles.sectionCard}>
+              <View style={styles.cardHeader}>
+                <View style={styles.cardTitleRow}>
+                  <Icon name="restaurant-outline" size={18} color={colors.accent} />
+                  <Text style={styles.sectionTitle}>Item Sales</Text>
+                </View>
+              </View>
+
+              {/* Time filter */}
+              <View style={styles.filterRow}>
+                {ITEM_FILTER_LABELS.map(f => (
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[styles.filterTab, itemSalesFilter === f.key && styles.filterTabActive]}
+                    onPress={() => setItemSalesFilter(f.key)}
+                    activeOpacity={0.7}
+                    accessibilityLabel={`${f.label} item sales`}
+                    accessibilityRole="button"
+                  >
+                    <Text style={[styles.filterTabText, itemSalesFilter === f.key && styles.filterTabTextActive]}>
+                      {f.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Summary row */}
+              {items.length > 0 && (
+                <View style={styles.itemSalesSummary}>
+                  <View style={styles.itemSalesSummaryChip}>
+                    <Icon name="layers-outline" size={13} color={colors.accent} />
+                    <Text style={styles.itemSalesSummaryText}>{totalQty} plates sold</Text>
+                  </View>
+                  <View style={styles.itemSalesSummaryChip}>
+                    <Icon name="cash-outline" size={13} color="#10b981" />
+                    <Text style={[styles.itemSalesSummaryText, { color: '#10b981' }]}>Rs.{totalRev.toLocaleString()}</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Item list */}
+              {items.length === 0 ? (
+                <Text style={styles.emptyText}>No sales data for this period</Text>
+              ) : (
+                items.map((item, idx) => {
+                  const barPct = maxQty > 0 ? item.quantity / maxQty : 0;
+                  return (
+                    <View key={idx} style={styles.itemSalesRow}>
+                      <View style={styles.itemSalesNameRow}>
+                        <Text style={styles.itemSalesName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.itemSalesQty}>{item.quantity} sold</Text>
+                      </View>
+                      <View style={styles.itemSalesBarTrack}>
+                        <View style={[styles.itemSalesBarFill, { flex: barPct }]} />
+                        <View style={{ flex: 1 - barPct }} />
+                      </View>
+                      <Text style={styles.itemSalesRevenue}>Rs.{item.revenue.toLocaleString()}</Text>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          );
+        })()}
+
         {/* Refresh Button */}
         <TouchableOpacity style={styles.refreshRow} onPress={onRefresh} accessibilityLabel="Refresh analytics" accessibilityRole="button">
           <Icon name="refresh" size={16} color={colors.mutedForeground} />
@@ -813,6 +904,30 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   topItemRevenue: { fontSize: 14, fontWeight: '700', color: colors.foreground },
   emptyText: { fontSize: 14, color: colors.mutedForeground, textAlign: 'center', paddingVertical: 16 },
   searchResultLabel: { fontSize: 11, color: colors.mutedForeground, fontStyle: 'italic' },
+
+  // Item sales card
+  itemSalesSummary: {
+    flexDirection: 'row', gap: 10, marginBottom: 14,
+  },
+  itemSalesSummaryChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: colors.muted, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+  },
+  itemSalesSummaryText: { fontSize: 12, fontWeight: '700', color: colors.foreground },
+  itemSalesRow: {
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  itemSalesNameRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
+  },
+  itemSalesName: { fontSize: 14, fontWeight: '600', color: colors.foreground, flex: 1, marginRight: 8 },
+  itemSalesQty: { fontSize: 12, fontWeight: '700', color: colors.accent },
+  itemSalesBarTrack: {
+    flexDirection: 'row', height: 6, borderRadius: 3,
+    backgroundColor: colors.muted, overflow: 'hidden', marginBottom: 5,
+  },
+  itemSalesBarFill: { backgroundColor: '#3b82f6', borderRadius: 3 },
+  itemSalesRevenue: { fontSize: 12, color: colors.mutedForeground },
 
   // Refresh
   refreshRow: {

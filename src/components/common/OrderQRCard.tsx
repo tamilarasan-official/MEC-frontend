@@ -30,6 +30,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   const [showDetails, setShowDetails] = useState(order.status === 'partially_ready' || order.status === 'partially_delivered');
   const [currentStatus, setCurrentStatus] = useState(order.status);
   const [showFullQR, setShowFullQR] = useState(false);
+  const [modalVisible, setModalVisible] = useState(true);
   const slideAnim = useState(new Animated.Value(300))[0];
 
   useEffect(() => {
@@ -40,6 +41,12 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
     Animated.spring(slideAnim, { toValue: 0, friction: 8, useNativeDriver: true }).start();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Close Modal properly before unmounting — prevents iOS ghost touch layer
+  const handleClose = () => {
+    setModalVisible(false);
+    setTimeout(onClose, 100);
+  };
 
   const statusBase = statusMeta[currentStatus] || statusMeta.pending;
   // For partially_ready, show "1 of 3 Ready" instead of generic label
@@ -62,8 +69,8 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
   }, [order.id, order.pickupToken, order.shopId]);
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
+    <Modal visible={modalVisible} transparent animationType="fade" statusBarTranslucent onRequestClose={handleClose}>
+      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} />
       <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
         {/* Drag handle */}
         <View style={styles.handleBar}>
@@ -81,7 +88,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
                 <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
               <Icon name="close" size={20} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
@@ -178,7 +185,7 @@ export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
 
         {/* Done button */}
         <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.doneBtn} onPress={handleClose} activeOpacity={0.8}>
             <Text style={styles.doneBtnText}>Done</Text>
           </TouchableOpacity>
         </View>

@@ -169,7 +169,12 @@ export default function StudentDashboard({ navigation }: Props) {
       successOrder.items[i] && item.itemStatus !== successOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setSuccessOrder(fresh);
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setSuccessOrder(null);
+        setSplitOrders(null);
+      } else {
+        setSuccessOrder(fresh);
+      }
     }
   }, [activeOrders, allOrders, successOrder]);
 
@@ -184,7 +189,11 @@ export default function StudentDashboard({ navigation }: Props) {
       selectedOrder.items[i] && item.itemStatus !== selectedOrder.items[i].itemStatus
     );
     if (statusChanged || itemsChanged) {
-      setSelectedOrder(fresh);
+      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+        setSelectedOrder(null);
+      } else {
+        setSelectedOrder(fresh);
+      }
     }
   }, [activeOrders, allOrders, selectedOrder]);
 
@@ -716,7 +725,7 @@ export default function StudentDashboard({ navigation }: Props) {
       <WalletModal
         visible={showWallet}
         onClose={() => setShowWallet(false)}
-        onTopUp={() => setShowTopUp(true)}
+        onTopUp={() => { setShowWallet(false); setShowTopUp(true); }}
         onTransactionPress={(tx) => {
           setShowWallet(false);
           navigation.navigate('TransactionDetail', { transactionId: tx.id });

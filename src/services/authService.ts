@@ -1,6 +1,7 @@
-import api, { setTokens, clearTokens, getOrCreateDeviceId } from './api';
+import api, { clearTokens, getOrCreateDeviceId } from './api';
 import { Platform } from 'react-native';
 import { User, LoginResponse, RegisterData } from '../types';
+import { getDeviceId } from '../store/slices/authSlice';
 
 const authService = {
   login: async (username: string, password: string): Promise<LoginResponse> => {
@@ -26,7 +27,10 @@ const authService = {
     return res.data.data?.user || res.data.data;
   },
   logout: async () => {
-    try { await api.post('/auth/logout'); } catch {}
+    try {
+      const deviceId = await getDeviceId();
+      await api.post('/auth/logout', { deviceId });
+    } catch {}
     await clearTokens();
   },
   refreshToken: async (refreshToken: string): Promise<LoginResponse> => {

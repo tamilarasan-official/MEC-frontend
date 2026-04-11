@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider } from 'react-redux';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { store } from './src/store';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
@@ -40,7 +41,9 @@ function App(): React.JSX.Element {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <Provider store={store}>
         <ThemeProvider>
-          <AppContent />
+          <BottomSheetModalProvider>
+            <AppContent />
+          </BottomSheetModalProvider>
         </ThemeProvider>
       </Provider>
     </GestureHandlerRootView>

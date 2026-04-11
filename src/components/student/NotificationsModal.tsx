@@ -1,13 +1,19 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, FlatList,
-  Animated,
+  View, Text, StyleSheet, TouchableOpacity,
 } from 'react-native';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetFlatList,
+  BottomSheetView,
+} from '@gorhom/bottom-sheet';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { markNotificationRead, clearNotifications } from '../../store/slices/userSlice';
+import walletService from '../../services/walletService';
 import { AppNotification } from '../../types';
 
 interface NotificationsModalProps {
@@ -34,14 +40,35 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
   const { notifications } = useAppSelector(s => s.user);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const slideAnim = useMemo(() => new Animated.Value(600), []);
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const snapPoints = useMemo(() => ['55%', '95%'], []);
 
   useEffect(() => {
     if (visible) {
-      slideAnim.setValue(600);
-      Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 50, useNativeDriver: true }).start();
+      bottomSheetRef.current?.present();
     }
-  }, [visible, slideAnim]);
+  }, [visible]);
+
+  const handleDismiss = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const handleClose = useCallback(() => {
+    bottomSheetRef.current?.dismiss();
+  }, []);
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.6}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   const NOTIF_ICONS: Record<string, { icon: string; color: string; bg: string }> = useMemo(() => ({
     order: { icon: 'bag-handle-outline', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
@@ -56,6 +83,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
 
   const handleClearAll = () => {
     dispatch(clearNotifications());
+    walletService.clearAllNotifications().catch(() => {});
   };
 
   const renderItem = ({ item }: { item: AppNotification }) => {
@@ -89,91 +117,84 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
     );
   };
 
-  return (
-    <Modal visible={visible} animationType="none" transparent statusBarTranslucent onRequestClose={onClose}>
-      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-
-      <View style={styles.kvWrapper}>
-        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}>
-          {/* Drag handle */}
-          <View style={styles.handleBar}>
-            <View style={styles.handle} />
-          </View>
-
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.title}>Notifications</Text>
-              {unreadCount > 0 && (
-                <View style={styles.headerBadge}>
-                  <Text style={styles.headerBadgeText}>{unreadCount}</Text>
-                </View>
-              )}
+  const ListHeader = useMemo(() => (
+    <>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.title}>Notifications</Text>
+          {unreadCount > 0 && (
+            <View style={styles.headerBadge}>
+              <Text style={styles.headerBadgeText}>{unreadCount}</Text>
             </View>
-            <View style={styles.headerRight}>
-              {notifications.length > 0 && (
-                <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn} activeOpacity={0.7}>
-                  <Text style={styles.clearText}>Clear All</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
-                <Icon name="close" size={18} color={colors.foreground} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Connection status */}
-          <View style={styles.statusBar}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>Live</Text>
-          </View>
-
-          {/* Notification List */}
-          {notifications.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <View style={styles.emptyIconWrap}>
-                <Icon name="notifications-off-outline" size={36} color={colors.mutedForeground} />
-              </View>
-              <Text style={styles.emptyTitle}>No notifications</Text>
-              <Text style={styles.emptySubtitle}>
-                You'll see order updates, wallet transactions, and announcements here
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={notifications}
-              keyExtractor={item => item.id}
-              renderItem={renderItem}
-              style={styles.notifList}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              showsVerticalScrollIndicator={false}
-            />
           )}
-        </Animated.View>
+        </View>
+        <View style={styles.headerRight}>
+          {notifications.length > 0 && (
+            <TouchableOpacity onPress={handleClearAll} style={styles.clearBtn} activeOpacity={0.7}>
+              <Text style={styles.clearText}>Clear All</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={handleClose} style={styles.closeBtn} activeOpacity={0.7}>
+            <Icon name="close" size={18} color={colors.foreground} />
+          </TouchableOpacity>
+        </View>
       </View>
-    </Modal>
+
+      {/* Connection status */}
+      <View style={styles.statusBar}>
+        <View style={styles.statusDot} />
+        <Text style={styles.statusText}>Live</Text>
+      </View>
+    </>
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [unreadCount, notifications.length, styles, colors]);
+
+  return (
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      index={0}
+      snapPoints={snapPoints}
+      onDismiss={handleDismiss}
+      backdropComponent={renderBackdrop}
+      enablePanDownToClose
+      backgroundStyle={{ backgroundColor: colors.card }}
+      handleIndicatorStyle={{ backgroundColor: colors.border, width: 40 }}
+    >
+      {notifications.length === 0 ? (
+        <BottomSheetView style={styles.contentPadding}>
+          {ListHeader}
+          <View style={styles.emptyWrap}>
+            <View style={styles.emptyIconWrap}>
+              <Icon name="notifications-off-outline" size={36} color={colors.mutedForeground} />
+            </View>
+            <Text style={styles.emptyTitle}>No notifications</Text>
+            <Text style={styles.emptySubtitle}>
+              You'll see order updates, wallet transactions, and announcements here
+            </Text>
+          </View>
+        </BottomSheetView>
+      ) : (
+        <BottomSheetFlatList
+          data={notifications}
+          keyExtractor={(item: AppNotification) => item.id}
+          renderItem={renderItem}
+          ListHeaderComponent={ListHeader}
+          style={styles.notifList}
+          contentContainerStyle={{ paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </BottomSheetModal>
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  backdrop: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
-  kvWrapper: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '95%',
-  },
-  sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, maxHeight: '100%',
-  },
-  handleBar: { alignItems: 'center', paddingTop: 12, paddingBottom: 4 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  contentPadding: { paddingHorizontal: 20 },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 8, paddingBottom: 12,
+    paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -192,7 +213,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
 
   statusBar: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingBottom: 12,
+    paddingHorizontal: 20, paddingBottom: 12,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' },
   statusText: { fontSize: 11, fontWeight: '500', color: '#10b981' },
@@ -200,7 +221,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // Notification list
   notifList: { flex: 1 },
   notifCard: {
-    flexDirection: 'row', gap: 12, padding: 14, borderRadius: 14,
+    flexDirection: 'row', gap: 12, padding: 14, borderRadius: 14, marginHorizontal: 20,
     backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8,
   },
   notifUnread: { backgroundColor: 'rgba(59,130,246,0.04)', borderColor: 'rgba(59,130,246,0.2)' },

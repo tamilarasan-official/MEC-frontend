@@ -104,6 +104,13 @@ export default function OrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const selectedOrder = useMemo(() => selectedOrderId ? (myOrders ?? []).find(o => o.id === selectedOrderId) ?? null : null, [selectedOrderId, myOrders]);
+
+  // Auto-dismiss QR card when order completes or is cancelled
+  useEffect(() => {
+    if (selectedOrder && (selectedOrder.status === 'completed' || selectedOrder.status === 'cancelled')) {
+      setSelectedOrderId(null);
+    }
+  }, [selectedOrder]);
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   // Auto-refresh orders on focus and every 15 seconds while focused
@@ -163,7 +170,7 @@ export default function OrdersScreen() {
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}>
         {displayOrders.length === 0 ? (
-          <EmptyOrdersState colors={colors} styles={styles} onStartOrdering={() => navigation.getParent()?.navigate('Home')} />
+          <EmptyOrdersState colors={colors} styles={styles} onStartOrdering={() => navigation.navigate('Home' as any)} />
         ) : (
           displayOrders.map(order => {
             const sc = statusConfig[order.status] || statusConfig.pending;
@@ -224,45 +231,88 @@ export default function OrdersScreen() {
                   const imageUri = resolveImageUrl(item.image);
                   const imgKey = `${order.id}-${idx}`;
                   const imgFailed = failedImages.has(imgKey);
-                  const iStatus = item.itemStatus || 'preparing';
-                  const showItemTag = order.status === 'partially_ready' || order.status === 'partially_delivered';
+                  // Fallback is smarter than Android: on the last-history card,
+                  // a missing itemStatus on a completed order should default to
+                  // 'delivered', not 'preparing'.
+                  const iStatus = item.itemStatus || (order.status === 'cancelled' ? 'rejected' : order.status === 'completed' ? 'delivered' : 'preparing');
+                  const isRejected = iStatus === 'rejected';
+                  // Spec: show per-item tag only when the order has mixed statuses
+                  // (multiple items) or when the item itself is rejected.
+                  const showItemTag = order.items.length > 1 || isRejected;
                   return (
                     <View key={imgKey} style={styles.orderItem}>
                       {imageUri && !imgFailed ? (
                         <Image
                           source={{ uri: imageUri }}
-                          style={styles.itemImage}
+                          style={[styles.itemImage, isRejected && styles.itemImageRejected]}
                           onError={() => handleImageError(imgKey)}
                           accessibilityLabel={`${item.name} image`}
                         />
                       ) : (
-                        <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+                        <View style={[styles.itemImage, styles.itemImagePlaceholder, isRejected && styles.itemImageRejected]}>
                           <Icon name="restaurant" size={18} color="#3b82f6" />
                         </View>
                       )}
                       <View style={styles.flex1}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+                          <Text style={[styles.itemName, isRejected && styles.itemNameRejected]} numberOfLines={1}>{item.name}</Text>
                           {showItemTag && (
-                            <View style={[styles.itemStatusTag, iStatus === 'ready' ? styles.itemStatusReady : iStatus === 'delivered' ? styles.itemStatusDelivered : styles.itemStatusPreparing]}>
-                              <Text style={[styles.itemStatusTagText, iStatus === 'ready' ? styles.itemStatusReadyText : iStatus === 'delivered' ? styles.itemStatusDeliveredText : styles.itemStatusPreparingText]}>
-                                {iStatus === 'ready' ? 'Ready' : iStatus === 'delivered' ? 'Delivered' : 'Preparing'}
+                            <View style={[styles.itemStatusTag,
+                              iStatus === 'ready' ? styles.itemStatusReady :
+                              iStatus === 'delivered' ? styles.itemStatusDelivered :
+                              iStatus === 'rejected' ? styles.itemStatusRejected :
+                              iStatus === 'pending' ? styles.itemStatusPending :
+                              styles.itemStatusPreparing]}>
+                              <Text style={[styles.itemStatusTagText,
+                                iStatus === 'ready' ? styles.itemStatusReadyText :
+                                iStatus === 'delivered' ? styles.itemStatusDeliveredText :
+                                iStatus === 'rejected' ? styles.itemStatusRejectedText :
+                                iStatus === 'pending' ? styles.itemStatusPendingText :
+                                styles.itemStatusPreparingText]}>
+                                {iStatus === 'ready' ? 'Ready' : iStatus === 'delivered' ? 'Delivered' : iStatus === 'rejected' ? 'Rejected' : iStatus === 'pending' ? 'Pending' : 'Preparing'}
                               </Text>
                             </View>
                           )}
                         </View>
                         <Text style={styles.itemQty}>x{item.quantity}</Text>
+                        {isRejected && item.refundAmount != null && item.refundAmount > 0 && (
+                          <Text style={styles.refundText}>Rs. {item.refundAmount} refunded</Text>
+                        )}
                       </View>
-                      <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                      {!isRejected && (
+                        <Text style={styles.itemPrice}>Rs. {(item.offerPrice ?? item.price) * item.quantity}</Text>
+                      )}
                     </View>
                   );
                 })}
 
-                {/* Total */}
-                <View style={styles.orderFooter}>
-                  <Text style={styles.orderTotalLabel}>Total</Text>
-                  <Text style={styles.orderTotalValue}>Rs. {order.total}</Text>
-                </View>
+                {/* Total — adjusted for refunds */}
+                {(() => {
+                  const refundTotal = (order.items || [])
+                    .filter((i: any) => i.itemStatus === 'rejected' && i.refundAmount != null)
+                    .reduce((sum: number, i: any) => sum + (i.refundAmount ?? 0), 0);
+                  const effectiveTotal = order.total - refundTotal;
+                  return (
+                    <View style={styles.orderFooter}>
+                      {refundTotal > 0 && (
+                        <>
+                          <View style={styles.refundBreakdownRow}>
+                            <Text style={styles.orderTotalLabel}>Order Total</Text>
+                            <Text style={styles.orderTotalLabel}>Rs. {order.total}</Text>
+                          </View>
+                          <View style={styles.refundBreakdownRow}>
+                            <Text style={styles.refundLabel}>Refunded</Text>
+                            <Text style={styles.refundValue}>- Rs. {refundTotal}</Text>
+                          </View>
+                        </>
+                      )}
+                      <View style={styles.totalFinalRow}>
+                        <Text style={styles.orderTotalLabel}>{refundTotal > 0 ? 'Paid' : 'Total'}</Text>
+                        <Text style={styles.orderTotalValue}>Rs. {effectiveTotal > 0 ? effectiveTotal : 0}</Text>
+                      </View>
+                    </View>
+                  );
+                })()}
               </View>
             );
           })
@@ -392,8 +442,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   itemName: { fontSize: 14, fontWeight: '500', color: colors.text, flexShrink: 1 },
+  itemNameRejected: { textDecorationLine: 'line-through', color: colors.textMuted },
   itemQty: { fontSize: 12, color: '#3b82f6', marginTop: 1 },
   itemPrice: { fontSize: 14, fontWeight: '600', color: colors.text },
+  itemImageRejected: { opacity: 0.4 },
+  refundText: { fontSize: 11, color: '#22c55e', marginTop: 2, fontWeight: '600' },
   itemStatusTag: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
   },
@@ -403,13 +456,25 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   itemStatusDeliveredText: { color: '#10b981' },
   itemStatusPreparing: { backgroundColor: 'rgba(234,179,8,0.12)' },
   itemStatusPreparingText: { color: '#eab308' },
+  itemStatusRejected: { backgroundColor: 'rgba(239,68,68,0.12)' },
+  itemStatusRejectedText: { color: '#ef4444' },
+  itemStatusPending: { backgroundColor: 'rgba(107,114,128,0.12)' },
+  itemStatusPendingText: { color: '#6b7280' },
   itemStatusTagText: { fontSize: 10, fontWeight: '700' },
 
-  // Footer
+  // Footer — column so the refund breakdown (Order Total / Refunded / Paid)
+  // can stack when an item was rejected.
   orderFooter: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 10, paddingTop: 12,
     borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  refundBreakdownRow: {
+    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4,
+  },
+  refundLabel: { fontSize: 12, color: '#22c55e' },
+  refundValue: { fontSize: 12, fontWeight: '600', color: '#22c55e' },
+  totalFinalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4,
   },
   orderTotalLabel: { fontSize: 13, color: colors.textMuted },
   orderTotalValue: { fontSize: 17, fontWeight: '700', color: '#3b82f6' },

@@ -34,6 +34,30 @@
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<!--
+			Loopback exception for the dev backend. iOS auto-exempts 127.0.0.1
+			for NSURLSession (HTTP/fetch), but NOT for RCTSRWebSocket (raw
+			sockets used by react-native's WebSocket module). Without this
+			exception, ws://127.0.0.1 and ws://localhost fail on the simulator
+			with "websocket error", while fetch() calls still work.
+		-->
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
@@ -93,5 +117,7 @@
 	<false/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>CampusOne uses Face ID to protect wallet transactions and payments.</string>
 </dict>
 </plist>

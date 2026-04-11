@@ -41,6 +41,7 @@ export interface OrderUpdatePayload {
   updatedAt: string;
   notification?: { title: string; body: string };
   items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
+  user?: string;
 }
 
 export const connectSocket = async (userId: string, role: string, shopId?: string, userMode: string = 'work') => {
@@ -61,7 +62,12 @@ export const connectSocket = async (userId: string, role: string, shopId?: strin
 
   socket = io(SOCKET_URL, {
     auth: { token },
-    transports: ['websocket'],
+    // Allow polling as a fallback. On iOS Simulator, the native
+    // RCTSRWebSocket transport cannot reach 127.0.0.1 because loopback is
+    // only auto-exempt from ATS for NSURLSession (HTTP), not raw sockets
+    // (WebSocket). Polling uses HTTP and works; WS will be tried after
+    // upgrade and used if it succeeds (e.g. on device, or with ATS fixed).
+    transports: ['polling', 'websocket'],
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 3000,
@@ -112,7 +118,7 @@ export const disconnectSocket = () => {
 
 export const getSocket = () => socket;
 
-export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, userMode: string) => {
+export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, userMode: string, userId?: string) => {
   if (!socket) return;
 
   socket.removeAllListeners('order:status_changed');
@@ -138,17 +144,21 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       // This must happen BEFORE dedup check — dedup only gates notifications/popups.
       dispatch(patchOrderStatus({ orderId: payload.orderId, status, items: payload.items }));
 
+      // Detect if this is the user's own order (captain/owner ordering food)
+      const isOwnOrder = userId ? payload.user === userId : false;
+
       // Re-fetch orders so UI reflects the new status. Throttled to prevent dispatch
       // storms when multiple events arrive in quick succession (dual-room delivery,
       // rapid status changes). The patchOrderStatus above already updated Redux
       // instantly — these fetches just ensure full consistency.
-      if (userRole === 'student' || userMode === 'eat') {
+      if (userRole === 'student' || userMode === 'eat' || isOwnOrder) {
         throttledDispatch(dispatch, 'fetchMyActiveOrders', fetchMyActiveOrders());
         throttledDispatch(dispatch, 'fetchMyOrders', fetchMyOrders());
         if (status === 'cancelled' || status === 'completed') {
           throttledDispatch(dispatch, 'fetchWalletBalance', fetchWalletBalance());
         }
-      } else {
+      }
+      if (userRole !== 'student' && userMode !== 'eat') {
         throttledDispatch(dispatch, 'fetchActiveShopOrders', fetchActiveShopOrders());
         throttledDispatch(dispatch, 'fetchDashboardStats', fetchDashboardStats());
       }
@@ -159,8 +169,8 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       const dedupKey = `${payload.orderId}:${status}`;
       if (isDuplicate(dedupKey)) return;
 
-      // Show popup for students and eat-mode users (captain/owner ordering food)
-      const isStudentOrEatMode = userRole === 'student' || userMode === 'eat';
+      // Show popup for students, eat-mode users, and user's own orders (any mode)
+      const isStudentOrEatMode = userRole === 'student' || userMode === 'eat' || isOwnOrder;
       const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
       const itemsSummary = itemNames.length > 0 ? itemNames.join(', ') : '';
 
