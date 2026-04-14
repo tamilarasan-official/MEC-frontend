@@ -159,6 +159,30 @@ export const createQRPayment = createAsyncThunk(
   }
 );
 
+export const updateQRPaymentAmount = createAsyncThunk(
+  'user/updateQRPaymentAmount',
+  async ({ id, amount }: { id: string; amount: number }, { rejectWithValue }) => {
+    try {
+      const res = await api.patch(`/owner/qr-payments/${id}/amount`, { amount });
+      return res.data.data as { id: string; amount: number };
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.error?.message || 'Failed to update amount');
+    }
+  }
+);
+
+export const cancelQRPayment = createAsyncThunk(
+  'user/cancelQRPayment',
+  async ({ id }: { id: string }, { rejectWithValue }) => {
+    try {
+      await api.delete(`/owner/qr-payments/${id}`);
+      return id;
+    } catch (e: any) {
+      return rejectWithValue(e.response?.data?.error?.message || 'Failed to cancel QR payment');
+    }
+  }
+);
+
 const userSlice = createSlice({
   name: 'user',
   initialState,
@@ -228,6 +252,13 @@ const userSlice = createSlice({
         payers: a.payload.payers || [],
         description: a.payload.description || '',
       });
+    });
+    builder.addCase(updateQRPaymentAmount.fulfilled, (s, a) => {
+      const p = s.qrPayments.find(x => x.id === a.payload.id);
+      if (p) p.amount = a.payload.amount;
+    });
+    builder.addCase(cancelQRPayment.fulfilled, (s, a) => {
+      s.qrPayments = s.qrPayments.filter(x => x.id !== a.payload);
     });
   },
 });

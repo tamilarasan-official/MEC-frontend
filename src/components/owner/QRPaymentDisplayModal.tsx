@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, Modal, TouchableOpacity, Animated,
+  View, Text, StyleSheet, Modal, TouchableOpacity, Animated, TextInput, Alert, ActivityIndicator,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
-import { useAppSelector } from '../../store';
+import { useAppSelector, useAppDispatch } from '../../store';
+import { updateQRPaymentAmount, cancelQRPayment } from '../../store/slices/userSlice';
 import { QRPayment } from '../../types';
 import { useSecureScreen } from '../../utils/useSecureScreen';
 
@@ -14,15 +15,21 @@ interface QRPaymentDisplayModalProps {
   visible: boolean;
   payment: QRPayment | null;
   onClose: () => void;
+  onPaymentUpdated?: () => void;
 }
 
-export default function QRPaymentDisplayModal({ visible, payment, onClose }: QRPaymentDisplayModalProps) {
+export default function QRPaymentDisplayModal({ visible, payment, onClose, onPaymentUpdated }: QRPaymentDisplayModalProps) {
   useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
   const shopDetails = useAppSelector(s => s.user.shopDetails);
   const slideAnim = useMemo(() => new Animated.Value(400), []);
+
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [amountInput, setAmountInput] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
   useEffect(() => {
     if (visible) {
       slideAnim.setValue(400);
@@ -34,6 +41,44 @@ export default function QRPaymentDisplayModal({ visible, payment, onClose }: QRP
       }).start();
     }
   }, [visible, slideAnim]);
+
+  const canEdit = payment?.status === 'active' && payment?.paidCount === 0;
+  const canCancel = payment?.status === 'active';
+
+  const handleEditAmount = async () => {
+    const newAmount = parseFloat(amountInput);
+    if (!payment || isNaN(newAmount) || newAmount <= 0) return;
+    setActionLoading(true);
+    const result = await dispatch(updateQRPaymentAmount({ id: payment.id, amount: newAmount }));
+    setActionLoading(false);
+    if (updateQRPaymentAmount.fulfilled.match(result)) {
+      setEditingAmount(false);
+      onPaymentUpdated?.();
+    } else {
+      Alert.alert('Error', (result.payload as string) || 'Failed to update amount');
+    }
+  };
+
+  const handleCancel = () => {
+    if (!payment) return;
+    Alert.alert('Cancel QR Payment', 'Are you sure you want to cancel this QR payment?', [
+      { text: 'No', style: 'cancel' },
+      {
+        text: 'Yes, Cancel', style: 'destructive',
+        onPress: async () => {
+          setActionLoading(true);
+          const result = await dispatch(cancelQRPayment({ id: payment.id }));
+          setActionLoading(false);
+          if (cancelQRPayment.fulfilled.match(result)) {
+            onPaymentUpdated?.();
+            onClose();
+          } else {
+            Alert.alert('Error', (result.payload as string) || 'Failed to cancel');
+          }
+        },
+      },
+    ]);
+  };
 
   if (!payment) return null;
 
@@ -93,10 +138,53 @@ export default function QRPaymentDisplayModal({ visible, payment, onClose }: QRP
           Show this QR code to the student. They can scan it to pay from their wallet.
         </Text>
 
-        {/* Done button */}
-        <TouchableOpacity style={styles.doneBtn} onPress={onClose} activeOpacity={0.8}>
-          <Text style={styles.doneBtnText}>Done</Text>
-        </TouchableOpacity>
+        {/* Edit Amount inline input */}
+        {editingAmount && (
+          <View style={styles.editRow}>
+            <TextInput
+              style={styles.amountInput}
+              value={amountInput}
+              onChangeText={setAmountInput}
+              keyboardType="numeric"
+              placeholder="New amount"
+              placeholderTextColor={colors.mutedForeground}
+              autoFocus
+            />
+            <TouchableOpacity style={styles.confirmBtn} onPress={handleEditAmount} disabled={actionLoading} activeOpacity={0.8}>
+              {actionLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.confirmBtnText}>Save</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.discardBtn} onPress={() => setEditingAmount(false)} activeOpacity={0.8}>
+              <Text style={styles.discardBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Action buttons */}
+        <View style={styles.actionRow}>
+          {canEdit && !editingAmount && (
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => { setAmountInput(String(payment.amount)); setEditingAmount(true); }}
+              activeOpacity={0.8}
+            >
+              <Icon name="pencil-outline" size={15} color="#f59e0b" />
+              <Text style={styles.editBtnText}>Edit Amount</Text>
+            </TouchableOpacity>
+          )}
+          {canCancel && !editingAmount && (
+            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} disabled={actionLoading} activeOpacity={0.8}>
+              {actionLoading ? <ActivityIndicator size="small" color="#ef4444" /> : (
+                <>
+                  <Icon name="close-circle-outline" size={15} color="#ef4444" />
+                  <Text style={styles.cancelBtnText}>Cancel QR</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={styles.doneBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
       </Animated.View>
     </Modal>
   );
@@ -183,6 +271,67 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginBottom: 20,
     paddingHorizontal: 10,
   },
+  actionRow: {
+    flexDirection: 'column',
+    gap: 10,
+  },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  amountInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.foreground,
+    backgroundColor: colors.muted,
+  },
+  confirmBtn: {
+    backgroundColor: '#22c55e',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 56,
+  },
+  confirmBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  discardBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  discardBtnText: { fontSize: 14, fontWeight: '600', color: colors.mutedForeground },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+    borderRadius: 16,
+    paddingVertical: 12,
+  },
+  editBtnText: { fontSize: 15, fontWeight: '700', color: '#f59e0b' },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 16,
+    paddingVertical: 12,
+  },
+  cancelBtnText: { fontSize: 15, fontWeight: '700', color: '#ef4444' },
   doneBtn: {
     backgroundColor: '#3b82f6',
     borderRadius: 16,

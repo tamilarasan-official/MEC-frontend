@@ -28,6 +28,7 @@ const QUICK_FILTERS: { key: QuickFilter; label: string; icon: string }[] = [
 interface TxItem {
   id: string;
   title: string;
+  description: string;
   studentName: string;
   studentRollNumber?: string;
   amount: number;
@@ -81,6 +82,7 @@ export default function StationeryHistoryScreen() {
         items.push({
           id: `${p.id}-${payer.studentName}-${payer.paidAt}`,
           title: p.title,
+          description: p.description || '',
           studentName: payer.studentName,
           studentRollNumber: payer.studentRollNumber,
           amount: payer.amount,
@@ -139,6 +141,9 @@ export default function StationeryHistoryScreen() {
       </View>
       <View style={styles.txInfo}>
         <Text style={styles.txTitle} numberOfLines={1}>{item.title}</Text>
+        {item.description ? (
+          <Text style={styles.txDesc} numberOfLines={1}>{item.description}</Text>
+        ) : null}
         <Text style={styles.txSub}>
           {item.studentName}{item.studentRollNumber ? ` · ${item.studentRollNumber}` : ''}
         </Text>
@@ -361,6 +366,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   txInfo: { flex: 1 },
   txTitle: { fontSize: 14, fontWeight: '600', color: c.foreground },
+  txDesc: { fontSize: 11, color: c.mutedForeground, marginTop: 1, fontStyle: 'italic' },
   txSub: { fontSize: 12, color: c.mutedForeground, marginTop: 2 },
   txTime: { fontSize: 11, color: c.mutedForeground, marginTop: 2 },
   txAmt: { fontSize: 15, fontWeight: '700', color: '#10b981' },
