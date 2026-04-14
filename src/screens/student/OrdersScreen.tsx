@@ -251,6 +251,12 @@ export default function OrdersScreen() {
                         <Text style={styles.orderTotalLabel}>{refundTotal > 0 ? 'Paid' : 'Total'}</Text>
                         <Text style={styles.orderTotalValue}>Rs. {effectiveTotal > 0 ? effectiveTotal : 0}</Text>
                       </View>
+                      {order.handledBy ? (
+                        <View style={styles.handledByRow}>
+                          <Icon name="person-circle-outline" size={13} color={colors.textSecondary} />
+                          <Text style={styles.handledByText}>Delivered by {order.handledBy}</Text>
+                        </View>
+                      ) : null}
                     </View>
                   );
                 })()}
@@ -462,6 +468,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   orderTotalLabel: { fontSize: 13, color: colors.textMuted },
   orderTotalValue: { fontSize: 17, fontWeight: '700', color: '#3b82f6' },
+  handledByRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  handledByText: { fontSize: 11, color: colors.textSecondary },
 
   flex1: { flex: 1 },
 

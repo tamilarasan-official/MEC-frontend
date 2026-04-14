@@ -234,6 +234,12 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                           <Text style={styles.totalLabel}>{refundTotal > 0 ? 'Paid' : 'Total'}</Text>
                           <Text style={styles.totalValue}>Rs. {effectiveTotal > 0 ? effectiveTotal : 0}</Text>
                         </View>
+                        {order.handledBy ? (
+                          <View style={styles.handledByRow}>
+                            <Icon name="person-circle-outline" size={13} color={colors.textSecondary} />
+                            <Text style={styles.handledByText}>Delivered by {order.handledBy}</Text>
+                          </View>
+                        ) : null}
                       </View>
                     );
                   })()}
@@ -335,5 +341,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between' },
   totalLabel: { fontSize: 14, color: '#3b82f6' },
   totalValue: { fontSize: 16, fontWeight: '700', color: '#3b82f6' },
+  handledByRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  handledByText: { fontSize: 11, color: c.textSecondary },
   bottomSpacer: { height: 40 },
 });
