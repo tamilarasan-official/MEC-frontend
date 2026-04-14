@@ -149,6 +149,33 @@ export default function StationeryHomeScreen() {
 
   const canGenerateQR = shopDetails?.canGenerateQR === true;
 
+  // Today's stats — filter payers by today's date
+  const startOfToday = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const todayCollected = useMemo(() => {
+    let sum = 0;
+    for (const p of qrPayments) {
+      for (const payer of (p.payers || [])) {
+        if (new Date(payer.paidAt) >= startOfToday) sum += Number(payer.amount) || 0;
+      }
+    }
+    return sum;
+  }, [qrPayments, startOfToday]);
+
+  const todayPaymentCount = useMemo(() => {
+    let count = 0;
+    for (const p of qrPayments) {
+      for (const payer of (p.payers || [])) {
+        if (new Date(payer.paidAt) >= startOfToday) count += 1;
+      }
+    }
+    return count;
+  }, [qrPayments, startOfToday]);
+
   const fetchData = useCallback(async () => {
     try {
       await Promise.all([
@@ -211,7 +238,7 @@ export default function StationeryHomeScreen() {
           />
           <TouchableOpacity style={styles.walletPill} onPress={() => setShowWallet(true)} activeOpacity={0.8} accessibilityLabel="Open wallet" accessibilityRole="button">
             <Icon name="briefcase-outline" size={13} color="#f97316" />
-            <Text style={styles.walletPillText}>Rs. {totalCollected}</Text>
+            <Text style={styles.walletPillText}>Rs. {todayCollected}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.headerRight}>
@@ -284,10 +311,10 @@ export default function StationeryHomeScreen() {
           >
             <View style={styles.totalCardHeader}>
               <Icon name="logo-usd" size={18} color="#10b981" />
-              <Text style={styles.totalCardLabel}>Total Collected</Text>
+              <Text style={styles.totalCardLabel}>Today's Collection</Text>
             </View>
-            <Text style={styles.totalCardAmount}>Rs. {totalCollected}</Text>
-            <Text style={styles.totalCardSub}>{totalPaymentCount} payments received</Text>
+            <Text style={styles.totalCardAmount}>Rs. {todayCollected}</Text>
+            <Text style={styles.totalCardSub}>{todayPaymentCount} payments today</Text>
           </LinearGradient>
         )}
 

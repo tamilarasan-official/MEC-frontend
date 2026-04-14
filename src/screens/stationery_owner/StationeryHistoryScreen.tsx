@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { fetchQRPayments } from '../../store/slices/userSlice';
+import { fetchQRPayments, fetchShopDetails } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -17,12 +17,13 @@ function getDaysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).get
 function getFirstDay(y: number, m: number) { return new Date(y, m, 1).getDay(); }
 function sameDay(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
 
-type QuickFilter = 'today' | 'week' | 'month' | 'all' | 'date';
+type QuickFilter = 'today' | 'week' | '30days' | 'month' | 'all' | 'date';
 const QUICK_FILTERS: { key: QuickFilter; label: string; icon: string }[] = [
   { key: 'today', label: 'Today', icon: 'today-outline' },
   { key: 'week', label: 'This Week', icon: 'calendar-outline' },
+  { key: '30days', label: '30 Days', icon: 'calendar-number-outline' },
   { key: 'month', label: 'This Month', icon: 'calendar-number-outline' },
-  { key: 'all', label: 'All', icon: 'infinite-outline' },
+  { key: 'all', label: 'Cycle', icon: 'infinite-outline' },
 ];
 
 interface TxItem {
@@ -35,9 +36,11 @@ interface TxItem {
   paidAt: string;
 }
 
-function matchesFilter(dateStr: string, filter: QuickFilter, selectedDate: Date): boolean {
+function matchesFilter(dateStr: string, filter: QuickFilter, selectedDate: Date, lastPayoutAt: Date | null): boolean {
   const d = new Date(dateStr);
   const now = new Date();
+  // Always cap at lastPayoutAt if set (don't show data from before the last payout)
+  if (lastPayoutAt && d < lastPayoutAt) return false;
   switch (filter) {
     case 'today':
       return sameDay(d, now);
@@ -45,13 +48,17 @@ function matchesFilter(dateStr: string, filter: QuickFilter, selectedDate: Date)
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       return d >= weekAgo;
     }
+    case '30days': {
+      const thirtyAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return d >= thirtyAgo;
+    }
     case 'month':
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     case 'date':
       return sameDay(d, selectedDate);
     case 'all':
     default:
-      return true;
+      return true; // already capped by lastPayoutAt above
   }
 }
 
@@ -60,25 +67,33 @@ export default function StationeryHistoryScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const qrPayments = useAppSelector(s => s.user.qrPayments);
+  const shopDetails = useAppSelector(s => s.user.shopDetails);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<QuickFilter>('today');
+  const [filter, setFilter] = useState<QuickFilter>('30days');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calMonth, setCalMonth] = useState(new Date());
   const [showCalendar, setShowCalendar] = useState(false);
 
-  useEffect(() => { dispatch(fetchQRPayments()); }, [dispatch]);
+  // Minimum date boundary from last payout
+  const lastPayoutAt = shopDetails?.lastPayoutAt ? new Date(shopDetails.lastPayoutAt) : null;
+
+  useEffect(() => {
+    dispatch(fetchQRPayments());
+    dispatch(fetchShopDetails());
+  }, [dispatch]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await dispatch(fetchQRPayments());
+    await Promise.all([dispatch(fetchQRPayments()), dispatch(fetchShopDetails())]);
     setRefreshing(false);
   }, [dispatch]);
 
-  // Flatten payers into transaction list
+  // Flatten payers into transaction list (capped at lastPayoutAt)
   const allTx = useMemo((): TxItem[] => {
     const items: TxItem[] = [];
     for (const p of qrPayments) {
       for (const payer of (p.payers || [])) {
+        if (lastPayoutAt && new Date(payer.paidAt) < lastPayoutAt) continue;
         items.push({
           id: `${p.id}-${payer.studentName}-${payer.paidAt}`,
           title: p.title,
@@ -91,11 +106,11 @@ export default function StationeryHistoryScreen() {
       }
     }
     return items.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
-  }, [qrPayments]);
+  }, [qrPayments, lastPayoutAt]);
 
   const filteredTx = useMemo(() =>
-    allTx.filter(t => matchesFilter(t.paidAt, filter, selectedDate)),
-  [allTx, filter, selectedDate]);
+    allTx.filter(t => matchesFilter(t.paidAt, filter, selectedDate, lastPayoutAt)),
+  [allTx, filter, selectedDate, lastPayoutAt]);
 
   const totalAmount = filteredTx.reduce((s, t) => s + t.amount, 0);
 
@@ -160,9 +175,14 @@ export default function StationeryHistoryScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Payment History</Text>
             <Text style={styles.headerSub}>{getFilterLabel()} · {filteredTx.length} transactions</Text>
+            {lastPayoutAt && (
+              <Text style={styles.cycleLabel}>
+                Cycle from {lastPayoutAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              </Text>
+            )}
           </View>
           <TouchableOpacity
             onPress={() => setShowCalendar(!showCalendar)}
@@ -296,6 +316,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   headerTitle: { fontSize: 22, fontWeight: '800', color: c.foreground },
   headerSub: { fontSize: 12, color: c.mutedForeground, marginTop: 2 },
+  cycleLabel: { fontSize: 10, color: '#10b981', fontWeight: '600', marginTop: 2 },
   calBtn: {
     width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center',
     backgroundColor: c.card, borderWidth: 1, borderColor: c.border,

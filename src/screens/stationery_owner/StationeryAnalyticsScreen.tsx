@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { fetchQRPayments, fetchWalletBalance } from '../../store/slices/userSlice';
+import { fetchQRPayments, fetchWalletBalance, fetchShopDetails } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -46,28 +46,36 @@ export default function StationeryAnalyticsScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const qrPayments = useAppSelector(s => s.user.qrPayments);
+  const shopDetails = useAppSelector(s => s.user.shopDetails);
   const [refreshing, setRefreshing] = useState(false);
   const [revenueFilter, setRevenueFilter] = useState<TimeFilter>('month');
   const [paymentFilter, setPaymentFilter] = useState<TimeFilter>('month');
 
-  useEffect(() => { dispatch(fetchQRPayments()); }, [dispatch]);
+  // Minimum date: since last payout (if any), otherwise show all
+  const lastPayoutAt = shopDetails?.lastPayoutAt ? new Date(shopDetails.lastPayoutAt) : null;
+
+  useEffect(() => {
+    dispatch(fetchQRPayments());
+    dispatch(fetchShopDetails());
+  }, [dispatch]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([dispatch(fetchQRPayments()), dispatch(fetchWalletBalance())]);
+    await Promise.all([dispatch(fetchQRPayments()), dispatch(fetchWalletBalance()), dispatch(fetchShopDetails())]);
     setRefreshing(false);
   }, [dispatch]);
 
-  // All paid transactions flattened
+  // All paid transactions flattened — only from lastPayoutAt onwards (current billing cycle)
   const allTransactions = useMemo(() => {
     const items: { title: string; studentName: string; amount: number; paidAt: string }[] = [];
     for (const p of qrPayments) {
       for (const payer of (p.payers || [])) {
+        if (lastPayoutAt && new Date(payer.paidAt) < lastPayoutAt) continue;
         items.push({ title: p.title, studentName: payer.studentName, amount: payer.amount, paidAt: payer.paidAt });
       }
     }
     return items;
-  }, [qrPayments]);
+  }, [qrPayments, lastPayoutAt]);
 
   // Revenue by filter
   const getRevenue = (filter: TimeFilter) =>
@@ -135,6 +143,14 @@ export default function StationeryAnalyticsScreen() {
         {/* Title */}
         <Text style={styles.title}>Analytics</Text>
         <Text style={styles.subtitle}>QR Payment Performance</Text>
+        {lastPayoutAt && (
+          <View style={styles.payoutBanner}>
+            <Icon name="refresh-circle-outline" size={14} color="#10b981" />
+            <Text style={styles.payoutBannerText}>
+              Cycle started {lastPayoutAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </Text>
+          </View>
+        )}
 
         {/* Revenue Card */}
         <View style={styles.revenueCard}>
@@ -266,7 +282,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   content: { padding: 16 },
 
   title: { fontSize: 24, fontWeight: '900', color: c.foreground, marginBottom: 2 },
-  subtitle: { fontSize: 13, color: c.mutedForeground, marginBottom: 20 },
+  subtitle: { fontSize: 13, color: c.mutedForeground, marginBottom: 8 },
+  payoutBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16,
+    backgroundColor: 'rgba(16,185,129,0.1)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+    alignSelf: 'flex-start',
+  },
+  payoutBannerText: { fontSize: 11, color: '#10b981', fontWeight: '600' },
 
   // Revenue card
   revenueCard: {

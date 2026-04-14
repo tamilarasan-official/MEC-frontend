@@ -13,7 +13,7 @@ interface UserState {
   transactions: Transaction[];
   dashboardStats: DashboardStats | null;
   analytics: AnalyticsData | null;
-  shopDetails: { isActive: boolean; name: string; category?: string; canGenerateQR?: boolean } | null;
+  shopDetails: { isActive: boolean; name: string; category?: string; canGenerateQR?: boolean; lastPayoutAt?: string } | null;
   notifications: AppNotification[];
   orderStatusPopup: OrderStatusPopupData | null;
   dietFilter: 'all' | 'veg' | 'nonveg';
@@ -92,7 +92,7 @@ export const fetchAnalytics = createAsyncThunk('user/fetchAnalytics', async (par
 export const fetchShopDetails = createAsyncThunk('user/fetchShopDetails', async (_, { rejectWithValue }) => {
   try {
     const res = await api.get('/owner/shop');
-    return res.data.data as { isActive: boolean; name: string; category: string; canGenerateQR: boolean };
+    return res.data.data as { isActive: boolean; name: string; category: string; canGenerateQR: boolean; lastPayoutAt?: string };
   } catch (e: any) {
     if (__DEV__) console.error('[fetchShopDetails]', e.response?.status, e.response?.data);
     return rejectWithValue('Failed to load shop details. Please try again.');
