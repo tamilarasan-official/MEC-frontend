@@ -47,16 +47,12 @@ export default function CaptainOrdersScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh every 5 seconds, pause when app is backgrounded
+  // Refetch when app returns to foreground — socket handles live order updates
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    const startPolling = () => { interval = setInterval(() => dispatch(fetchActiveShopOrders()), 5000); };
-    const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
-    startPolling();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') startPolling(); else stopPolling();
+      if (state === 'active') dispatch(fetchActiveShopOrders());
     });
-    return () => { stopPolling(); sub.remove(); };
+    return () => sub.remove();
   }, [dispatch]);
 
   const onRefresh = async () => {

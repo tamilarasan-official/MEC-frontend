@@ -188,8 +188,9 @@ api.interceptors.response.use(
         let lastError: unknown;
         for (let attempt = 0; attempt <= TOKEN_REFRESH_MAX_RETRIES; attempt++) {
           try {
+            const deviceId = await getOrCreateDeviceId();
             const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken: refresh }, {
-              headers: { 'X-App-Key': APP_API_KEY },
+              headers: { 'X-App-Key': APP_API_KEY, 'X-Device-Id': deviceId },
             });
             const tokenData = res.data.data?.tokens || res.data.data;
             const { accessToken, refreshToken: newRefreshToken } = tokenData;
@@ -240,8 +241,9 @@ export const refreshAccessTokenSilently = async (): Promise<string | null> => {
   try {
     const refresh = await getRefreshToken();
     if (!refresh) return null;
+    const deviceId = await getOrCreateDeviceId();
     const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken: refresh }, {
-      headers: { 'X-App-Key': APP_API_KEY },
+      headers: { 'X-App-Key': APP_API_KEY, 'X-Device-Id': deviceId },
     });
     const tokenData = res.data.data?.tokens || res.data.data;
     const { accessToken, refreshToken: newRefreshToken } = tokenData;

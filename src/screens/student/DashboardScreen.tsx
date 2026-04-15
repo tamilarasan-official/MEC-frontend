@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -195,13 +195,13 @@ export default function StudentDashboard({ navigation }: Props) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Auto-refresh active orders every 30 seconds so the home screen stays up to date (#70)
+  // Refetch active orders when app returns to foreground — socket handles live updates (#70)
   useEffect(() => {
     if (!isStudent) return;
-    const interval = setInterval(() => {
-      dispatch(fetchMyActiveOrders());
-    }, 30_000);
-    return () => clearInterval(interval);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') dispatch(fetchMyActiveOrders());
+    });
+    return () => sub.remove();
   }, [dispatch, isStudent]);
 
   const onRefresh = async () => {

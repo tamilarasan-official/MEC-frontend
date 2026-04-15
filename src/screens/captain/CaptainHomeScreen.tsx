@@ -124,37 +124,16 @@ export default function CaptainHomeScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh every 5 seconds, pause when app is backgrounded
+  // Refetch when app returns to foreground — socket handles live order updates
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    // Always clear before starting to prevent duplicate intervals when AppState
-    // fires 'active' multiple times without an intervening 'background' event.
-    const stopPolling = () => { if (interval) { clearInterval(interval); interval = null; } };
-    const startPolling = () => {
-      stopPolling();
-      interval = setInterval(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
         dispatch(fetchActiveShopOrders());
         dispatch(fetchDashboardStats());
-      }, 30000);
-    };
-    startPolling();
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') { startPolling(); dispatch(fetchActiveShopOrders()); dispatch(fetchDashboardStats()); }
-      else stopPolling();
+        dispatch(fetchWalletBalance());
+      }
     });
-    return () => { stopPolling(); sub.remove(); };
-  }, [dispatch]);
-
-  // Auto-refresh wallet balance every 30 seconds (backup for socket events)
-  useEffect(() => {
-    let walletInterval: ReturnType<typeof setInterval> | null = null;
-    const stopWalletPolling = () => { if (walletInterval) { clearInterval(walletInterval); walletInterval = null; } };
-    const startWalletPolling = () => { stopWalletPolling(); walletInterval = setInterval(() => dispatch(fetchWalletBalance()), 30000); };
-    startWalletPolling();
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') startWalletPolling(); else stopWalletPolling();
-    });
-    return () => { stopWalletPolling(); sub.remove(); };
+    return () => sub.remove();
   }, [dispatch]);
 
   const onRefresh = async () => {
