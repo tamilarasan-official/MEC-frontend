@@ -192,23 +192,24 @@ export default function StationeryScreen({ route, navigation }: Props) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pillsRow}
             style={styles.pillsScroll}>
-            <TouchableOpacity
-              style={[styles.pill, !selectedCategory && styles.pillActive]}
-              onPress={() => setSelectedCategory(null)}
-              activeOpacity={0.8}>
-              <Text style={[styles.pillText, !selectedCategory && styles.pillTextActive]}>All</Text>
-            </TouchableOpacity>
-            {allCats.map(cat => (
+            <View style={styles.pillsRow}>
               <TouchableOpacity
-                key={cat}
-                style={[styles.pill, selectedCategory === cat && styles.pillActive]}
-                onPress={() => setSelectedCategory(cat)}
+                style={[styles.pill, !selectedCategory && styles.pillActive]}
+                onPress={() => setSelectedCategory(null)}
                 activeOpacity={0.8}>
-                <Text style={[styles.pillText, selectedCategory === cat && styles.pillTextActive]}>{cat}</Text>
+                <Text style={[styles.pillText, !selectedCategory && styles.pillTextActive]}>All</Text>
               </TouchableOpacity>
-            ))}
+              {allCats.map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.pill, selectedCategory === cat && styles.pillActive]}
+                  onPress={() => setSelectedCategory(cat)}
+                  activeOpacity={0.8}>
+                  <Text style={[styles.pillText, selectedCategory === cat && styles.pillTextActive]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </ScrollView>
         )}
 
@@ -338,9 +339,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
   pillsScroll: { flexGrow: 0 },
-  pillsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
+  pillsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
   pill: {
-    flexShrink: 0,
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     borderColor: colors.border, backgroundColor: colors.card,
