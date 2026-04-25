@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, ScrollView,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
