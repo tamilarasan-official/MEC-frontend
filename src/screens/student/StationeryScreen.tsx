@@ -24,8 +24,9 @@ import { mediumHaptic } from '../../utils/haptics';
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Stationery'>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_GAP = 12;
+const CARD_GAP = 10;
 const CARD_WIDTH = (SCREEN_WIDTH - 32 - CARD_GAP) / 2;
+const CARD_IMG_HEIGHT = Math.round(CARD_WIDTH * 0.72);
 
 // ── Item Card (memoized) ─────────────────────────────────────────────────────
 
@@ -356,20 +357,20 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   cardRight: { width: CARD_WIDTH },
 
   card: {
-    backgroundColor: colors.card, borderRadius: 14,
+    backgroundColor: colors.card, borderRadius: 12,
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
-  cardImage: { width: '100%', height: CARD_WIDTH, backgroundColor: '#f0f0f0' },
+  cardImage: { width: '100%', height: CARD_IMG_HEIGHT, backgroundColor: '#f0f0f0' },
   cardImagePlaceholder: { backgroundColor: '#f0f0f0' },
-  cardBody: { padding: 10 },
-  cardName: { fontSize: 12, fontWeight: '600', color: colors.text, minHeight: 32 },
+  cardBody: { padding: 8 },
+  cardName: { fontSize: 11, fontWeight: '600', color: colors.text, minHeight: 28 },
   cardFooter: {
     flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginTop: 8,
+    justifyContent: 'space-between', marginTop: 6,
   },
-  cardPrice: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  cardPrice: { fontSize: 13, fontWeight: '800', color: colors.primary },
   addBtn: {
-    width: 30, height: 30, borderRadius: 10,
+    width: 26, height: 26, borderRadius: 8,
     backgroundColor: colors.primary,
     justifyContent: 'center', alignItems: 'center',
   },
