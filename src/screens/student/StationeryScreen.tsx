@@ -14,6 +14,7 @@ import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
+import PINVerifyModal from '../../components/common/PINVerifyModal';
 import orderService from '../../services/orderService';
 import { resolveImageUrl } from '../../utils/imageUrl';
 
@@ -92,6 +93,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+  const [showPinModal, setShowPinModal] = useState(false);
   const submittingRef = useRef(false);
 
   // Cart bar animation
@@ -167,7 +169,16 @@ export default function StationeryScreen({ route, navigation }: Props) {
     dispatch(decrementQuantity(itemId));
   }, [dispatch]);
 
-  const handleCheckout = async () => {
+  const handleCheckoutPress = () => {
+    if (cartCount === 0) return;
+    if (user?.isPinSetup) {
+      setShowPinModal(true);
+    } else {
+      handlePlaceOrder();
+    }
+  };
+
+  const handlePlaceOrder = async () => {
     if (submittingRef.current || cartCount === 0) return;
     submittingRef.current = true;
     setSubmitError(null);
@@ -283,7 +294,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
           <Text style={styles.cartBarTotal}>₹{cartSubtotal}</Text>
           <TouchableOpacity
             style={[styles.checkoutBtn, isSubmitting && styles.checkoutBtnDisabled]}
-            onPress={handleCheckout}
+            onPress={handleCheckoutPress}
             disabled={isSubmitting}
             activeOpacity={0.85}>
             {isSubmitting ? (
@@ -301,6 +312,15 @@ export default function StationeryScreen({ route, navigation }: Props) {
             onClose={() => setCreatedOrder(null)}
           />
         )}
+
+        {/* T-PIN verification */}
+        <PINVerifyModal
+          visible={showPinModal}
+          amount={cartSubtotal}
+          title={cartShopItems.map(c => c.item.name).join(', ')}
+          onVerified={() => { setShowPinModal(false); handlePlaceOrder(); }}
+          onCancel={() => setShowPinModal(false)}
+        />
       </View>
     </ScreenWrapper>
   );
@@ -325,12 +345,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: 10, gap: 8,
   },
   pill: {
-    paddingHorizontal: 14, paddingVertical: 7,
+    paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     borderColor: colors.border, backgroundColor: colors.card,
   },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  pillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
   pillTextActive: { color: '#fff' },
 
   // Error
