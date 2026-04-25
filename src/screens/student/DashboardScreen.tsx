@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, ScrollView,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -475,7 +475,7 @@ export default function StudentDashboard({ navigation }: Props) {
       </View>
 
       {/* ── Mode Tab Bar: Classic | Bites | Stationery ── */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeBar}>
+      <View style={styles.modeBar}>
         <TouchableOpacity
           style={[styles.modeTab, shopMode === 'classic' && styles.modeTabActive]}
           onPress={() => handleModeTab('classic')}
@@ -497,7 +497,7 @@ export default function StudentDashboard({ navigation }: Props) {
           <Icon name="storefront-outline" size={14} color={colors.textMuted} />
           <Text style={styles.modeTabText}>Stationery</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
 
       <FlatList
         data={filteredItems}
@@ -949,16 +949,18 @@ function OrderPulseIcon({ color }: { color: string }) {
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // ── Mode Tab Bar ──
   modeBar: {
-    flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, gap: 8,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 8, gap: 8,
   },
   modeTab: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 7,
+    paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     borderColor: colors.border, backgroundColor: colors.card,
+    alignSelf: 'flex-start',
   },
   modeTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  modeTabText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  modeTabText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
   modeTabTextActive: { color: '#fff' },
 
   // ── Header ──
