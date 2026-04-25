@@ -262,16 +262,15 @@ export default function OwnerTabs() {
             }}
           />
         )}
-        {!isNonFoodShop && (
-          <Tab.Screen
-            name="Menu"
-            component={OwnerMenuScreen}
-            options={{
-              tabBarLabel: 'Items',
-              tabBarIcon: MenuIcon,
-            }}
-          />
-        )}
+
+        <Tab.Screen
+          name="Menu"
+          component={OwnerMenuScreen}
+          options={{
+            tabBarLabel: 'Items',
+            tabBarIcon: MenuIcon,
+          }}
+        />
         <Tab.Screen
           name="History"
           component={isNonFoodShop ? StationeryHistoryScreen : OwnerHistoryScreen}
