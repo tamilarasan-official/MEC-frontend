@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Image, TextInput, AppState,
+  Animated, PanResponder, Dimensions, Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -9,6 +10,9 @@ import { useAppSelector, useAppDispatch } from '../../store';
 import {
   fetchShopDetails, fetchQRPayments, fetchWalletBalance,
 } from '../../store/slices/userSlice';
+import {
+  fetchActiveShopOrders, updateOrderStatus, acceptAllItems, rejectAllItems,
+} from '../../store/slices/ordersSlice';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -17,11 +21,143 @@ import OwnerProfileDropdown from '../../components/owner/OwnerProfileDropdown';
 import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
 import CreateQRPaymentModal from '../../components/owner/CreateQRPaymentModal';
 import QRPaymentDisplayModal from '../../components/owner/QRPaymentDisplayModal';
-import { QRPayment } from '../../types';
+import { QRPayment, Order, OrderStatus } from '../../types';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
+import { mediumHaptic, lightHaptic } from '../../utils/haptics';
 import NotificationsModal from '../../components/student/NotificationsModal';
 
-// ---- Stat Item ----
+// ============================================================
+// ORDER DASHBOARD — Swipeable card (order-level only)
+// ============================================================
+
+type OrderFilter = 'pending' | 'ready';
+
+const SWIPE_THRESHOLD = 80;
+
+interface SwipeAction { label: string; icon: string; color: string; onAction: () => void }
+
+function getSwipeCfg(
+  filter: OrderFilter,
+  order: Order,
+  onAccept: (id: string) => void,
+  onReject: (id: string) => void,
+  onComplete: (id: string) => void,
+): { right: SwipeAction | null; left: SwipeAction | null } {
+  if (filter === 'pending') return {
+    right: { label: 'Accept', icon: 'checkmark-done', color: '#22c55e', onAction: () => onAccept(order.id) },
+    left:  { label: 'Reject', icon: 'close',          color: '#ef4444', onAction: () => onReject(order.id) },
+  };
+  if (filter === 'ready') return {
+    right: { label: 'Complete', icon: 'checkmark', color: '#22c55e', onAction: () => onComplete(order.id) },
+    left: null,
+  };
+  return { right: null, left: null };
+}
+
+const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, swipeRight, swipeLeft, colors, styles, isUpdating }: {
+  order: Order;
+  swipeRight: SwipeAction | null;
+  swipeLeft: SwipeAction | null;
+  colors: ThemeColors;
+  styles: ReturnType<typeof createStyles>;
+  isUpdating: boolean;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const swipeRightRef = useRef(swipeRight);
+  const swipeLeftRef  = useRef(swipeLeft);
+  swipeRightRef.current = swipeRight;
+  swipeLeftRef.current  = swipeLeft;
+  const hasSwipe = !!(swipeRight || swipeLeft);
+  const hasSwipeRef = useRef(hasSwipe);
+  hasSwipeRef.current = hasSwipe;
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) =>
+      hasSwipeRef.current && Math.abs(g.dx) > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderMove: (_, g) => {
+      if (g.dx > 0 && !swipeRightRef.current) return;
+      if (g.dx < 0 && !swipeLeftRef.current) return;
+      translateX.setValue(g.dx);
+    },
+    onPanResponderRelease: (_, g) => {
+      const rightTrig = swipeRightRef.current && (g.dx > SWIPE_THRESHOLD || (g.dx > 20 && g.vx > 0.3));
+      const leftTrig  = swipeLeftRef.current  && (g.dx < -SWIPE_THRESHOLD || (g.dx < -20 && g.vx < -0.3));
+      if (rightTrig) {
+        Animated.timing(translateX, { toValue: Dimensions.get('window').width, duration: 200, useNativeDriver: true }).start(() => {
+          mediumHaptic();
+          swipeRightRef.current?.onAction();
+          setTimeout(() => translateX.setValue(0), 300);
+        });
+      } else if (leftTrig) {
+        Animated.timing(translateX, { toValue: -Dimensions.get('window').width, duration: 200, useNativeDriver: true }).start(() => {
+          mediumHaptic();
+          swipeLeftRef.current?.onAction();
+          setTimeout(() => translateX.setValue(0), 300);
+        });
+      } else {
+        Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
+      }
+    },
+  })).current;
+
+  const timeStr = new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const hintParts: string[] = [];
+  if (swipeLeft)  hintParts.push(`← ${swipeLeft.label}`);
+  if (swipeRight) hintParts.push(`${swipeRight.label} →`);
+
+  return (
+    <View style={styles.swipeContainer}>
+      {swipeRight && (
+        <Animated.View style={[styles.swipeBg, { backgroundColor: swipeRight.color, opacity: translateX.interpolate({ inputRange: [0, 30], outputRange: [0, 1], extrapolate: 'clamp' }) }]}>
+          <View style={styles.swipeBgLeft}>
+            <Icon name={swipeRight.icon} size={22} color="#fff" />
+            <Text style={styles.swipeBgText}>{swipeRight.label}</Text>
+          </View>
+        </Animated.View>
+      )}
+      {swipeLeft && (
+        <Animated.View style={[styles.swipeBg, { backgroundColor: swipeLeft.color, opacity: translateX.interpolate({ inputRange: [-30, 0], outputRange: [1, 0], extrapolate: 'clamp' }) }]}>
+          <View style={styles.swipeBgRight}>
+            <Text style={styles.swipeBgText}>{swipeLeft.label}</Text>
+            <Icon name={swipeLeft.icon} size={22} color="#fff" />
+          </View>
+        </Animated.View>
+      )}
+      <Animated.View style={[styles.orderCard, { transform: [{ translateX }] }]} {...panResponder.panHandlers}>
+        {isUpdating && (
+          <View style={styles.updatingOverlay}>
+            <ActivityIndicator size="small" color={colors.accent} />
+          </View>
+        )}
+        {/* Card header */}
+        <View style={styles.cardHeader}>
+          <Text style={styles.orderToken}>#{order.pickupToken}</Text>
+          <Text style={styles.orderTime}>{timeStr}</Text>
+          <Text style={styles.orderCustomer} numberOfLines={1}>{order.userName || '—'}</Text>
+          <Text style={styles.orderTotal}>₹{order.total}</Text>
+        </View>
+        {/* Items */}
+        <View style={styles.itemsList}>
+          {order.items.map((item, i) => (
+            <View key={i} style={styles.itemRow}>
+              <Text style={styles.itemQty}>{item.quantity}×</Text>
+              <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+              <Text style={styles.itemPrice}>₹{item.price * item.quantity}</Text>
+            </View>
+          ))}
+        </View>
+        {hintParts.length > 0 && (
+          <Text style={styles.swipeHint}>{hintParts.join('  |  ')}</Text>
+        )}
+      </Animated.View>
+    </View>
+  );
+});
+
+// ============================================================
+// QR PAYMENT CARD (unchanged from original)
+// ============================================================
+
 function StatItem({ value, label, color, labelColor }: { value: string | number; label: string; color: string; labelColor?: string }) {
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
@@ -31,14 +167,10 @@ function StatItem({ value, label, color, labelColor }: { value: string | number;
   );
 }
 
-// ---- QR Payment Card ----
 function QRPaymentCard({ payment, colors, styles, onPress }: { payment: QRPayment; colors: ThemeColors; styles: ReturnType<typeof createStyles>; onPress: () => void }) {
-  const hasPayers = payment.payers && payment.payers.length > 0;
   const isPaid = payment.paidCount > 0;
-
   return (
-    <TouchableOpacity style={styles.qrCard} activeOpacity={0.7} onPress={onPress} accessibilityLabel={`QR payment ${payment.title}`} accessibilityRole="button">
-      {/* Badges */}
+    <TouchableOpacity style={styles.qrCard} activeOpacity={0.7} onPress={onPress}>
       <View style={styles.qrCardBadges}>
         <View style={styles.qrTypeBadge}>
           <Icon name="qr-code-outline" size={10} color="#06b6d4" />
@@ -51,32 +183,23 @@ function QRPaymentCard({ payment, colors, styles, onPress }: { payment: QRPaymen
           </View>
         )}
       </View>
-
-      {/* Title & Amount */}
       <Text style={styles.qrCardTitle}>{payment.title}</Text>
       <Text style={styles.qrCardAmount}>
-        Rs. {payment.amount}
-        {isPaid ? ` · Collected: Rs. ${payment.totalCollected}` : ''}
+        Rs. {payment.amount}{isPaid ? ` · Collected: Rs. ${payment.totalCollected}` : ''}
       </Text>
-
-      {/* Payer info */}
-      {hasPayers && (
+      {payment.payers && payment.payers.length > 0 && (
         <View style={styles.payerSection}>
           {payment.payers.slice(0, 3).map((payer, idx) => (
             <View key={idx} style={styles.payerRow}>
               <View style={styles.payerLeft}>
                 <Icon name="person-outline" size={14} color={colors.mutedForeground} />
                 <Text style={styles.payerName} numberOfLines={1}>
-                  {payer.studentName}
-                  {payer.studentRollNumber ? ` (${payer.studentRollNumber})` : ''}
+                  {payer.studentName}{payer.studentRollNumber ? ` (${payer.studentRollNumber})` : ''}
                 </Text>
               </View>
               <Text style={styles.payerDate}>
-                {new Date(payer.paidAt).toLocaleDateString('en-IN', {
-                  day: 'numeric', month: 'short',
-                })}, {new Date(payer.paidAt).toLocaleTimeString('en-IN', {
-                  hour: '2-digit', minute: '2-digit', hour12: true,
-                }).toLowerCase()}
+                {new Date(payer.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })},{' '}
+                {new Date(payer.paidAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase()}
               </Text>
             </View>
           ))}
@@ -89,99 +212,109 @@ function QRPaymentCard({ payment, colors, styles, onPress }: { payment: QRPaymen
   );
 }
 
+// ============================================================
+// MAIN SCREEN
+// ============================================================
+
 export default function StationeryHomeScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const navigation = useNavigation<any>();
 
-  const user = useAppSelector(s => s.auth.user);
-  const shopDetails = useAppSelector(s => s.user.shopDetails);
-  const qrPayments = useAppSelector(s => s.user.qrPayments);
+  const user         = useAppSelector(s => s.auth.user);
+  const shopDetails  = useAppSelector(s => s.user.shopDetails);
+  const qrPayments   = useAppSelector(s => s.user.qrPayments);
   const qrPaymentsLoading = useAppSelector(s => s.user.qrPaymentsLoading);
-  const balance = useAppSelector(s => s.user.balance);
+  const shopOrders   = useAppSelector(s => s.orders.shopOrders);
 
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [showProfile, setShowProfile] = useState(false);
-  const [showWallet, setShowWallet] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<QRPayment | null>(null);
-  const [showQRDisplay, setShowQRDisplay] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showNotifications, setShowNotifications] = useState(false);
+  const canGenerateQR = shopDetails?.canGenerateQR === true;
+
+  // ── Order dashboard state ──────────────────────────────────
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>('ready');
+  const [updatingId,  setUpdatingId]  = useState<string | null>(null);
+
+  const activeOrders = useMemo(() =>
+    shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status)),
+    [shopOrders]
+  );
+  const pendingOrders = useMemo(() => activeOrders.filter(o => o.status === 'pending'), [activeOrders]);
+  const readyOrders   = useMemo(() =>
+    activeOrders.filter(o => o.status === 'ready' || o.status === 'preparing' || o.status === 'partially_ready'),
+    [activeOrders]
+  );
+  const filteredOrderList = orderFilter === 'pending' ? pendingOrders : readyOrders;
+
+  const todayOrderRevenue = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return shopOrders
+      .filter(o => o.status === 'completed' && new Date(o.createdAt) >= today)
+      .reduce((s, o) => s + o.total, 0);
+  }, [shopOrders]);
+  const completedToday = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return shopOrders.filter(o => o.status === 'completed' && new Date(o.createdAt) >= today).length;
+  }, [shopOrders]);
+
+  // ── QR dashboard state ─────────────────────────────────────
+  const [refreshing,       setRefreshing]       = useState(false);
+  const [loading,          setLoading]          = useState(true);
+  const [showProfile,      setShowProfile]      = useState(false);
+  const [showWallet,       setShowWallet]       = useState(false);
+  const [showCreateModal,  setShowCreateModal]  = useState(false);
+  const [selectedPayment,  setSelectedPayment]  = useState<QRPayment | null>(null);
+  const [showQRDisplay,    setShowQRDisplay]    = useState(false);
+  const [showSearch,       setShowSearch]       = useState(false);
+  const [searchQuery,      setSearchQuery]      = useState('');
+  const [showNotifications,setShowNotifications]= useState(false);
 
   const avatarUri = resolveAvatarUrl(user?.avatarUrl);
 
-  // Filter QR payments by search query
-  // Only show active (unpaid) QR payments on dashboard — paid ones move to History
-  const activePayments = useMemo(() => qrPayments.filter(p => p.status === 'active'), [qrPayments]);
-
+  const activePayments   = useMemo(() => qrPayments.filter(p => p.status === 'active'), [qrPayments]);
   const filteredPayments = useMemo(() => {
     if (!searchQuery.trim()) return activePayments;
     const q = searchQuery.toLowerCase();
     return activePayments.filter(p => p.title.toLowerCase().includes(q));
   }, [activePayments, searchQuery]);
 
-  // Computed stats (based on all payments, not filtered)
-  const totalCollected = qrPayments.reduce((sum, p) => sum + (Number(p.totalCollected) || 0), 0);
-  const totalPaymentCount = qrPayments.reduce((sum, p) => sum + (Number(p.paidCount) || 0), 0);
-  const activeCount = qrPayments.filter(p => p.status === 'active').length;
-  const paidCount = qrPayments.filter(p => p.status !== 'active').length;
+  const totalCollected    = qrPayments.reduce((s, p) => s + (Number(p.totalCollected) || 0), 0);
+  const totalPaymentCount = qrPayments.reduce((s, p) => s + (Number(p.paidCount) || 0), 0);
+  const activeCount       = qrPayments.filter(p => p.status === 'active').length;
+  const paidCount         = qrPayments.filter(p => p.status !== 'active').length;
 
-  if (__DEV__) console.log('[StationeryHome] qrPayments:', qrPayments.length, 'totalCollected:', totalCollected, 'active:', activeCount);
+  const startOfToday = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const todayCollected = useMemo(() => {
+    let sum = 0;
+    for (const p of qrPayments)
+      for (const payer of (p.payers || []))
+        if (new Date(payer.paidAt) >= startOfToday) sum += Number(payer.amount) || 0;
+    return sum;
+  }, [qrPayments, startOfToday]);
+  const todayPaymentCount = useMemo(() => {
+    let count = 0;
+    for (const p of qrPayments)
+      for (const payer of (p.payers || []))
+        if (new Date(payer.paidAt) >= startOfToday) count += 1;
+    return count;
+  }, [qrPayments, startOfToday]);
 
-  const handleCardPress = (payment: QRPayment) => {
-    setSelectedPayment(payment);
-    setShowQRDisplay(true);
-  };
-
-  // Auto-dismiss QR display modal when payment is received (status changes to closed)
+  // Auto-dismiss QR display modal when payment is received
   useEffect(() => {
     if (!selectedPayment || !showQRDisplay) return;
     const fresh = qrPayments.find(p => p.id === selectedPayment.id);
     if (fresh && fresh.status !== 'active' && selectedPayment.status === 'active') {
-      setShowQRDisplay(false);
-      setSelectedPayment(null);
+      setShowQRDisplay(false); setSelectedPayment(null);
     }
   }, [qrPayments, selectedPayment, showQRDisplay]);
 
-  const canGenerateQR = shopDetails?.canGenerateQR === true;
-
-  // Today's stats — filter payers by today's date
-  const startOfToday = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
-
-  const todayCollected = useMemo(() => {
-    let sum = 0;
-    for (const p of qrPayments) {
-      for (const payer of (p.payers || [])) {
-        if (new Date(payer.paidAt) >= startOfToday) sum += Number(payer.amount) || 0;
-      }
-    }
-    return sum;
-  }, [qrPayments, startOfToday]);
-
-  const todayPaymentCount = useMemo(() => {
-    let count = 0;
-    for (const p of qrPayments) {
-      for (const payer of (p.payers || [])) {
-        if (new Date(payer.paidAt) >= startOfToday) count += 1;
-      }
-    }
-    return count;
-  }, [qrPayments, startOfToday]);
-
+  // ── Data fetch ─────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     try {
       await Promise.all([
         dispatch(fetchShopDetails()),
         dispatch(fetchQRPayments()),
         dispatch(fetchWalletBalance()),
+        dispatch(fetchActiveShopOrders()),
       ]);
     } finally {
       setLoading(false);
@@ -190,20 +323,18 @@ export default function StationeryHomeScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh wallet balance every time this tab gains focus
-  useFocusEffect(
-    useCallback(() => {
-      dispatch(fetchWalletBalance());
-      dispatch(fetchQRPayments());
-    }, [dispatch])
-  );
+  useFocusEffect(useCallback(() => {
+    dispatch(fetchWalletBalance());
+    dispatch(fetchQRPayments());
+    dispatch(fetchActiveShopOrders());
+  }, [dispatch]));
 
-  // Refresh on app resume (no polling — socket handles real-time updates)
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
+    const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
         dispatch(fetchQRPayments());
         dispatch(fetchWalletBalance());
+        dispatch(fetchActiveShopOrders());
       }
     });
     return () => sub.remove();
@@ -215,6 +346,42 @@ export default function StationeryHomeScreen() {
     setRefreshing(false);
   };
 
+  // ── Order actions ──────────────────────────────────────────
+  const handleAccept = useCallback(async (orderId: string) => {
+    setUpdatingId(orderId);
+    try {
+      await dispatch(acceptAllItems({ orderId })).unwrap();
+      dispatch(fetchActiveShopOrders());
+    } catch { Alert.alert('Error', 'Failed to accept order'); }
+    setUpdatingId(null);
+  }, [dispatch]);
+
+  const handleReject = useCallback(async (orderId: string) => {
+    Alert.alert('Reject Order', 'This will cancel the order and refund the student.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reject', style: 'destructive',
+        onPress: async () => {
+          setUpdatingId(orderId);
+          try {
+            await dispatch(rejectAllItems({ orderId })).unwrap();
+            dispatch(fetchActiveShopOrders());
+          } catch { Alert.alert('Error', 'Failed to reject order'); }
+          setUpdatingId(null);
+        },
+      },
+    ]);
+  }, [dispatch]);
+
+  const handleComplete = useCallback(async (orderId: string) => {
+    setUpdatingId(orderId);
+    try {
+      await dispatch(updateOrderStatus({ orderId, status: 'completed' })).unwrap();
+      dispatch(fetchActiveShopOrders());
+    } catch { Alert.alert('Error', 'Failed to complete order'); }
+    setUpdatingId(null);
+  }, [dispatch]);
+
   if (loading) {
     return (
       <ScreenWrapper>
@@ -225,185 +392,60 @@ export default function StationeryHomeScreen() {
     );
   }
 
-  return (
-    <ScreenWrapper>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Image
-            source={require('../../assets/icons/appicon.png')}
-            style={styles.logoImg}
-            resizeMode="contain"
-            accessibilityLabel="App logo"
-          />
-          <TouchableOpacity style={styles.walletPill} onPress={() => setShowWallet(true)} activeOpacity={0.8} accessibilityLabel="Open wallet" accessibilityRole="button">
-            <Icon name="briefcase-outline" size={13} color="#f97316" />
-            <Text style={styles.walletPillText}>Rs. {todayCollected}</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.headerIconBtn}
-            activeOpacity={0.7}
-            onPress={() => setShowSearch(!showSearch)}
-            accessibilityLabel="Toggle search"
-            accessibilityRole="button"
-          >
-            <Icon name="search" size={20} color={colors.mutedForeground} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerIconBtn}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('StationeryAnalytics')}
-            accessibilityLabel="View stationery analytics"
-            accessibilityRole="button"
-          >
-            <Icon name="time-outline" size={20} color={colors.mutedForeground} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.profileIcon} activeOpacity={0.7} onPress={() => setShowProfile(true)} accessibilityLabel="Open profile" accessibilityRole="button">
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.profileAvatarImg} accessibilityLabel="Profile avatar" />
-            ) : (
-              <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+  // ── Shared header ──────────────────────────────────────────
+  const header = (
+    <View style={styles.header}>
+      <View style={styles.headerLeft}>
+        <Image source={require('../../assets/icons/appicon.png')} style={styles.logoImg} resizeMode="contain" />
+        <TouchableOpacity style={styles.walletPill} onPress={() => setShowWallet(true)} activeOpacity={0.8}>
+          <Icon name={canGenerateQR ? 'briefcase-outline' : 'bag-outline'} size={13} color={canGenerateQR ? '#f97316' : colors.accent} />
+          <Text style={[styles.walletPillText, !canGenerateQR && { color: colors.accent }]}>
+            Rs. {canGenerateQR ? todayCollected : todayOrderRevenue}
+          </Text>
+        </TouchableOpacity>
       </View>
+      <View style={styles.headerRight}>
+        <TouchableOpacity style={styles.headerIconBtn} onPress={() => setShowSearch(!showSearch)} activeOpacity={0.7}>
+          <Icon name="search" size={20} color={colors.mutedForeground} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.headerIconBtn}
+          onPress={() => navigation.navigate('StationeryAnalytics')}
+          activeOpacity={0.7}>
+          <Icon name="time-outline" size={20} color={colors.mutedForeground} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.profileIcon} onPress={() => setShowProfile(true)} activeOpacity={0.7}>
+          {avatarUri
+            ? <Image source={{ uri: avatarUri }} style={styles.profileAvatarImg} />
+            : <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
+          }
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
-      {/* Search Bar */}
-      {showSearch && (
-        <View style={styles.searchBarRow}>
-          <View style={styles.searchBar}>
-            <Icon name="search" size={18} color={colors.mutedForeground} />
-            <TextInput
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search orders by number..."
-              placeholderTextColor={colors.mutedForeground}
-              autoFocus
-              accessibilityLabel="Search orders"
-            />
-          </View>
-          <TouchableOpacity
-            onPress={() => { setShowSearch(false); setSearchQuery(''); }}
-            activeOpacity={0.7}
-            accessibilityLabel="Cancel search"
-            accessibilityRole="button"
-          >
-            <Text style={styles.searchCancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+  const searchBar = showSearch && (
+    <View style={styles.searchBarRow}>
+      <View style={styles.searchBar}>
+        <Icon name="search" size={18} color={colors.mutedForeground} />
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={canGenerateQR ? 'Search payments...' : 'Search by token or order #...'}
+          placeholderTextColor={colors.mutedForeground}
+          autoFocus
+        />
+      </View>
+      <TouchableOpacity onPress={() => { setShowSearch(false); setSearchQuery(''); }} activeOpacity={0.7}>
+        <Text style={styles.searchCancelText}>Cancel</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Total Collected Card */}
-        {canGenerateQR && (
-          <LinearGradient
-            colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.totalCard}
-          >
-            <View style={styles.totalCardHeader}>
-              <Icon name="logo-usd" size={18} color="#10b981" />
-              <Text style={styles.totalCardLabel}>Today's Collection</Text>
-            </View>
-            <Text style={styles.totalCardAmount}>Rs. {todayCollected}</Text>
-            <Text style={styles.totalCardSub}>{todayPaymentCount} payments today</Text>
-          </LinearGradient>
-        )}
-
-        {/* QR Payment Overview */}
-        {canGenerateQR && (
-          <LinearGradient
-            colors={['rgba(139,92,246,0.15)', 'rgba(139,92,246,0.05)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.overviewCard}
-          >
-            <View style={styles.overviewHeader}>
-              <Text style={styles.overviewTitle}>QR PAYMENT OVERVIEW</Text>
-              <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} accessibilityLabel="Refresh payments" accessibilityRole="button">
-                <Icon name="refresh-outline" size={18} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.statsRow}>
-              <StatItem value={qrPayments.length} label="Total QR" color="#8b5cf6" />
-              <StatItem value={paidCount} label="Paid" color="#22c55e" />
-              <StatItem value={activeCount} label="Active" color="#3b82f6" />
-              <View style={{ flex: 1, alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#f97316' }}>₹</Text>
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: '#f97316' }}>{totalCollected}</Text>
-                </View>
-                <Text style={{ fontSize: 10, fontWeight: '500', color: colors.mutedForeground, marginTop: 2 }}>Collected</Text>
-              </View>
-            </View>
-          </LinearGradient>
-        )}
-
-        {/* QR Payments List Section */}
-        {canGenerateQR && (
-          <View style={styles.qrSection}>
-            <View style={styles.qrSectionHeader}>
-              <View style={styles.qrSectionTitleRow}>
-                <Icon name="qr-code-outline" size={20} color={colors.foreground} />
-                <Text style={styles.qrSectionTitle}>QR Payments</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.createBtn}
-                onPress={() => setShowCreateModal(true)}
-                activeOpacity={0.7}
-                accessibilityLabel="Create QR payment"
-                accessibilityRole="button"
-              >
-                <Icon name="add" size={16} color="#fff" />
-                <Text style={styles.createBtnText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-
-            {qrPaymentsLoading ? (
-              <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />
-            ) : filteredPayments.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Icon name="qr-code-outline" size={40} color={colors.mutedForeground} />
-                <Text style={styles.emptyText}>
-                  {searchQuery ? 'No matching payments' : 'No active QR payments'}
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  {searchQuery ? 'Try a different search term' : 'Tap "+ Create" to generate your first QR payment'}
-                </Text>
-              </View>
-            ) : (
-              filteredPayments.map(payment => (
-                <QRPaymentCard
-                  key={payment.id}
-                  payment={payment}
-                  colors={colors}
-                  styles={styles}
-                  onPress={() => handleCardPress(payment)}
-                />
-              ))
-            )}
-          </View>
-        )}
-
-        {/* When QR is not enabled */}
-        {!canGenerateQR && (
-          <View style={styles.disabledState}>
-            <Icon name="qr-code-outline" size={48} color={colors.mutedForeground} />
-            <Text style={styles.disabledTitle}>QR Payments Not Enabled</Text>
-            <Text style={styles.disabledSubtext}>Contact your admin to enable QR payments for this shop.</Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Modals */}
+  // ── Modals (shared) ────────────────────────────────────────
+  const modals = (
+    <>
       <OwnerProfileDropdown
         visible={showProfile}
         onClose={() => setShowProfile(false)}
@@ -418,189 +460,341 @@ export default function StationeryHomeScreen() {
         payment={selectedPayment}
         onClose={() => { setShowQRDisplay(false); setSelectedPayment(null); }}
       />
+    </>
+  );
+
+  // ============================================================
+  // ORDER DASHBOARD (canGenerateQR === false)
+  // ============================================================
+  if (!canGenerateQR) {
+    const filteredBySearch = searchQuery.trim()
+      ? filteredOrderList.filter(o =>
+          o.pickupToken?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          o.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : filteredOrderList;
+
+    return (
+      <ScreenWrapper>
+        {header}
+        {searchBar}
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Stats card */}
+          <LinearGradient
+            colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={styles.totalCard}
+          >
+            <View style={styles.totalCardHeader}>
+              <Icon name="cube-outline" size={18} color={colors.accent} />
+              <Text style={styles.totalCardLabel}>Today's Orders</Text>
+            </View>
+            <Text style={styles.totalCardAmount}>Rs. {todayOrderRevenue}</Text>
+            <Text style={styles.totalCardSub}>{completedToday} completed · {activeOrders.length} active</Text>
+          </LinearGradient>
+
+          {/* Filter tabs */}
+          <View style={styles.filterRow}>
+            {([
+              { key: 'pending' as OrderFilter, label: 'New',   count: pendingOrders.length },
+              { key: 'ready'   as OrderFilter, label: 'Ready', count: readyOrders.length   },
+            ] as const).map(f => (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterTab, orderFilter === f.key && styles.filterTabActive]}
+                onPress={() => { lightHaptic(); setOrderFilter(f.key); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.filterLabel, orderFilter === f.key && styles.filterLabelActive]}>
+                  {f.label} ({f.count})
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Order cards */}
+          {filteredBySearch.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Icon name="checkmark-circle-outline" size={48} color={colors.mutedForeground} />
+              <Text style={styles.emptyTitle}>No {orderFilter} orders</Text>
+              <Text style={styles.emptySubtext}>Orders appear here when available</Text>
+            </View>
+          ) : (
+            filteredBySearch.map(order => {
+              const cfg = getSwipeCfg(orderFilter, order, handleAccept, handleReject, handleComplete);
+              return (
+                <SwipeableOrderCard
+                  key={order.id}
+                  order={order}
+                  swipeRight={cfg.right}
+                  swipeLeft={cfg.left}
+                  colors={colors}
+                  styles={styles}
+                  isUpdating={updatingId === order.id}
+                />
+              );
+            })
+          )}
+
+          <View style={{ height: 80 }} />
+        </ScrollView>
+        {modals}
+      </ScreenWrapper>
+    );
+  }
+
+  // ============================================================
+  // QR PAYMENT DASHBOARD (canGenerateQR === true)
+  // ============================================================
+  return (
+    <ScreenWrapper>
+      {header}
+      {searchBar}
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Today's Collection Card */}
+        <LinearGradient
+          colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={styles.totalCard}
+        >
+          <View style={styles.totalCardHeader}>
+            <Icon name="logo-usd" size={18} color="#10b981" />
+            <Text style={styles.totalCardLabel}>Today's Collection</Text>
+          </View>
+          <Text style={styles.totalCardAmount}>Rs. {todayCollected}</Text>
+          <Text style={styles.totalCardSub}>{todayPaymentCount} payments today</Text>
+        </LinearGradient>
+
+        {/* QR Overview */}
+        <LinearGradient
+          colors={['rgba(139,92,246,0.15)', 'rgba(139,92,246,0.05)']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={styles.overviewCard}
+        >
+          <View style={styles.overviewHeader}>
+            <Text style={styles.overviewTitle}>QR PAYMENT OVERVIEW</Text>
+            <TouchableOpacity onPress={onRefresh} activeOpacity={0.7}>
+              <Icon name="refresh-outline" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.statsRow}>
+            <StatItem value={qrPayments.length} label="Total QR"  color="#8b5cf6" />
+            <StatItem value={paidCount}          label="Paid"      color="#22c55e" />
+            <StatItem value={activeCount}        label="Active"    color="#3b82f6" />
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#f97316' }}>₹</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#f97316' }}>{totalCollected}</Text>
+              </View>
+              <Text style={{ fontSize: 10, fontWeight: '500', color: colors.mutedForeground, marginTop: 2 }}>Collected</Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* QR Payments List */}
+        <View style={styles.qrSection}>
+          <View style={styles.qrSectionHeader}>
+            <View style={styles.qrSectionTitleRow}>
+              <Icon name="qr-code-outline" size={20} color={colors.foreground} />
+              <Text style={styles.qrSectionTitle}>QR Payments</Text>
+            </View>
+            <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreateModal(true)} activeOpacity={0.7}>
+              <Icon name="add" size={16} color="#fff" />
+              <Text style={styles.createBtnText}>Create</Text>
+            </TouchableOpacity>
+          </View>
+
+          {qrPaymentsLoading ? (
+            <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />
+          ) : filteredPayments.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Icon name="qr-code-outline" size={40} color={colors.mutedForeground} />
+              <Text style={styles.emptyTitle}>{searchQuery ? 'No matching payments' : 'No active QR payments'}</Text>
+              <Text style={styles.emptySubtext}>{searchQuery ? 'Try a different search term' : 'Tap "+ Create" to generate your first QR payment'}</Text>
+            </View>
+          ) : (
+            filteredPayments.map(payment => (
+              <QRPaymentCard
+                key={payment.id}
+                payment={payment}
+                colors={colors}
+                styles={styles}
+                onPress={() => { setSelectedPayment(payment); setShowQRDisplay(true); }}
+              />
+            ))
+          )}
+        </View>
+      </ScrollView>
+      {modals}
     </ScreenWrapper>
   );
 }
+
+// ============================================================
+// STYLES
+// ============================================================
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   // Header
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 10,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logoImg: { width: 32, height: 32, borderRadius: 16 },
   walletPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16,
     backgroundColor: 'rgba(249,115,22,0.12)',
   },
   walletPillText: { fontSize: 12, fontWeight: '700', color: '#f97316' },
   headerIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.muted,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.muted, justifyContent: 'center', alignItems: 'center',
   },
   profileIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.accent, justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
   },
   profileAvatarImg: { width: 36, height: 36, borderRadius: 18 },
   profileInitial: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  // Search bar
+  // Search
   searchBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, marginBottom: 8,
   },
   searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 24,
-    backgroundColor: colors.muted,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: 24, backgroundColor: colors.muted,
+    borderWidth: 1, borderColor: colors.border,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.foreground,
-    padding: 0,
-  },
-  searchCancelText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.foreground, padding: 0 },
+  searchCancelText: { fontSize: 14, fontWeight: '600', color: colors.foreground },
 
-  // Scroll content
   scrollContent: { paddingHorizontal: 16, paddingBottom: 100, gap: 16 },
 
-  // Total Collected Card
+  // Stats card
   totalCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.25)',
+    borderRadius: 16, padding: 18,
+    borderWidth: 1, borderColor: 'rgba(16,185,129,0.25)',
   },
   totalCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  totalCardLabel: { fontSize: 13, fontWeight: '500', color: colors.mutedForeground },
+  totalCardLabel:  { fontSize: 13, fontWeight: '500', color: colors.mutedForeground },
   totalCardAmount: { fontSize: 32, fontWeight: '900', color: colors.foreground, marginBottom: 4 },
-  totalCardSub: { fontSize: 12, fontWeight: '500', color: '#10b981' },
+  totalCardSub:    { fontSize: 12, fontWeight: '500', color: '#10b981' },
 
-  // Overview Card
+  // Filter tabs (order dashboard)
+  filterRow: { flexDirection: 'row', gap: 10 },
+  filterTab: {
+    flex: 1, paddingVertical: 10, borderRadius: 12,
+    backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center',
+  },
+  filterTabActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  filterLabel:     { fontSize: 13, fontWeight: '600', color: colors.mutedForeground },
+  filterLabelActive: { color: '#fff' },
+
+  // Swipeable card
+  swipeContainer: { position: 'relative', marginBottom: 10 },
+  swipeBg: {
+    position: 'absolute', inset: 0,
+    borderRadius: 14, flexDirection: 'row', alignItems: 'center',
+  },
+  swipeBgLeft:  { flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: 20, gap: 8 },
+  swipeBgRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 20, gap: 8 },
+  swipeBgText:  { fontSize: 14, fontWeight: '700', color: '#fff' },
+  orderCard: {
+    backgroundColor: colors.card, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  updatingOverlay: {
+    position: 'absolute', inset: 0, zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.1)', justifyContent: 'center', alignItems: 'center',
+  },
+  cardHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  orderToken:    { fontSize: 13, fontWeight: '800', color: colors.foreground },
+  orderTime:     { fontSize: 12, color: colors.mutedForeground },
+  orderCustomer: { flex: 1, fontSize: 12, color: colors.mutedForeground },
+  orderTotal:    { fontSize: 14, fontWeight: '800', color: colors.accent },
+  itemsList:     { paddingHorizontal: 14, paddingVertical: 8, gap: 4 },
+  itemRow:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemQty:       { fontSize: 12, fontWeight: '700', color: colors.accent, width: 24 },
+  itemName:      { flex: 1, fontSize: 13, color: colors.foreground },
+  itemPrice:     { fontSize: 12, color: colors.mutedForeground },
+  swipeHint:     { fontSize: 10, color: colors.mutedForeground, textAlign: 'center', paddingBottom: 8 },
+
+  // Empty state
+  emptyState:  { alignItems: 'center', paddingVertical: 40, gap: 8 },
+  emptyTitle:  { fontSize: 15, fontWeight: '600', color: colors.foreground },
+  emptySubtext:{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center' },
+
+  // QR Overview card
   overviewCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(139,92,246,0.25)',
+    borderRadius: 16, padding: 18,
+    borderWidth: 1, borderColor: 'rgba(139,92,246,0.25)',
   },
   overviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
   },
   overviewTitle: { fontSize: 11, fontWeight: '800', color: colors.mutedForeground, letterSpacing: 1 },
   statsRow: { flexDirection: 'row', alignItems: 'center' },
 
-  // QR Payments Section
+  // QR section
   qrSection: { marginTop: 4 },
   qrSectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14,
   },
   qrSectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qrSectionTitle: { fontSize: 17, fontWeight: '800', color: colors.foreground },
   createBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#3b82f6', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
   },
   createBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
   // QR Card
   qrCard: {
-    backgroundColor: colors.muted,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.muted, borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: colors.border,
   },
   qrCardBadges: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   qrTypeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(6,182,212,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(6,182,212,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
   },
   qrTypeBadgeText: { fontSize: 9, fontWeight: '700', color: '#06b6d4' },
   statusBadgePaid: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(34,197,94,0.12)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
   },
   paidBadgeText: { fontSize: 9, fontWeight: '700', color: '#22c55e' },
-  qrCardTitle: { fontSize: 15, fontWeight: '700', color: colors.foreground, marginBottom: 2 },
-  qrCardAmount: { fontSize: 13, fontWeight: '500', color: colors.mutedForeground, marginBottom: 0 },
+  qrCardTitle:  { fontSize: 15, fontWeight: '700', color: colors.foreground, marginBottom: 2 },
+  qrCardAmount: { fontSize: 13, fontWeight: '500', color: colors.mutedForeground },
   payerSection: { marginTop: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
   payerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 3,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3,
   },
   payerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   payerName: { fontSize: 13, fontWeight: '600', color: colors.foreground, flex: 1 },
   payerDate: { fontSize: 11, color: colors.mutedForeground },
   morePayersText: { fontSize: 11, color: colors.mutedForeground, marginTop: 4 },
-
-  // Empty state
-  emptyState: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-  emptyText: { fontSize: 15, fontWeight: '600', color: colors.foreground },
-  emptySubtext: { fontSize: 12, color: colors.mutedForeground, textAlign: 'center' },
-
-  // Disabled state (QR not enabled)
-  disabledState: { alignItems: 'center', paddingVertical: 80, gap: 12 },
-  disabledTitle: { fontSize: 17, fontWeight: '700', color: colors.foreground },
-  disabledSubtext: { fontSize: 13, color: colors.mutedForeground, textAlign: 'center', paddingHorizontal: 40 },
 });

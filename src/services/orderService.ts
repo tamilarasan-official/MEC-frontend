@@ -130,6 +130,11 @@ const orderService = {
     const d = res.data.data;
     return mapOrder(d?.order || d);
   },
+  createStationeryItemOrder: async (data: { shopId: string; items: { foodItemId: string; quantity: number }[]; notes?: string }): Promise<Order> => {
+    const res = await api.post('/orders', data);
+    const d = res.data.data;
+    return mapOrder(d?.order || d);
+  },
 };
 
 export default orderService;

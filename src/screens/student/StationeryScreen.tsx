@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  RefreshControl, ActivityIndicator, TextInput, Switch,
-  KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList,
+  Image, ActivityIndicator, Dimensions, Animated,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList, Order } from '../../types';
+import { StudentHomeStackParamList, FoodItem, Order } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
+import { fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
+import { addToCart, decrementQuantity, selectCartItems } from '../../store/slices/cartSlice';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -14,17 +15,61 @@ import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import orderService from '../../services/orderService';
+import { resolveImageUrl } from '../../utils/imageUrl';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Stationery'>;
 
-const PAPER_SIZES = [
-  { id: 'A4', name: 'A4', multiplier: 1 },
-  { id: 'A3', name: 'A3', multiplier: 2 },
-  { id: 'Letter', name: 'Letter', multiplier: 1 },
-  { id: 'Legal', name: 'Legal', multiplier: 1.2 },
-] as const;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_GAP = 12;
+const CARD_WIDTH = (SCREEN_WIDTH - 32 - CARD_GAP) / 2;
 
-type PaperSize = typeof PAPER_SIZES[number]['id'];
+// ── Item Card (memoized) ─────────────────────────────────────────────────────
+
+interface ItemCardProps {
+  item: FoodItem;
+  quantity: number;
+  onAdd: (item: FoodItem) => void;
+  onDecrement: (itemId: string) => void;
+  colors: ThemeColors;
+  styles: ReturnType<typeof createStyles>;
+}
+
+const ItemCard = React.memo(({ item, quantity, onAdd, onDecrement, colors, styles }: ItemCardProps) => {
+  const imageUri = resolveImageUrl(item.image);
+
+  return (
+    <View style={styles.card}>
+      {imageUri ? (
+        <Image source={{ uri: imageUri }} style={styles.cardImage} resizeMode="cover" />
+      ) : (
+        <View style={[styles.cardImage, styles.cardImagePlaceholder]} />
+      )}
+      <View style={styles.cardBody}>
+        <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
+        <View style={styles.cardFooter}>
+          <Text style={styles.cardPrice}>₹{item.price}</Text>
+          {quantity === 0 ? (
+            <TouchableOpacity style={styles.addBtn} onPress={() => onAdd(item)} activeOpacity={0.8}>
+              <Icon name="add" size={18} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.qtyRow}>
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => onDecrement(item.id)} activeOpacity={0.8}>
+                <Icon name="remove" size={14} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.qtyText}>{quantity}</Text>
+              <TouchableOpacity style={styles.qtyBtn} onPress={() => onAdd(item)} activeOpacity={0.8}>
+                <Icon name="add" size={14} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+});
+
+// ── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function StationeryScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
@@ -35,87 +80,103 @@ export default function StationeryScreen({ route, navigation }: Props) {
     navigation.goBack();
     return null;
   }
+
   const dispatch = useAppDispatch();
+  const cartItems = useAppSelector(selectCartItems);
+  const { menuItems: shopMenu, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
   const user = useAppSelector(s => s.auth.user);
+  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Print tab form
-  const [pageCount, setPageCount] = useState(1);
-  const [copies, setCopies] = useState(1);
-  const [colorType, setColorType] = useState<'bw' | 'color'>('bw');
-  const [paperSize, setPaperSize] = useState<PaperSize>('A4');
-  const [doubleSided, setDoubleSided] = useState(false);
-  const [specialInstructions, setSpecialInstructions] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
   const submittingRef = useRef(false);
-  const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
 
-  // Keep QR modal order in sync with Redux so real-time status updates reflect immediately
+  // Cart bar animation
+  const cartBarAnim = useRef(new Animated.Value(0)).current;
+  const prevItemCount = useRef(0);
+
+  const cartShopItems = cartItems.filter(c => c.item.shopId === shopId);
+  const cartCount = cartShopItems.reduce((s, c) => s + c.quantity, 0);
+  const cartSubtotal = cartShopItems.reduce((s, c) => s + c.item.price * c.quantity, 0);
+
+  useEffect(() => {
+    const hasItems = cartCount > 0;
+    const hadItems = prevItemCount.current > 0;
+    if (hasItems && !hadItems) {
+      Animated.spring(cartBarAnim, { toValue: 1, friction: 8, tension: 60, useNativeDriver: true }).start();
+    } else if (!hasItems && hadItems) {
+      Animated.timing(cartBarAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    }
+    prevItemCount.current = cartCount;
+  }, [cartCount, cartBarAnim]);
+
+  // Keep QR card in sync with Redux live order updates
   useEffect(() => {
     if (!createdOrder) return;
     const fresh = activeOrders.find(o => o.id === createdOrder.id)
       || allOrders.find(o => o.id === createdOrder.id);
     if (!fresh) return;
-    const statusChanged = fresh.status !== createdOrder.status;
-    const itemsChanged = fresh.items.some((item, i) =>
-      createdOrder.items[i] && item.itemStatus !== createdOrder.items[i].itemStatus
-    );
-    if (statusChanged || itemsChanged) {
-      // Auto-dismiss QR card when order is completed or cancelled
-      if (fresh.status === 'completed' || fresh.status === 'cancelled') {
-        setCreatedOrder(null);
-      } else {
-        setCreatedOrder(fresh);
-      }
+    if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+      setCreatedOrder(null);
+    } else if (fresh.status !== createdOrder.status) {
+      setCreatedOrder(fresh);
     }
   }, [activeOrders, allOrders, createdOrder]);
 
+  const loadMenu = useCallback(() => {
+    dispatch(fetchShopMenu({ shopId }));
+    dispatch(fetchShopCategories(shopId));
+  }, [dispatch, shopId]);
+
+  useEffect(() => { loadMenu(); }, [loadMenu]);
+
   const onRefresh = async () => {
     setRefreshing(true);
+    await Promise.all([
+      dispatch(fetchShopMenu({ shopId })),
+      dispatch(fetchShopCategories(shopId)),
+    ]);
     setRefreshing(false);
   };
 
-  const calculateTotal = () => {
-    const basePrice = colorType === 'bw' ? 1 : 5;
-    const sizeMultiplier = PAPER_SIZES.find(s => s.id === paperSize)?.multiplier || 1;
-    const doubleSidedMultiplier = doubleSided ? 1.5 : 1;
-    return Math.ceil(basePrice * sizeMultiplier * doubleSidedMultiplier * pageCount * copies);
-  };
+  // Build sorted category list
+  const allCats = useMemo(() => {
+    return categories.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean) as string[];
+  }, [categories]);
 
-  const handleSubmitPrint = async () => {
-    if (submittingRef.current) return;
+  // Filter items
+  const filteredItems = useMemo(() => {
+    return shopMenu.filter((item: FoodItem) => {
+      const matchesCat = !selectedCategory || item.category === selectedCategory;
+      return matchesCat && item.isAvailable;
+    });
+  }, [shopMenu, selectedCategory]);
+
+  const getQty = useCallback((id: string) => {
+    return cartItems.find(c => c.item.id === id)?.quantity ?? 0;
+  }, [cartItems]);
+
+  const handleAdd = useCallback((item: FoodItem) => {
+    dispatch(addToCart({ item, shopId, shopName: shopName || '' }));
+  }, [dispatch, shopId, shopName]);
+
+  const handleDecrement = useCallback((itemId: string) => {
+    dispatch(decrementQuantity(itemId));
+  }, [dispatch]);
+
+  const handleCheckout = async () => {
+    if (submittingRef.current || cartCount === 0) return;
     submittingRef.current = true;
+    setSubmitError(null);
+    setIsSubmitting(true);
     try {
-      const total = calculateTotal();
-      const balance = user?.balance || 0;
-      if (balance < total) {
-        setSubmitError(`Insufficient balance. Required: Rs. ${total}, Available: Rs. ${balance}`);
-        return;
-      }
-      setSubmitError(null);
-      setIsSubmitting(true);
-      const order = await orderService.createStationeryOrder({
-        shopId,
-        pageCount,
-        copies,
-        colorType,
-        paperSize,
-        doubleSided,
-        specialInstructions: specialInstructions.trim() || undefined,
-      });
+      const items = cartShopItems.map(c => ({ foodItemId: c.item.id, quantity: c.quantity }));
+      const order = await orderService.createStationeryItemOrder({ shopId, items });
       setCreatedOrder(order);
       dispatch(fetchWalletBalance());
-      setPageCount(1);
-      setCopies(1);
-      setColorType('bw');
-      setPaperSize('A4');
-      setDoubleSided(false);
-      setSpecialInstructions('');
     } catch (e: any) {
       setSubmitError(e?.response?.data?.message || 'Failed to place order. Please try again.');
     } finally {
@@ -124,273 +185,128 @@ export default function StationeryScreen({ route, navigation }: Props) {
     }
   };
 
+  const renderItem = useCallback(({ item, index }: { item: FoodItem; index: number }) => (
+    <View style={index % 2 === 0 ? styles.cardLeft : styles.cardRight}>
+      <ItemCard
+        item={item}
+        quantity={getQty(item.id)}
+        onAdd={handleAdd}
+        onDecrement={handleDecrement}
+        colors={colors}
+        styles={styles}
+      />
+    </View>
+  ), [getQty, handleAdd, handleDecrement, colors, styles]);
+
+  const cartBarTranslate = cartBarAnim.interpolate({
+    inputRange: [0, 1], outputRange: [120, 0],
+  });
+
   return (
     <ScreenWrapper>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7} accessibilityLabel="Go back" accessibilityRole="button">
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
             <Icon name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <View style={styles.headerIconWrap}>
-              <Icon name="document-text-outline" size={18} color={colors.orange500} />
-            </View>
-            <Text style={styles.headerTitle}>{shopName}</Text>
-          </View>
+          <Text style={styles.headerTitle}>{shopName || 'Stationery'}</Text>
           <View style={styles.backBtn} />
         </View>
 
-        {/* ── Print & Xerox ── */}
-        {(
-          <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <ScrollView
-              contentContainerStyle={styles.printScroll}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled">
-
-              {/* Section header */}
-              <View style={styles.printHeader}>
-                <View style={styles.printIconBox}>
-                  <Icon name="document-text-outline" size={26} color={colors.orange500} />
-                </View>
-                <View>
-                  <Text style={styles.printTitle}>Stationery Request</Text>
-                  <Text style={styles.printSubtitle}>Print or photocopy documents</Text>
-                </View>
-              </View>
-
-              {/* Balance card */}
-              <View style={styles.balanceCard}>
-                <Text style={styles.balanceLabel}>Available Balance</Text>
-                <Text style={styles.balanceValue}>Rs. {user?.balance || 0}</Text>
-              </View>
-
-              {/* Pages */}
-              <Text style={styles.fieldLabel}>Number of Pages</Text>
-              <View style={styles.counterRow}>
-                <Text style={styles.counterTitle}>Pages</Text>
-                <View style={styles.counterControls}>
-                  <TouchableOpacity
-                    style={[styles.counterBtn, pageCount <= 1 && styles.counterBtnDisabled]}
-                    onPress={() => setPageCount(p => Math.max(1, p - 1))}
-                    disabled={pageCount <= 1}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Decrease page count"
-                    accessibilityRole="button">
-                    <Icon name="remove" size={20} color={pageCount <= 1 ? colors.textMuted : colors.text} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.counterInput}
-                    value={String(pageCount)}
-                    onChangeText={v => setPageCount(Math.max(1, Math.min(1000, parseInt(v) || 1)))}
-                    keyboardType="number-pad"
-                    selectTextOnFocus
-                    accessibilityLabel="Page count"
-                  />
-                  <TouchableOpacity
-                    style={styles.counterBtnAdd}
-                    onPress={() => setPageCount(p => Math.min(1000, p + 1))}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Increase page count"
-                    accessibilityRole="button">
-                    <Icon name="add" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Copies */}
-              <Text style={styles.fieldLabel}>Number of Copies</Text>
-              <View style={styles.counterRow}>
-                <Text style={styles.counterTitle}>Copies</Text>
-                <View style={styles.counterControls}>
-                  <TouchableOpacity
-                    style={[styles.counterBtn, copies <= 1 && styles.counterBtnDisabled]}
-                    onPress={() => setCopies(c => Math.max(1, c - 1))}
-                    disabled={copies <= 1}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Decrease copy count"
-                    accessibilityRole="button">
-                    <Icon name="remove" size={20} color={copies <= 1 ? colors.textMuted : colors.text} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.counterInput}
-                    value={String(copies)}
-                    onChangeText={v => setCopies(Math.max(1, Math.min(100, parseInt(v) || 1)))}
-                    keyboardType="number-pad"
-                    selectTextOnFocus
-                    accessibilityLabel="Copy count"
-                  />
-                  <TouchableOpacity
-                    style={styles.counterBtnAdd}
-                    onPress={() => setCopies(c => Math.min(100, c + 1))}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Increase copy count"
-                    accessibilityRole="button">
-                    <Icon name="add" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Print Type */}
-              <Text style={styles.fieldLabel}>Print Type</Text>
-              <View style={styles.printTypeRow}>
-                <TouchableOpacity
-                  style={[styles.printTypeBtn, colorType === 'bw' && styles.printTypeBtnActive]}
-                  onPress={() => setColorType('bw')}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Black and White print"
-                  accessibilityRole="button">
-                  <Text style={[styles.printTypeName, colorType === 'bw' && styles.printTypeNameActive]}>
-                    Black & White
-                  </Text>
-                  <Text style={styles.printTypePrice}>Rs. 1 / page</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.printTypeBtn, colorType === 'color' && styles.printTypeBtnActive]}
-                  onPress={() => setColorType('color')}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Color print"
-                  accessibilityRole="button">
-                  <Text style={[styles.printTypeName, colorType === 'color' && styles.printTypeNameActive]}>
-                    Color
-                  </Text>
-                  <Text style={styles.printTypePrice}>Rs. 5 / page</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Paper Size */}
-              <Text style={styles.fieldLabel}>Paper Size</Text>
-              <View style={styles.paperSizeRow}>
-                {PAPER_SIZES.map(size => (
-                  <TouchableOpacity
-                    key={size.id}
-                    style={[styles.paperSizeBtn, paperSize === size.id && styles.paperSizeBtnActive]}
-                    onPress={() => setPaperSize(size.id)}
-                    activeOpacity={0.7}
-                    accessibilityLabel={`${size.name} paper size`}
-                    accessibilityRole="button">
-                    <Text style={[styles.paperSizeText, paperSize === size.id && styles.paperSizeTextActive]}>
-                      {size.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Double Sided */}
-              <View style={styles.doubleSidedRow}>
-                <View>
-                  <Text style={styles.doubleSidedTitle}>Double Sided</Text>
-                  <Text style={styles.doubleSidedSub}>Print on both sides (1.5x price)</Text>
-                </View>
-                <Switch
-                  value={doubleSided}
-                  onValueChange={setDoubleSided}
-                  trackColor={{ false: colors.muted, true: colors.orange500 }}
-                  thumbColor="#fff"
-                  accessibilityLabel="Toggle double sided"
-                  accessibilityRole="switch"
-                />
-              </View>
-
-              {/* Special Instructions */}
-              <Text style={styles.fieldLabel}>Special Instructions (Optional)</Text>
-              <TextInput
-                style={styles.instructionsInput}
-                value={specialInstructions}
-                onChangeText={setSpecialInstructions}
-                placeholder="Any special requirements..."
-                placeholderTextColor={colors.textMuted}
-                multiline
-                maxLength={500}
-                textAlignVertical="top"
-                accessibilityLabel="Special instructions"
-              />
-
-              {/* Error */}
-              {submitError ? (
-                <View style={styles.errorBanner}>
-                  <Icon name="alert-circle-outline" size={18} color={colors.destructive} />
-                  <Text style={styles.errorText}>{submitError}</Text>
-                </View>
-              ) : null}
-
-              {/* Price Breakdown */}
-              <View style={styles.breakdown}>
-                <View style={styles.breakdownRow}>
-                  <Text style={styles.breakdownLabel}>
-                    Base Price ({colorType === 'bw' ? 'B&W' : 'Color'})
-                  </Text>
-                  <Text style={styles.breakdownValue}>Rs. {colorType === 'bw' ? 1 : 5} / page</Text>
-                </View>
-                {(paperSize === 'A3' || paperSize === 'Legal') && (
-                  <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>Paper Size ({paperSize})</Text>
-                    <Text style={styles.breakdownValue}>
-                      x{PAPER_SIZES.find(s => s.id === paperSize)?.multiplier}
-                    </Text>
-                  </View>
-                )}
-                {doubleSided && (
-                  <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>Double Sided</Text>
-                    <Text style={styles.breakdownValue}>x1.5</Text>
-                  </View>
-                )}
-                <View style={styles.breakdownRow}>
-                  <Text style={styles.breakdownLabel}>Pages × Copies</Text>
-                  <Text style={styles.breakdownValue}>{pageCount} × {copies}</Text>
-                </View>
-              </View>
-
-              {/* Summary & Submit */}
-              <View style={styles.summaryRow}>
-                <View>
-                  <Text style={styles.summaryLabel}>Total Pages</Text>
-                  <Text style={styles.summaryPages}>{pageCount * copies} pages</Text>
-                </View>
-                <View style={styles.summaryRight}>
-                  <Text style={styles.summaryLabel}>Total Amount</Text>
-                  <Text style={styles.summaryAmount}>Rs. {calculateTotal()}</Text>
-                </View>
-              </View>
-
+        {/* Category pills */}
+        {allCats.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillsRow}
+            style={styles.pillsScroll}>
+            <TouchableOpacity
+              style={[styles.pill, !selectedCategory && styles.pillActive]}
+              onPress={() => setSelectedCategory(null)}
+              activeOpacity={0.8}>
+              <Text style={[styles.pillText, !selectedCategory && styles.pillTextActive]}>All</Text>
+            </TouchableOpacity>
+            {allCats.map(cat => (
               <TouchableOpacity
-                style={[styles.submitBtn, isSubmitting && styles.submitBtnDisabled]}
-                onPress={handleSubmitPrint}
-                disabled={isSubmitting}
-                activeOpacity={0.8}
-                accessibilityLabel="Place stationery order"
-                accessibilityRole="button">
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Icon name="print-outline" size={20} color="#fff" />
-                    <Text style={styles.submitBtnText}>Place Stationery Order</Text>
-                  </>
-                )}
+                key={cat}
+                style={[styles.pill, selectedCategory === cat && styles.pillActive]}
+                onPress={() => setSelectedCategory(cat)}
+                activeOpacity={0.8}>
+                <Text style={[styles.pillText, selectedCategory === cat && styles.pillTextActive]}>{cat}</Text>
               </TouchableOpacity>
-
-              <View style={styles.printBottomSpacer} />
-            </ScrollView>
-          </KeyboardAvoidingView>
+            ))}
+          </ScrollView>
         )}
 
-      </View>
+        {/* Error banner */}
+        {submitError && (
+          <View style={styles.errorBanner}>
+            <Icon name="alert-circle-outline" size={16} color={colors.destructive} />
+            <Text style={styles.errorText}>{submitError}</Text>
+          </View>
+        )}
 
-      {/* Order QR Modal after successful print order */}
-      {createdOrder && (
-        <OrderQRCard order={createdOrder} onClose={() => setCreatedOrder(null)} />
-      )}
+        {/* Items grid */}
+        {menuLoading && shopMenu.length === 0 ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : filteredItems.length === 0 ? (
+          <View style={styles.center}>
+            <Icon name="cube-outline" size={48} color={colors.textMuted} />
+            <Text style={styles.emptyTitle}>No items found</Text>
+            <Text style={styles.emptySubtitle}>{selectedCategory ? 'Try another category' : 'Check back later'}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredItems}
+            keyExtractor={item => item.id}
+            renderItem={renderItem}
+            numColumns={2}
+            columnWrapperStyle={styles.row}
+            contentContainerStyle={[styles.listContent, cartCount > 0 && styles.listContentWithBar]}
+            showsVerticalScrollIndicator={false}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+          />
+        )}
+
+        {/* Floating cart bar */}
+        <Animated.View style={[styles.cartBar, { transform: [{ translateY: cartBarTranslate }] }]}>
+          <View style={styles.cartBarLeft}>
+            <View style={styles.cartBarBadge}>
+              <Text style={styles.cartBarBadgeText}>{cartCount}</Text>
+            </View>
+            <Text style={styles.cartBarLabel}>items in cart</Text>
+          </View>
+          <Text style={styles.cartBarTotal}>₹{cartSubtotal}</Text>
+          <TouchableOpacity
+            style={[styles.checkoutBtn, isSubmitting && styles.checkoutBtnDisabled]}
+            onPress={handleCheckout}
+            disabled={isSubmitting}
+            activeOpacity={0.85}>
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.checkoutBtnText}>Place Order</Text>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* QR card overlay */}
+        {createdOrder && (
+          <OrderQRCard
+            order={createdOrder}
+            onClose={() => setCreatedOrder(null)}
+          />
+        )}
+      </View>
     </ScreenWrapper>
   );
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  flex: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.background },
 
   // Header
@@ -399,231 +315,95 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  backBtn: { padding: 6, marginRight: 4 },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  headerIconWrap: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: 'rgba(249,115,22,0.12)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
-  cartBtn: {
-    width: 38, height: 38, justifyContent: 'center', alignItems: 'center',
-    backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-  },
-  cartBadge: {
-    position: 'absolute', top: 2, right: 2, width: 16, height: 16,
-    borderRadius: 8, backgroundColor: colors.orange500,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  cartBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  backBtn: { width: 36, padding: 4 },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
-  // Tabs
-  tabs: {
-    flexDirection: 'row', marginHorizontal: 16, marginVertical: 12,
-    backgroundColor: colors.muted, borderRadius: 14, padding: 4,
+  // Category pills
+  pillsScroll: { flexGrow: 0 },
+  pillsRow: {
+    flexDirection: 'row', paddingHorizontal: 16,
+    paddingVertical: 10, gap: 8,
   },
-  tab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 10, borderRadius: 10,
+  pill: {
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: colors.border, backgroundColor: colors.card,
   },
-  tabActive: { backgroundColor: colors.orange500 },
-  tabText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
-  tabTextActive: { color: '#fff' },
+  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pillText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  pillTextActive: { color: '#fff' },
 
-  // Items list
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  list: { padding: 16, paddingBottom: 20 },
-  listFooter: { height: 100 },
-  foodCard: {
-    flexDirection: 'row', gap: 10, padding: 12, borderRadius: 14,
-    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, marginBottom: 8,
-  },
-  foodCardActive: {
-    borderColor: 'rgba(249,115,22,0.4)',
-    backgroundColor: 'rgba(249,115,22,0.05)',
-  },
-  foodImageWrap: { position: 'relative' },
-  foodImage: { width: 56, height: 56, borderRadius: 10 },
-  foodImagePlaceholder: {
-    backgroundColor: colors.surface,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  offerBadge: {
-    position: 'absolute', top: 2, left: 2,
-    backgroundColor: colors.orange500, borderRadius: 4,
-    paddingHorizontal: 4, paddingVertical: 1,
-  },
-  offerBadgeText: { fontSize: 8, fontWeight: '700', color: '#fff' },
-  foodInfo: { flex: 1, justifyContent: 'space-between' },
-  foodName: { fontSize: 13, fontWeight: '600', color: colors.text },
-  foodDesc: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  foodBottom: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginTop: 6,
-  },
-  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  foodPrice: { fontSize: 13, fontWeight: '700', color: colors.orange500 },
-  originalPrice: { fontSize: 11, color: colors.textMuted, textDecorationLine: 'line-through' },
-  addBtn: { backgroundColor: colors.orange500, borderRadius: 8, padding: 5 },
-  qtyControl: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(249,115,22,0.1)', borderRadius: 8, overflow: 'hidden',
-  },
-  qtyBtn: { padding: 4 },
-  qtyText: { fontSize: 12, fontWeight: '700', color: colors.text, width: 20, textAlign: 'center' },
-  empty: { alignItems: 'center', paddingTop: 70, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
-  emptySubtitle: { fontSize: 13, color: colors.textMuted },
-
-  // Print tab
-  printScroll: { padding: 20 },
-  printHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20,
-  },
-  printIconBox: {
-    width: 52, height: 52, borderRadius: 16,
-    backgroundColor: 'rgba(249,115,22,0.12)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  printTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  printSubtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-
-  balanceCard: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 16, backgroundColor: colors.card,
-    borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 20,
-  },
-  balanceLabel: { fontSize: 13, color: colors.textMuted },
-  balanceValue: { fontSize: 18, fontWeight: '800', color: colors.primary },
-
-  fieldLabel: {
-    fontSize: 11, fontWeight: '600', color: colors.textMuted,
-    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10,
-  },
-
-  counterRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 16, backgroundColor: colors.card,
-    borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 20,
-  },
-  counterTitle: { fontSize: 15, fontWeight: '500', color: colors.text },
-  counterControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  counterBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.muted,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  counterBtnDisabled: { opacity: 0.4 },
-  counterBtnAdd: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.orange500,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  counterInput: {
-    width: 60, height: 40, textAlign: 'center',
-    backgroundColor: colors.muted, borderRadius: 12,
-    fontSize: 16, fontWeight: '700', color: colors.text,
-  },
-
-  printTypeRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  printTypeBtn: {
-    flex: 1, padding: 16, borderRadius: 16,
-    borderWidth: 2, borderColor: colors.border,
-    backgroundColor: colors.card,
-  },
-  printTypeBtnActive: {
-    borderColor: colors.orange500,
-    backgroundColor: 'rgba(249,115,22,0.08)',
-  },
-  printTypeName: { fontSize: 14, fontWeight: '600', color: colors.text },
-  printTypeNameActive: { color: colors.orange500 },
-  printTypePrice: { fontSize: 12, color: colors.orange500, marginTop: 4 },
-
-  paperSizeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  paperSizeBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: 12,
-    borderWidth: 2, borderColor: colors.border,
-    backgroundColor: colors.card, alignItems: 'center',
-  },
-  paperSizeBtnActive: {
-    borderColor: colors.orange500,
-    backgroundColor: 'rgba(249,115,22,0.08)',
-  },
-  paperSizeText: { fontSize: 13, fontWeight: '600', color: colors.text },
-  paperSizeTextActive: { color: colors.orange500 },
-
-  doubleSidedRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    padding: 16, backgroundColor: colors.card,
-    borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 20,
-  },
-  doubleSidedTitle: { fontSize: 15, fontWeight: '500', color: colors.text },
-  doubleSidedSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-
-  instructionsInput: {
-    borderWidth: 1, borderColor: colors.border, borderRadius: 16,
-    padding: 14, minHeight: 100,
-    backgroundColor: colors.card,
-    fontSize: 14, color: colors.text, marginBottom: 20,
-  },
-
+  // Error
   errorBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    padding: 14, borderRadius: 16,
-    backgroundColor: colors.errorBg,
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)', marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginBottom: 8, padding: 12,
+    backgroundColor: colors.errorBg, borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
   },
   errorText: { flex: 1, fontSize: 13, color: colors.destructive },
 
-  breakdown: {
-    backgroundColor: colors.muted, borderRadius: 16, padding: 16, marginBottom: 20,
-  },
-  breakdownRow: {
-    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6,
-  },
-  breakdownLabel: { fontSize: 13, color: colors.textMuted },
-  breakdownValue: { fontSize: 13, color: colors.text, fontWeight: '500' },
+  // Grid
+  listContent: { padding: 16, paddingBottom: 20 },
+  listContentWithBar: { paddingBottom: 100 },
+  row: { gap: CARD_GAP, marginBottom: CARD_GAP },
+  cardLeft: { width: CARD_WIDTH },
+  cardRight: { width: CARD_WIDTH },
 
-  summaryRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
-    paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border, marginBottom: 20,
+  // Item card
+  card: {
+    backgroundColor: colors.card, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
-  summaryRight: { alignItems: 'flex-end' },
-  summaryLabel: { fontSize: 12, color: colors.textMuted },
-  summaryPages: { fontSize: 17, fontWeight: '600', color: colors.text, marginTop: 2 },
-  summaryAmount: { fontSize: 26, fontWeight: '800', color: colors.orange500 },
+  cardImage: { width: '100%', height: CARD_WIDTH, backgroundColor: '#f0f0f0' },
+  cardImagePlaceholder: { backgroundColor: '#f0f0f0' },
+  cardBody: { padding: 10 },
+  cardName: { fontSize: 12, fontWeight: '600', color: colors.text, minHeight: 32 },
+  cardFooter: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginTop: 8,
+  },
+  cardPrice: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  addBtn: {
+    width: 30, height: 30, borderRadius: 10,
+    backgroundColor: colors.primary,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  qtyRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.primary, borderRadius: 10, overflow: 'hidden',
+  },
+  qtyBtn: { paddingHorizontal: 6, paddingVertical: 4 },
+  qtyText: { fontSize: 12, fontWeight: '700', color: '#fff', minWidth: 20, textAlign: 'center' },
 
-  submitBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    height: 56, borderRadius: 18, backgroundColor: colors.orange500,
-  },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  printBottomSpacer: { height: 40 },
+  // Empty / loading
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  emptySubtitle: { fontSize: 13, color: colors.textMuted },
 
   // Floating cart bar
-  floatingBar: {
-    position: 'absolute', bottom: 20, left: 16, right: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.orange500, borderRadius: 20, padding: 14,
-    shadowColor: colors.orange500, shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3, shadowRadius: 16, elevation: 10,
+  cartBar: {
+    position: 'absolute', bottom: 16, left: 16, right: 16,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.primary, borderRadius: 18,
+    paddingVertical: 12, paddingHorizontal: 16,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3, shadowRadius: 12, elevation: 8,
+    gap: 10,
   },
-  floatingBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  floatingBarIcon: {
-    width: 44, height: 44, borderRadius: 14,
+  cartBarLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cartBarBadge: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  cartBarBadgeText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  cartBarLabel: { fontSize: 13, color: 'rgba(255,255,255,0.85)' },
+  cartBarTotal: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  checkoutBtn: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 12,
   },
-  floatingBarBadge: {
-    position: 'absolute', top: -4, right: -4,
-    backgroundColor: '#fff', borderRadius: 10, width: 18, height: 18,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  floatingBarBadgeText: { fontSize: 10, fontWeight: '800', color: colors.orange500 },
-  floatingBarSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)' },
-  floatingBarTotal: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  floatingBarRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  floatingBarAction: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  checkoutBtnDisabled: { opacity: 0.6 },
+  checkoutBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 });

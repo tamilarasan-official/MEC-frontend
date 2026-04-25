@@ -90,6 +90,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const { dietFilter } = useAppSelector(s => s.user);
   const notifications = useAppSelector(s => s.user.notifications);
   const [refreshing, setRefreshing] = useState(false);
+  const [shopMode, setShopMode] = useState<'classic' | 'bites' | 'stationery'>('classic');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -168,6 +169,7 @@ export default function StudentDashboard({ navigation }: Props) {
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const canteenShop = shops.find(s => s.category === 'canteen');
+  const stationeryShop = shops.find(s => s.category === 'stationery');
   const isShopOpen = canteenShop?.isActive !== false; // closed if explicitly false
   const isStudent = user?.role === 'student';
 
@@ -305,14 +307,25 @@ export default function StudentDashboard({ navigation }: Props) {
   }, [allCategories]);
 
   const filteredItems = useMemo(() => {
-    // Don't show any items when the shop is closed
-    if (!canteenShop || !isShopOpen) return [];
+    // Don't show any items when the shop is closed or in stationery mode
+    if (!canteenShop || !isShopOpen || shopMode === 'stationery') return [];
+    const modeCategory = shopMode === 'classic' ? 'Classic' : 'Bites';
     return shopMenu.filter((item: FoodItem) => {
-      const matchesCat = !selectedCategory || item.category === selectedCategory;
+      const matchesMode = item.category === modeCategory;
       const matchesDiet = dietFilter === 'all' || (dietFilter === 'veg' && item.isVeg) || (dietFilter === 'nonveg' && !item.isVeg);
-      return matchesCat && item.isAvailable && matchesDiet;
+      return matchesMode && item.isAvailable && matchesDiet;
     });
-  }, [shopMenu, selectedCategory, dietFilter, canteenShop, isShopOpen]);
+  }, [shopMenu, shopMode, dietFilter, canteenShop, isShopOpen]);
+
+  const handleModeTab = useCallback((mode: 'classic' | 'bites' | 'stationery') => {
+    if (mode === 'stationery') {
+      if (stationeryShop) {
+        navigation.navigate('Stationery', { shopId: stationeryShop.id, shopName: stationeryShop.name });
+      }
+      return;
+    }
+    setShopMode(mode);
+  }, [stationeryShop, navigation]);
 
   const keyExtractor = useCallback((i: FoodItem) => i.id, []);
   const getCartQty = useCallback((id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0, [cartItems]);
@@ -461,6 +474,31 @@ export default function StudentDashboard({ navigation }: Props) {
         </View>
       </View>
 
+      {/* ── Mode Tab Bar: Classic | Bites | Stationery ── */}
+      <View style={styles.modeBar}>
+        <TouchableOpacity
+          style={[styles.modeTab, shopMode === 'classic' && styles.modeTabActive]}
+          onPress={() => handleModeTab('classic')}
+          activeOpacity={0.8}>
+          <Icon name="restaurant" size={14} color={shopMode === 'classic' ? '#fff' : colors.textMuted} />
+          <Text style={[styles.modeTabText, shopMode === 'classic' && styles.modeTabTextActive]}>Classic</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeTab, shopMode === 'bites' && styles.modeTabActive]}
+          onPress={() => handleModeTab('bites')}
+          activeOpacity={0.8}>
+          <Icon name="pizza-outline" size={14} color={shopMode === 'bites' ? '#fff' : colors.textMuted} />
+          <Text style={[styles.modeTabText, shopMode === 'bites' && styles.modeTabTextActive]}>Bites</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeTab]}
+          onPress={() => handleModeTab('stationery')}
+          activeOpacity={0.8}>
+          <Icon name="storefront-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.modeTabText}>Stationery</Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
         data={filteredItems}
         keyExtractor={keyExtractor}
@@ -596,29 +634,7 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Category Pills — only show when shop is open */}
-            {isShopOpen && canteenShop && (
-            <View style={styles.cats}>
-              <View style={styles.catsContent}>
-                {allCategories.map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
-                    onPress={() => { lightHaptic(); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSelectedCategory(cat); }}
-                    activeOpacity={0.7}
-                    accessibilityLabel={`${cat} category`}
-                    accessibilityRole="button">
-                    <Icon
-                      name={getCategoryIcon(cat)}
-                      size={14}
-                      color={selectedCategory === cat ? '#fff' : colors.textMuted}
-                    />
-                    <Text style={[styles.catText, selectedCategory === cat && styles.catTextActive]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-            )}
+            {/* Category pills hidden — mode bar handles Classic/Bites filtering */}
 
             {menuLoading && !refreshing && (
               <View style={styles.loadingWrap}>
@@ -931,6 +947,19 @@ function OrderPulseIcon({ color }: { color: string }) {
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  // ── Mode Tab Bar ──
+  modeBar: {
+    flexDirection: 'row', marginHorizontal: 16, marginTop: 10, marginBottom: 2,
+    backgroundColor: colors.muted, borderRadius: 14, padding: 4,
+  },
+  modeTab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 5, paddingVertical: 9, borderRadius: 10,
+  },
+  modeTabActive: { backgroundColor: colors.primary },
+  modeTabText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
+  modeTabTextActive: { color: '#fff' },
+
   // ── Header ──
   headerBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
