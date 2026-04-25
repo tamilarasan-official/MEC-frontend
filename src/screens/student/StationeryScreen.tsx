@@ -337,11 +337,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
   pillsScroll: { flexGrow: 0 },
-  pillsRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  pillsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
   pill: {
+    flexShrink: 0,
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: 20, borderWidth: 1,
     borderColor: colors.border, backgroundColor: colors.card,
+    marginRight: 8,
   },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
