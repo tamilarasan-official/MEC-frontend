@@ -475,7 +475,7 @@ export default function StudentDashboard({ navigation }: Props) {
       </View>
 
       {/* ── Mode Tab Bar: Classic | Bites | Stationery ── */}
-      <View style={styles.modeBar}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeBar}>
         <TouchableOpacity
           style={[styles.modeTab, shopMode === 'classic' && styles.modeTabActive]}
           onPress={() => handleModeTab('classic')}
@@ -491,13 +491,13 @@ export default function StudentDashboard({ navigation }: Props) {
           <Text style={[styles.modeTabText, shopMode === 'bites' && styles.modeTabTextActive]}>Bites</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.modeTab]}
+          style={styles.modeTab}
           onPress={() => handleModeTab('stationery')}
           activeOpacity={0.8}>
           <Icon name="storefront-outline" size={14} color={colors.textMuted} />
           <Text style={styles.modeTabText}>Stationery</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       <FlatList
         data={filteredItems}
@@ -949,14 +949,15 @@ function OrderPulseIcon({ color }: { color: string }) {
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // ── Mode Tab Bar ──
   modeBar: {
-    flexDirection: 'row', marginHorizontal: 16, marginTop: 10, marginBottom: 2,
-    backgroundColor: colors.muted, borderRadius: 14, padding: 4,
+    flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, gap: 8,
   },
   modeTab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 5, paddingVertical: 9, borderRadius: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: colors.border, backgroundColor: colors.card,
   },
-  modeTabActive: { backgroundColor: colors.primary },
+  modeTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   modeTabText: { fontSize: 13, fontWeight: '600', color: colors.textMuted },
   modeTabTextActive: { color: '#fff' },
 
