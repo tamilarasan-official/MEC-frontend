@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
@@ -16,6 +16,8 @@ import OwnerHeader from '../../components/owner/OwnerHeader';
 import OwnerProfileDropdown from '../../components/owner/OwnerProfileDropdown';
 import OwnerWalletModal from '../../components/owner/OwnerWalletModal';
 
+const PAGE_SIZE = 20;
+
 export default function OwnerHistoryScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -25,65 +27,69 @@ export default function OwnerHistoryScreen() {
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
+  const isFetchingRef = useRef(false);
 
-  useEffect(() => { if (!dashboardStats) dispatch(fetchDashboardStats()); }, [dashboardStats, dispatch]);
-
-  const fetchData = useCallback(async () => {
+  const loadPage = useCallback(async (pageNum: number, replace: boolean) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       setError(null);
-      const historyResult = await orderService.getOrderHistory?.();
-      const data = historyResult
-        ? [...(historyResult.completed || []), ...(historyResult.cancelled || [])]
-        : await orderService.getShopOrders();
-      // Sort newest first
-      const sorted = (data || []).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-      setOrders(sorted);
+      const result = await orderService.getHistoryPage(pageNum, PAGE_SIZE);
+      setOrders(prev => replace ? result.orders : [...prev, ...result.orders]);
+      setHasNextPage(result.hasNextPage);
+      setTotal(result.total);
+      setPage(pageNum);
     } catch {
       setError('Failed to load order history. Pull down to retry.');
     } finally {
-      setLoading(false);
+      isFetchingRef.current = false;
     }
   }, []);
 
-  // Refetch every time this tab gains focus so newly completed/cancelled orders
-  // appear immediately without needing a manual pull-to-refresh.
   useFocusEffect(useCallback(() => {
     setLoading(true);
-    fetchData();
-  }, [fetchData]));
+    loadPage(1, true).finally(() => setLoading(false));
+    if (!dashboardStats) dispatch(fetchDashboardStats());
+  }, [loadPage, dashboardStats, dispatch]));
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchData();
+    await loadPage(1, true);
     setRefreshing(false);
   };
 
-  // Filter by search query
+  const onLoadMore = async () => {
+    if (!hasNextPage || loadingMore || isFetchingRef.current) return;
+    setLoadingMore(true);
+    await loadPage(page + 1, false);
+    setLoadingMore(false);
+  };
+
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return orders;
     const q = searchQuery.toLowerCase();
     return orders.filter(o =>
       o.pickupToken?.toLowerCase().includes(q) ||
       o.orderNumber?.toString().includes(q) ||
-      o.userName?.toLowerCase().includes(q),
+      o.userName?.toLowerCase().includes(q) ||
+      o.handledBy?.toLowerCase().includes(q),
     );
   }, [orders, searchQuery]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-IN', {
-      month: 'short', day: 'numeric',
-    }) + ', ' + d.toLocaleTimeString('en-IN', {
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
+    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) +
+      ', ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
   const getItemsSummary = (order: Order) => {
@@ -106,16 +112,14 @@ export default function OwnerHistoryScreen() {
 
   const getCompletionDuration = (order: Order) => {
     if (!order.completedAt || !order.createdAt) return null;
-    const start = new Date(order.createdAt).getTime();
-    const end = new Date(order.completedAt).getTime();
-    const diffMs = end - start;
+    const diffMs = new Date(order.completedAt).getTime() - new Date(order.createdAt).getTime();
     if (diffMs <= 0) return null;
     const mins = Math.floor(diffMs / 60000);
     if (mins < 1) return '< 1 min';
     if (mins < 60) return `${mins} min`;
     const hrs = Math.floor(mins / 60);
-    const remainMins = mins % 60;
-    return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`;
+    const rem = mins % 60;
+    return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
   };
 
   const renderOrder = useCallback(({ item: order }: { item: Order }) => {
@@ -125,7 +129,7 @@ export default function OwnerHistoryScreen() {
 
     return (
       <View style={styles.orderCard}>
-        {/* Top row: icon + order# + date | status badge */}
+        {/* Top row */}
         <View style={styles.cardTop}>
           <View style={styles.cardTopLeft}>
             <View style={[styles.statusIcon, { backgroundColor: status.bg }]}>
@@ -143,15 +147,28 @@ export default function OwnerHistoryScreen() {
         </View>
 
         {/* Customer */}
-        <View style={styles.customerRow}>
-          <Icon name="person-outline" size={14} color={colors.mutedForeground} />
-          <Text style={styles.customerText}>{order.userName || 'Unknown'}</Text>
+        <View style={styles.infoRow}>
+          <Icon name="person-outline" size={13} color={colors.mutedForeground} />
+          <Text style={styles.infoText}>{order.userName || 'Unknown'}</Text>
         </View>
+
+        {/* Captain who handled it */}
+        {!!order.handledBy && (
+          <View style={styles.infoRow}>
+            <Icon name="person-circle-outline" size={13} color={colors.accent} />
+            <Text style={[styles.infoText, { color: colors.accent }]}>
+              Handled by {order.handledBy}
+            </Text>
+            {!!order.completedAt && (
+              <Text style={styles.handledTime}> · {formatDate(order.completedAt)}</Text>
+            )}
+          </View>
+        )}
 
         {/* Items summary */}
         <Text style={styles.itemsSummary} numberOfLines={2}>{getItemsSummary(order)}</Text>
 
-        {/* Bottom row: total + completion time */}
+        {/* Bottom row */}
         <View style={styles.bottomRow}>
           <View style={styles.totalWrap}>
             <Text style={styles.totalLabel}>Total</Text>
@@ -167,6 +184,15 @@ export default function OwnerHistoryScreen() {
       </View>
     );
   }, [styles, colors]);
+
+  const renderFooter = () => {
+    if (!loadingMore) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color={colors.accent} />
+      </View>
+    );
+  };
 
   if (loading) {
     return (
@@ -188,7 +214,6 @@ export default function OwnerHistoryScreen() {
   return (
     <ScreenWrapper>
       <View style={styles.container}>
-        {/* Header */}
         <OwnerHeader
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -200,31 +225,33 @@ export default function OwnerHistoryScreen() {
           onRevenuePress={() => setShowWallet(true)}
         />
 
-        {/* Order count + refresh */}
         <View style={styles.countRow}>
-          <Text style={styles.countText}>{filtered.length} orders</Text>
-          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn} accessibilityLabel="Refresh orders" accessibilityRole="button">
+          <Text style={styles.countText}>
+            {searchQuery ? `${filtered.length} results` : `${orders.length} of ${total} orders`}
+          </Text>
+          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn}>
             <Icon name="refresh" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
 
-        {/* Order list */}
         <FlatList
           data={filtered}
-          keyExtractor={(item, index) => item.id || String(index)}
+          keyExtractor={(item, i) => item.id || String(i)}
           renderItem={renderOrder}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          onEndReached={searchQuery ? undefined : onLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={renderFooter}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Icon name={error ? "alert-circle-outline" : "document-text-outline"} size={48} color={error ? '#ef4444' : colors.mutedForeground} />
+              <Icon name={error ? 'alert-circle-outline' : 'document-text-outline'} size={48} color={error ? '#ef4444' : colors.mutedForeground} />
               <Text style={styles.emptyTitle}>{error ? 'Something went wrong' : 'No orders found'}</Text>
               <Text style={styles.emptySubtitle}>{error || 'Past orders will appear here'}</Text>
             </View>
           }
         />
 
-        {/* Profile Dropdown & Wallet */}
         <OwnerProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} onOpenWallet={() => setShowWallet(true)} />
         <OwnerWalletModal visible={showWallet} onClose={() => setShowWallet(false)} />
       </View>
@@ -236,7 +263,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Count row
   countRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10,
@@ -248,25 +274,18 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
 
-  // List
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
 
-  // Order card
   orderCard: {
     backgroundColor: colors.card, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: colors.border, marginBottom: 12,
   },
   cardTop: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  cardTopLeft: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
-  statusIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    justifyContent: 'center', alignItems: 'center',
-  },
+  cardTopLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statusIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   tokenText: { fontSize: 17, fontWeight: '800', color: colors.foreground },
   dateText: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
   statusBadge: {
@@ -275,21 +294,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   statusText: { fontSize: 11, fontWeight: '700' },
 
-  // Customer
-  customerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10,
-  },
-  customerText: {
-    fontSize: 14, color: colors.mutedForeground,
-  },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 },
+  infoText: { fontSize: 13, color: colors.mutedForeground },
+  handledTime: { fontSize: 12, color: colors.mutedForeground },
 
-  // Items summary
   itemsSummary: {
     fontSize: 14, fontWeight: '600', color: colors.foreground,
-    marginBottom: 14, lineHeight: 20,
+    marginBottom: 14, lineHeight: 20, marginTop: 4,
   },
 
-  // Bottom row
   bottomRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
@@ -300,7 +313,8 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   durationWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   durationText: { fontSize: 12, color: colors.mutedForeground },
 
-  // Empty state
+  footerLoader: { paddingVertical: 20, alignItems: 'center' },
+
   emptyState: { alignItems: 'center', paddingTop: 80, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.foreground },
   emptySubtitle: { fontSize: 13, color: colors.mutedForeground },

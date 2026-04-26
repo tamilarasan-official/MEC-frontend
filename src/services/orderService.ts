@@ -60,7 +60,7 @@ const orderService = {
     return mapOrder(d?.order || d);
   },
   getMyOrders: async (status?: string, serviceType?: string): Promise<Order[]> => {
-    const params: any = {};
+    const params: any = { limit: 100 };
     if (status) params.status = status;
     if (serviceType) params.serviceType = serviceType;
     const res = await api.get('/orders/my', { params });
@@ -115,6 +115,14 @@ const orderService = {
     const completed = results[0].status === 'fulfilled' ? results[0].value : [];
     const cancelled = results[1].status === 'fulfilled' ? results[1].value : [];
     return { completed, cancelled };
+  },
+  getHistoryPage: async (page: number, limit = 20): Promise<{ orders: Order[]; hasNextPage: boolean; total: number }> => {
+    const res = await api.get('/orders/shop', { params: { status: 'completed,cancelled', page, limit } });
+    return {
+      orders: mapOrders(res.data.data || []),
+      hasNextPage: res.data.pagination?.hasNextPage ?? false,
+      total: res.data.pagination?.total ?? 0,
+    };
   },
   getOrderById: async (orderId: string): Promise<Order> => {
     assertObjectId(orderId, 'orderId');

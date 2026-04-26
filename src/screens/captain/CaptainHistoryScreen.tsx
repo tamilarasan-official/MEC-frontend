@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
 } from 'react-native';
@@ -12,69 +12,74 @@ import { useFocusEffect } from '@react-navigation/native';
 import CaptainHeader from '../../components/captain/CaptainHeader';
 import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
 
+const PAGE_SIZE = 20;
+
 export default function CaptainHistoryScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const isFetchingRef = useRef(false);
 
-  const fetchData = useCallback(async () => {
+  const loadPage = useCallback(async (pageNum: number, replace: boolean) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       setError(null);
-      const historyResult = await orderService.getOrderHistory?.();
-      const data = historyResult
-        ? [...(historyResult.completed || []), ...(historyResult.cancelled || [])]
-        : await orderService.getShopOrders();
-      setOrders(data || []);
+      const result = await orderService.getHistoryPage(pageNum, PAGE_SIZE);
+      setOrders(prev => replace ? result.orders : [...prev, ...result.orders]);
+      setHasNextPage(result.hasNextPage);
+      setTotal(result.total);
+      setPage(pageNum);
     } catch {
       setError('Failed to load order history. Pull down to retry.');
     } finally {
-      setLoading(false);
+      isFetchingRef.current = false;
     }
   }, []);
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
-    fetchData();
-  }, [fetchData]));
+    loadPage(1, true).finally(() => setLoading(false));
+  }, [loadPage]));
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchData();
+    await loadPage(1, true);
     setRefreshing(false);
   };
 
-  // Filter by search query
-  const filtered = orders.filter(o => {
-    if (!searchQuery.trim()) return true;
+  const onLoadMore = async () => {
+    if (!hasNextPage || loadingMore || isFetchingRef.current) return;
+    setLoadingMore(true);
+    await loadPage(page + 1, false);
+    setLoadingMore(false);
+  };
+
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return orders;
     const q = searchQuery.toLowerCase();
-    return (
+    return orders.filter(o =>
       o.pickupToken?.toLowerCase().includes(q) ||
       o.orderNumber?.toString().includes(q) ||
-      o.userName?.toLowerCase().includes(q)
+      o.userName?.toLowerCase().includes(q),
     );
-  });
+  }, [orders, searchQuery]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-IN', {
-      month: 'short', day: 'numeric',
-    }) + ', ' + d.toLocaleTimeString('en-IN', {
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
-  };
-
-  const formatTime = (dateStr?: string) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString('en-IN', {
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
+    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) +
+      ', ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
   const getItemsSummary = (order: Order) => {
@@ -95,13 +100,12 @@ export default function CaptainHistoryScreen() {
     }
   };
 
-  const renderOrder = ({ item: order }: { item: Order }) => {
+  const renderOrder = useCallback(({ item: order }: { item: Order }) => {
     const status = getStatusInfo(order.status);
     const token = order.orderNumber || order.pickupToken || order.id?.slice(-4) || '—';
 
     return (
       <View style={styles.orderCard}>
-        {/* Top row: icon + order# + date | status badge */}
         <View style={styles.cardTop}>
           <View style={styles.cardTopLeft}>
             <View style={[styles.statusIcon, { backgroundColor: status.bg }]}>
@@ -118,27 +122,32 @@ export default function CaptainHistoryScreen() {
           </View>
         </View>
 
-        {/* Customer */}
-        <Text style={styles.customerText}>Customer: {order.userName || 'Unknown'}</Text>
-
-        {/* Items summary */}
-        <Text style={styles.itemsSummary} numberOfLines={2}>{getItemsSummary(order)}</Text>
-
-        {/* Total */}
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>Rs. {order.total}</Text>
+        <View style={styles.infoRow}>
+          <Icon name="person-outline" size={13} color={colors.mutedForeground} />
+          <Text style={styles.infoText}>{order.userName || 'Unknown'}</Text>
         </View>
 
-        {/* Completed time */}
-        {(order.completedAt || order.createdAt) && (
-          <Text style={styles.completedText}>
-            Completed: {formatTime(order.completedAt || order.createdAt)}
-          </Text>
-        )}
+        <Text style={styles.itemsSummary} numberOfLines={2}>{getItemsSummary(order)}</Text>
+
+        <View style={styles.bottomRow}>
+          <View style={styles.totalWrap}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>Rs. {order.total}</Text>
+          </View>
+          {!!order.completedAt && (
+            <View style={styles.timeWrap}>
+              <Icon name="time-outline" size={12} color={colors.mutedForeground} />
+              <Text style={styles.timeText}>{formatDate(order.completedAt)}</Text>
+            </View>
+          )}
+        </View>
       </View>
     );
-  };
+  }, [styles, colors]);
+
+  const renderFooter = () => loadingMore
+    ? <View style={styles.footerLoader}><ActivityIndicator size="small" color={colors.accent} /></View>
+    : null;
 
   if (loading) {
     return (
@@ -153,7 +162,6 @@ export default function CaptainHistoryScreen() {
   return (
     <ScreenWrapper>
       <View style={styles.container}>
-        {/* Header */}
         <CaptainHeader
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -162,35 +170,34 @@ export default function CaptainHistoryScreen() {
           onProfilePress={() => setShowProfile(true)}
         />
 
-        {/* Order count + refresh */}
         <View style={styles.countRow}>
-          <Text style={styles.countText}>{filtered.length} orders</Text>
-          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn} accessibilityLabel="Refresh orders" accessibilityRole="button">
+          <Text style={styles.countText}>
+            {searchQuery ? `${filtered.length} results` : `${orders.length} of ${total} orders`}
+          </Text>
+          <TouchableOpacity onPress={onRefresh} activeOpacity={0.7} style={styles.refreshBtn}>
             <Icon name="refresh" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
 
-        {/* Order list */}
         <FlatList
           data={filtered}
-          keyExtractor={(item, index) => item.id || String(index)}
+          keyExtractor={(item, i) => item.id || String(i)}
           renderItem={renderOrder}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+          onEndReached={searchQuery ? undefined : onLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={renderFooter}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Icon name={error ? "alert-circle-outline" : "document-text-outline"} size={48} color={error ? '#ef4444' : colors.mutedForeground} />
+              <Icon name={error ? 'alert-circle-outline' : 'document-text-outline'} size={48} color={error ? '#ef4444' : colors.mutedForeground} />
               <Text style={styles.emptyTitle}>{error ? 'Something went wrong' : 'No orders found'}</Text>
               <Text style={styles.emptySubtitle}>{error || 'Past orders will appear here'}</Text>
             </View>
           }
         />
 
-        {/* Profile Dropdown */}
-        <CaptainProfileDropdown
-          visible={showProfile}
-          onClose={() => setShowProfile(false)}
-        />
+        <CaptainProfileDropdown visible={showProfile} onClose={() => setShowProfile(false)} />
       </View>
     </ScreenWrapper>
   );
@@ -200,7 +207,6 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Count row
   countRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10,
@@ -212,25 +218,18 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
 
-  // List
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
 
-  // Order card
   orderCard: {
     backgroundColor: colors.card, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: colors.border, marginBottom: 12,
   },
   cardTop: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  cardTopLeft: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
-  statusIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    justifyContent: 'center', alignItems: 'center',
-  },
+  cardTopLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statusIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   tokenText: { fontSize: 17, fontWeight: '800', color: colors.foreground },
   dateText: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
   statusBadge: {
@@ -239,31 +238,26 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   statusText: { fontSize: 11, fontWeight: '700' },
 
-  // Customer
-  customerText: {
-    fontSize: 14, color: colors.mutedForeground, marginBottom: 10,
-  },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
+  infoText: { fontSize: 13, color: colors.mutedForeground },
 
-  // Items summary
   itemsSummary: {
     fontSize: 14, fontWeight: '600', color: colors.foreground,
     marginBottom: 14, lineHeight: 20,
   },
 
-  // Total
-  totalRow: {
+  bottomRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginBottom: 8,
+    paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
   },
+  totalWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   totalLabel: { fontSize: 14, color: colors.mutedForeground },
   totalValue: { fontSize: 16, fontWeight: '700', color: '#10b981' },
+  timeWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  timeText: { fontSize: 12, color: colors.mutedForeground },
 
-  // Completed time
-  completedText: {
-    fontSize: 12, color: colors.mutedForeground,
-  },
+  footerLoader: { paddingVertical: 20, alignItems: 'center' },
 
-  // Empty state
   emptyState: { alignItems: 'center', paddingTop: 80, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.foreground },
   emptySubtitle: { fontSize: 13, color: colors.mutedForeground },
