@@ -9,7 +9,6 @@ export const API_ORIGIN = 'https://campusoneapi.madrascollege.ac.in';
 const BASE_URL = `${API_ORIGIN}/api/v1`;
 
 const KEYCHAIN_TOKEN_SERVICE = 'com.campusone.tokens';
-const KEYCHAIN_ACTIVITY_SERVICE = 'com.campusone.activity';
 const KEYCHAIN_DEVICE_ID_SERVICE = 'com.campusone.deviceid';
 
 // API key for mobile app verification — must be set in .env as APP_API_KEY
@@ -19,9 +18,6 @@ if (!APP_API_KEY) {
   throw new Error('[Security] APP_API_KEY is not configured. Set APP_API_KEY in your .env file.');
 }
 const APP_VERSION: string = require('../../package.json').version;
-
-// Session inactivity limit — 3 days in milliseconds
-const SESSION_MAX_INACTIVE_MS = 3 * 24 * 60 * 60 * 1000;
 
 // Max retries for token refresh before giving up
 const TOKEN_REFRESH_MAX_RETRIES = 2;
@@ -69,43 +65,10 @@ export const setTokens = async (access: string, refresh: string) => {
     JSON.stringify({ accessToken: access, refreshToken: refresh }),
     { service: KEYCHAIN_TOKEN_SERVICE },
   );
-  // Also stamp activity — separate service, no race condition with tokens
-  await updateLastActivity();
 };
 
 export const clearTokens = async () => {
   await Keychain.resetGenericPassword({ service: KEYCHAIN_TOKEN_SERVICE });
-  await Keychain.resetGenericPassword({ service: KEYCHAIN_ACTIVITY_SERVICE });
-};
-
-// ── Activity tracking (separate Keychain service — never touches tokens) ──
-
-/** Update the last activity timestamp */
-export const updateLastActivity = async () => {
-  try {
-    await Keychain.setGenericPassword(
-      'activity',
-      Date.now().toString(),
-      { service: KEYCHAIN_ACTIVITY_SERVICE },
-    );
-  } catch {
-    // Non-critical — don't let activity tracking break the app
-  }
-};
-
-/** Check if session has been inactive for more than 3 days */
-export const isSessionExpired = async (): Promise<boolean> => {
-  try {
-    const tokens = await getStoredTokens();
-    if (!tokens) return true;
-    const result = await Keychain.getGenericPassword({ service: KEYCHAIN_ACTIVITY_SERVICE });
-    if (!result) return false; // No activity recorded yet — treat as active
-    const lastActivity = parseInt(result.password, 10);
-    if (isNaN(lastActivity)) return false;
-    return (Date.now() - lastActivity) > SESSION_MAX_INACTIVE_MS;
-  } catch {
-    return false; // If we can't check, assume not expired
-  }
 };
 
 /** Helper: delay for retry logic */
@@ -211,11 +174,10 @@ api.interceptors.response.use(
         throw lastError;
       } catch (err) {
         processQueue(err as Error);
-        // Only clear tokens and logout if session is expired (3-day inactivity)
-        // or if the refresh token is genuinely rejected by the server (401/403)
+        // Only clear tokens and logout if the refresh token is genuinely rejected
+        // by the server (401/403 — account deactivated, token invalid, etc.)
         const isServerRejection = (err as any)?.response?.status === 401 || (err as any)?.response?.status === 403;
-        const expired = await isSessionExpired();
-        if (isServerRejection || expired) {
+        if (isServerRejection) {
           await clearTokens();
           try {
             const { store } = require('../store');
@@ -230,28 +192,5 @@ api.interceptors.response.use(
     return Promise.reject(error);
   },
 );
-
-/**
- * Silently refresh the access token using the stored refresh token.
- * Used by the socket service to get a valid token on reconnect
- * without going through the full HTTP interceptor cycle.
- * Returns the new access token, or null if refresh fails.
- */
-export const refreshAccessTokenSilently = async (): Promise<string | null> => {
-  try {
-    const refresh = await getRefreshToken();
-    if (!refresh) return null;
-    const deviceId = await getOrCreateDeviceId();
-    const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken: refresh }, {
-      headers: { 'X-App-Key': APP_API_KEY, 'X-Device-Id': deviceId },
-    });
-    const tokenData = res.data.data?.tokens || res.data.data;
-    const { accessToken, refreshToken: newRefreshToken } = tokenData;
-    await setTokens(accessToken, newRefreshToken || refresh);
-    return accessToken;
-  } catch {
-    return null;
-  }
-};
 
 export default api;

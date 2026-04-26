@@ -6,7 +6,7 @@ import { RootState, AppDispatch } from '../store';
 import { refreshUserData, resetAuth } from '../store/slices/authSlice';
 import { fetchWalletBalance, fetchDashboardStats, fetchNotifications } from '../store/slices/userSlice';
 import { fetchActiveShopOrders, fetchMyActiveOrders } from '../store/slices/ordersSlice';
-import { getAccessToken, isSessionExpired, clearTokens, updateLastActivity } from '../services/api';
+import { getAccessToken, clearTokens } from '../services/api';
 import { RootStackParamList } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/colors';
@@ -240,18 +240,8 @@ export default function RootNavigator() {
           return;
         }
 
-        // Check 3-day inactivity — if expired, clear session and show login
-        const expired = await isSessionExpired();
-        if (expired) {
-          await clearTokens();
-          setIsCheckingAuth(false);
-          return;
-        }
-
-        // Token exists and session is within 3 days — restore session
+        // Token exists — restore session
         await dispatch(refreshUserData()).unwrap();
-        // Session restored successfully — update last activity
-        await updateLastActivity();
       } catch {
         // Token refresh failed — interceptor handles retry + 3-day logic
         // User stays logged out only if interceptor cleared the tokens
@@ -336,26 +326,14 @@ export default function RootNavigator() {
     return () => subscription.remove();
   }, [isAuthenticated, user?.id, dispatch]);
 
-  // Initialize push notifications + request camera permission after authentication
+  // Immediate: lightweight JS listeners only — no native SDK init
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
-    initializeNotifications(user.id);
-
-    // Request camera permission early so Scanner tab works without settings redirect
-    import('react-native-vision-camera').then(({ Camera }) => {
-      const status = Camera.getCameraPermissionStatus();
-      if (status === 'not-determined') {
-        Camera.requestCameraPermission();
-      }
-    }).catch(() => {});
-
-    // Foreground FCM message listener
     const unsubscribeFcm = onMessage(getMessaging(), (remoteMessage) => {
       handleForegroundMessage(remoteMessage, dispatch);
     });
 
-    // Notifee foreground event handler (notification tap while app is open)
     const unsubscribeNotifee = notifee.onForegroundEvent(({ type, detail }) => {
       if (type === EventType.PRESS) {
         if (__DEV__) console.log('[Notifee] Foreground press:', detail.notification?.data);
@@ -368,6 +346,25 @@ export default function RootNavigator() {
       cleanupNotifications();
     };
   }, [isAuthenticated, user?.id, dispatch]);
+
+  // Deferred: heavy native init — runs 2s after auth so the first render settles first
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    const timer = setTimeout(() => {
+      // FCM token registration with backend (non-critical for initial UX)
+      initializeNotifications(user.id);
+
+      // Camera permission — only request if not yet determined
+      import('react-native-vision-camera').then(({ Camera }) => {
+        if (Camera.getCameraPermissionStatus() === 'not-determined') {
+          Camera.requestCameraPermission();
+        }
+      }).catch(() => {});
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, user?.id]);
 
   // Handle cold-start notification (app opened by tapping a notification)
   useEffect(() => {

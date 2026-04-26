@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { User, LoginResponse, RegisterData, RegisterWithOtpData } from '../../types';
-import api, { setTokens, clearTokens, updateLastActivity, getOrCreateDeviceId } from '../../services/api';
+import api, { setTokens, clearTokens, getOrCreateDeviceId } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import uuid from 'react-native-uuid';
 import { unregisterToken, cleanupNotifications } from '../../services/notificationService';
@@ -202,8 +202,6 @@ export const refreshUserData = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await api.get<{ success: boolean; data: { user: User } }>('/auth/me');
-      // Session is active — update the last activity timestamp
-      await updateLastActivity();
       return response.data.data?.user || response.data.data;
     } catch (error: any) {
       if (__DEV__) console.error('[refreshUserData]', error.response?.status, error.response?.data);
