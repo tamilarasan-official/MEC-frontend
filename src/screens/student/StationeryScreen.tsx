@@ -340,7 +340,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   backBtn: { width: 36, padding: 4 },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
-  pillsContainer: { height: 50 },
+  pillsContainer: { height: 52 },
   pillsScroll: { flex: 1 },
   pillsRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -355,7 +355,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  pillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted, lineHeight: 16 },
+  pillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted, includeFontPadding: false },
   pillTextActive: { color: '#fff' },
 
   listContent: { padding: 16, paddingBottom: 20 },
