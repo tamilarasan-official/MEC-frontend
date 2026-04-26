@@ -26,6 +26,8 @@ const ITEM_STATUS_CONFIG: Record<string, { label: string; color: string; bg: str
   rejected:   { label: 'Rejected & Refunded', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
 };
 
+type ServiceFilter = 'all' | 'food' | 'stationery';
+
 export default function OrderHistoryScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -34,6 +36,7 @@ export default function OrderHistoryScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('all');
 
   const fetchOrders = async () => {
     try {
@@ -55,12 +58,14 @@ export default function OrderHistoryScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  const historyOrders = useMemo(
-    () => orders
+  const historyOrders = useMemo(() => {
+    const base = orders
       .filter(o => o.status === 'completed' || o.status === 'cancelled')
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [orders],
-  );
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (serviceFilter === 'food') return base.filter(o => o.serviceType !== 'stationery');
+    if (serviceFilter === 'stationery') return base.filter(o => o.serviceType === 'stationery');
+    return base;
+  }, [orders, serviceFilter]);
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -92,6 +97,26 @@ export default function OrderHistoryScreen({ navigation }: Props) {
           <View style={styles.headerSpacer} />
         </View>
 
+        {/* Service type filter pills */}
+        <View style={styles.filterRow}>
+          {([
+            { key: 'all',        label: 'All' },
+            { key: 'food',       label: 'Madras Kitchen' },
+            { key: 'stationery', label: 'Stationery' },
+          ] as { key: ServiceFilter; label: string }[]).map(f => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterPill, serviceFilter === f.key && styles.filterPillActive]}
+              onPress={() => setServiceFilter(f.key)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterPillText, serviceFilter === f.key && styles.filterPillTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <ScrollView
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
@@ -105,7 +130,11 @@ export default function OrderHistoryScreen({ navigation }: Props) {
               <View style={styles.emptyIcon}>
                 <Icon name="cube-outline" size={36} color={colors.textSecondary} />
               </View>
-              <Text style={styles.emptyText}>No past orders yet</Text>
+              <Text style={styles.emptyText}>
+                {serviceFilter === 'food' ? 'No Madras Kitchen orders yet' :
+                 serviceFilter === 'stationery' ? 'No stationery orders yet' :
+                 'No past orders yet'}
+              </Text>
             </View>
           ) : (
             historyOrders.map(order => {
@@ -115,7 +144,7 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                 <View key={order.id} style={styles.orderCard}>
                   {/* Order ID + Status Badge */}
                   <View style={styles.orderTopRow}>
-                    <Text style={styles.orderId} numberOfLines={1}>#{order.id}</Text>
+                    <Text style={styles.orderId} numberOfLines={1}>#{order.orderNumber || order.pickupToken || order.id?.slice(-6)}</Text>
                     <View style={[styles.statusBadge, { backgroundColor: statusConf.bg }]}>
                       <Icon name={statusConf.icon} size={14} color={statusConf.color} />
                       <Text style={[styles.statusText, { color: statusConf.color }]}>{statusConf.label}</Text>
@@ -134,7 +163,7 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                   </View>
 
                   {/* Stationery details OR food items */}
-                  {order.serviceType === 'stationery' ? (
+                  {(order.serviceType === 'stationery' && order.serviceDetails?.stationery?.pageCount != null) ? (
                     <View style={styles.stationeryDetails}>
                       <View style={styles.itemRow}>
                         <View style={[styles.itemIconWrap, { backgroundColor: 'rgba(139,92,246,0.12)' }]}>
@@ -265,6 +294,18 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '700', color: c.text },
   headerSpacer: { width: 36 },
+  filterRow: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: c.border,
+  },
+  filterPill: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: c.card, borderWidth: 1, borderColor: c.border,
+  },
+  filterPillActive: { backgroundColor: c.accent, borderColor: c.accent },
+  filterPillText: { fontSize: 12, fontWeight: '600', color: c.textSecondary },
+  filterPillTextActive: { color: '#fff' },
   list: { padding: 16 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyIcon: {

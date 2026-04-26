@@ -23,6 +23,9 @@ const APP_VERSION: string = require('../../package.json').version;
 const TOKEN_REFRESH_MAX_RETRIES = 2;
 const TOKEN_REFRESH_RETRY_DELAY_MS = 1500;
 
+// Cooldown after a 429 on /refresh — block further attempts for 60s
+let refreshRateLimitedUntil = 0;
+
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
@@ -133,6 +136,10 @@ api.interceptors.response.use(
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     const isAuthRoute = original.url?.includes('/auth/login') || original.url?.includes('/auth/register') || original.url?.includes('/auth/verify-otp') || original.url?.includes('/auth/register-with-otp');
     if (error.response?.status === 401 && !original._retry && !isAuthRoute) {
+      // If we're still in a rate-limit cooldown window, bail out immediately
+      if (Date.now() < refreshRateLimitedUntil) {
+        return Promise.reject(error);
+      }
       if (isRefreshing) {
         return new Promise<string>((resolve, reject) => {
           failedQueue.push({ resolve: resolve as (v?: unknown) => void, reject });
@@ -163,8 +170,12 @@ api.interceptors.response.use(
             return api(original);
           } catch (retryErr: any) {
             lastError = retryErr;
-            // Don't retry on 401/403 — token is genuinely invalid
+            // Don't retry on 401/403 (invalid token) or 429 (rate limited)
             if (retryErr.response?.status === 401 || retryErr.response?.status === 403) break;
+            if (retryErr.response?.status === 429) {
+              refreshRateLimitedUntil = Date.now() + 60_000; // back off for 60s
+              break;
+            }
             // Retry on network errors or 5xx
             if (attempt < TOKEN_REFRESH_MAX_RETRIES) {
               await delay(TOKEN_REFRESH_RETRY_DELAY_MS);
