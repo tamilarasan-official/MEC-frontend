@@ -6,7 +6,7 @@ import {
 import Svg, { Circle, G } from 'react-native-svg';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useSelector, useDispatch } from 'react-redux';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { RootState, AppDispatch } from '../../store';
 import { fetchAnalytics, fetchDashboardStats } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
@@ -181,6 +181,11 @@ export default function OwnerAnalyticsScreen() {
   }, [dispatch]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useFocusEffect(useCallback(() => {
+    dispatch(fetchAnalytics(undefined));
+    dispatch(fetchDashboardStats());
+  }, [dispatch]));
 
   const applyCustomRange = useCallback(async () => {
     setCustomLoading(true);

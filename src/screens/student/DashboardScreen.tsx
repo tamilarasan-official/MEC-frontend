@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState,
+  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, PanResponder,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { fetchMyActiveOrders } from '../../store/slices/ordersSlice';
+import { fetchMyActiveOrders, createOrder } from '../../store/slices/ordersSlice';
 import { fetchShops, fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
@@ -23,6 +24,7 @@ import NotificationsModal from '../../components/student/NotificationsModal';
 import TopUpModal from '../../components/student/TopUpModal';
 import ProfileDropdown from '../../components/student/ProfileDropdown';
 import { CartBottomSheet } from '../../components/student/CartBottomSheet';
+import PINVerifyModal from '../../components/common/PINVerifyModal';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
@@ -79,6 +81,90 @@ const FoodCardImage = React.memo(({ uri, style, placeholderStyle }: { uri: strin
   );
 });
 
+// ── Swipeable wrapper for quick 1-tap order ──────────────────────────────────
+const SwipeableQuickOrderCard = React.memo(function SwipeableQuickOrderCard({
+  item,
+  onSwipeOrder,
+  children,
+}: {
+  item: FoodItem;
+  onSwipeOrder: (item: FoodItem) => void;
+  children: React.ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const canSwipeRef = useRef(item.isAvailable !== false);
+  canSwipeRef.current = item.isAvailable !== false;
+  const onSwipeRef = useRef(onSwipeOrder);
+  onSwipeRef.current = onSwipeOrder;
+  const itemRef = useRef(item);
+  itemRef.current = item;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        canSwipeRef.current && g.dx > 15 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: (_, g) => {
+        if (g.dx <= 0) return;
+        translateX.setValue(g.dx);
+      },
+      onPanResponderRelease: (_, g) => {
+        const triggered = g.dx > 80 || (g.dx > 20 && g.vx > 0.3);
+        if (triggered) {
+          Animated.timing(translateX, {
+            toValue: Dimensions.get('window').width,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            mediumHaptic();
+            onSwipeRef.current(itemRef.current);
+            setTimeout(() => translateX.setValue(0), 300);
+          });
+        } else {
+          Animated.spring(translateX, { toValue: 0, friction: 8, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  return (
+    <View style={quickSwipeStyles.outer}>
+      {item.isAvailable !== false && (
+        <Animated.View style={[quickSwipeStyles.stripOuter, {
+          opacity: translateX.interpolate({ inputRange: [0, 40], outputRange: [0, 1], extrapolate: 'clamp' }),
+        }]}>
+          <LinearGradient
+            colors={['#00f7ff', '#00a3ff']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <Icon name="bag-handle-outline" size={22} color="#fff" />
+          <Text style={quickSwipeStyles.stripLabel}>Order</Text>
+        </Animated.View>
+      )}
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...(item.isAvailable !== false ? panResponder.panHandlers : {})}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+});
+
+const quickSwipeStyles = StyleSheet.create({
+  outer: { overflow: 'hidden', borderRadius: 16, marginBottom: 10 },
+  stripOuter: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingLeft: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  stripLabel: { color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 3 },
+});
+
 export default function StudentDashboard({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -90,6 +176,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const { dietFilter } = useAppSelector(s => s.user);
   const notifications = useAppSelector(s => s.user.notifications);
   const [refreshing, setRefreshing] = useState(false);
+  const [shopMode, setShopMode] = useState<'classic' | 'bites' | 'stationery'>('classic');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -113,6 +200,9 @@ export default function StudentDashboard({ navigation }: Props) {
   const paymentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [quickOrderItem, setQuickOrderItem] = useState<FoodItem | null>(null);
+  const [showQuickPIN, setShowQuickPIN] = useState(false);
+  const quickOrderingRef = useRef(false);
   const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
@@ -168,6 +258,7 @@ export default function StudentDashboard({ navigation }: Props) {
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const canteenShop = shops.find(s => s.category === 'canteen');
+  const stationeryShop = shops.find(s => s.category === 'stationery');
   const isShopOpen = canteenShop?.isActive !== false; // closed if explicitly false
   const isStudent = user?.role === 'student';
 
@@ -192,6 +283,14 @@ export default function StudentDashboard({ navigation }: Props) {
       dispatch(fetchShopCategories(canteenShop.id));
     }
   }, [dispatch, canteenShop?.id, isShopOpen]);
+
+  // Re-fetch canteen menu when returning from any other screen (e.g. Stationery overwrites menuSlice)
+  useFocusEffect(useCallback(() => {
+    if (canteenShop?.id) {
+      dispatch(fetchShopMenu({ shopId: canteenShop.id }));
+      dispatch(fetchShopCategories(canteenShop.id));
+    }
+  }, [dispatch, canteenShop?.id]));
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -305,14 +404,25 @@ export default function StudentDashboard({ navigation }: Props) {
   }, [allCategories]);
 
   const filteredItems = useMemo(() => {
-    // Don't show any items when the shop is closed
-    if (!canteenShop || !isShopOpen) return [];
+    // Don't show any items when the shop is closed or in stationery mode
+    if (!canteenShop || !isShopOpen || shopMode === 'stationery') return [];
+    const modeCategory = shopMode === 'classic' ? 'Classic' : 'Bites';
     return shopMenu.filter((item: FoodItem) => {
-      const matchesCat = !selectedCategory || item.category === selectedCategory;
+      const matchesMode = item.category === modeCategory;
       const matchesDiet = dietFilter === 'all' || (dietFilter === 'veg' && item.isVeg) || (dietFilter === 'nonveg' && !item.isVeg);
-      return matchesCat && item.isAvailable && matchesDiet;
+      return matchesMode && item.isAvailable && matchesDiet;
     });
-  }, [shopMenu, selectedCategory, dietFilter, canteenShop, isShopOpen]);
+  }, [shopMenu, shopMode, dietFilter, canteenShop, isShopOpen]);
+
+  const handleModeTab = useCallback((mode: 'classic' | 'bites' | 'stationery') => {
+    if (mode === 'stationery') {
+      if (stationeryShop) {
+        navigation.navigate('Stationery', { shopId: stationeryShop.id, shopName: stationeryShop.name });
+      }
+      return;
+    }
+    setShopMode(mode);
+  }, [stationeryShop, navigation]);
 
   const keyExtractor = useCallback((i: FoodItem) => i.id, []);
   const getCartQty = useCallback((id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0, [cartItems]);
@@ -332,6 +442,62 @@ export default function StudentDashboard({ navigation }: Props) {
     }
     prevTotalItems.current = totalItems;
   }, [totalItems, cartBarAnim]);
+
+  // ── Quick swipe-to-order handlers ───────────────────────────────────────────
+
+  const handleQuickOrderPlace = useCallback(async (item: FoodItem) => {
+    if (!canteenShop || quickOrderingRef.current) return;
+    quickOrderingRef.current = true;
+    try {
+      const result: CreateOrderResult = await dispatch(createOrder({
+        shopId: canteenShop.id,
+        items: [{ foodItemId: item.id, quantity: 1 }],
+      })).unwrap();
+      dispatch(fetchMyActiveOrders());
+      dispatch(fetchWalletBalance());
+      const order = result.order;
+      setSplitOrders(null);
+      setSuccessOrder(order);
+      setSuccessOrderType(order.isReadyServe ? 'instant' : 'regular');
+      setShowSuccessAnim(true);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        (err?.message && err.message !== 'Rejected' ? err.message : null) ||
+        'Order failed. Please check your balance and try again.';
+      setFailError(msg);
+      setShowFailAnim(true);
+    } finally {
+      quickOrderingRef.current = false;
+      setQuickOrderItem(null);
+    }
+  }, [canteenShop, dispatch]);
+
+  const handleSwipeOrder = useCallback((item: FoodItem) => {
+    if (quickOrderingRef.current) return;
+    if (!canteenShop || !isShopOpen) {
+      Alert.alert('Shop Closed', 'The canteen is currently closed.');
+      return;
+    }
+    if (!item.isAvailable) return;
+    const price = item.isOffer && item.offerPrice ? item.offerPrice : item.price;
+    if ((user?.balance ?? 0) < price) {
+      Alert.alert(
+        'Insufficient Balance',
+        `You need Rs.${price} to order ${item.name}. Top up your wallet to continue.`,
+      );
+      return;
+    }
+    setQuickOrderItem(item);
+    if (user?.isPinSetup) {
+      setShowQuickPIN(true);
+    } else {
+      handleQuickOrderPlace(item);
+    }
+  }, [canteenShop, isShopOpen, user?.balance, user?.isPinSetup, handleQuickOrderPlace]);
+
+  // ── End quick swipe handlers ─────────────────────────────────────────────────
 
   const formatDueDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -358,62 +524,64 @@ export default function StudentDashboard({ navigation }: Props) {
     const imageUri = resolveImageUrl(item.image);
 
     return (
-      <View style={styles.foodCard}>
-        {/* Food image / placeholder */}
-        <TouchableOpacity
-          style={styles.foodImageWrap}
-          onPress={() => { if (!canteenShop) return; lightHaptic(); qty === 0
-            ? dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name }))
-            : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }));
-          }}
-          activeOpacity={0.8}
-          accessibilityLabel={`Add ${item.name}`}
-          accessibilityRole="button">
-          <FoodCardImage
-            uri={imageUri}
-            style={styles.foodImage}
-            placeholderStyle={styles.foodImagePlaceholder}
-          />
-          {item.isOffer && (
-            <View style={styles.offerBadge}>
-              <Text style={styles.offerBadgeText}>OFFER</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Food info */}
-        <View style={styles.foodInfo}>
-          <View style={styles.foodNameRow}>
-            <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
-            {item.isInstant && (
-              <Icon name="flash-sharp" size={13} color="#f97316" />
-            )}
-          </View>
-          <View style={styles.foodBottom}>
-            <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
-            {qty === 0 ? (
-              <TouchableOpacity
-                style={styles.addBtn}
-                onPress={() => { if (!canteenShop) return; lightHaptic(); dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name })); }}
-                activeOpacity={0.7}
-                accessibilityLabel={`Add ${item.name} to cart`}
-                accessibilityRole="button">
-                <Icon name="add" size={18} color="#fff" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.qtyControl}>
-                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
-                  <Icon name="remove" size={14} color="#3b82f6" />
-                </TouchableOpacity>
-                <Text style={styles.qtyText}>{qty}</Text>
-                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
-                  <Icon name="add" size={14} color="#3b82f6" />
-                </TouchableOpacity>
+      <SwipeableQuickOrderCard item={item} onSwipeOrder={handleSwipeOrder}>
+        <View style={[styles.foodCard, { marginBottom: 0 }]}>
+          {/* Food image / placeholder */}
+          <TouchableOpacity
+            style={styles.foodImageWrap}
+            onPress={() => { if (!canteenShop) return; lightHaptic(); qty === 0
+              ? dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name }))
+              : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }));
+            }}
+            activeOpacity={0.8}
+            accessibilityLabel={`Add ${item.name}`}
+            accessibilityRole="button">
+            <FoodCardImage
+              uri={imageUri}
+              style={styles.foodImage}
+              placeholderStyle={styles.foodImagePlaceholder}
+            />
+            {item.isOffer && (
+              <View style={styles.offerBadge}>
+                <Text style={styles.offerBadgeText}>OFFER</Text>
               </View>
             )}
+          </TouchableOpacity>
+
+          {/* Food info */}
+          <View style={styles.foodInfo}>
+            <View style={styles.foodNameRow}>
+              <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
+              {item.isInstant && (
+                <Icon name="flash-sharp" size={13} color="#f97316" />
+              )}
+            </View>
+            <View style={styles.foodBottom}>
+              <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
+              {qty === 0 ? (
+                <TouchableOpacity
+                  style={styles.addBtn}
+                  onPress={() => { if (!canteenShop) return; lightHaptic(); dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name })); }}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Add ${item.name} to cart`}
+                  accessibilityRole="button">
+                  <Icon name="add" size={18} color="#fff" />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.qtyControl}>
+                  <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
+                    <Icon name="remove" size={14} color="#3b82f6" />
+                  </TouchableOpacity>
+                  <Text style={styles.qtyText}>{qty}</Text>
+                  <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
+                    <Icon name="add" size={14} color="#3b82f6" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
         </View>
-      </View>
+      </SwipeableQuickOrderCard>
     );
   };
 
@@ -459,6 +627,31 @@ export default function StudentDashboard({ navigation }: Props) {
             )}
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* ── Mode Tab Bar: Classic | Bites | Stationery ── */}
+      <View style={styles.modeBar}>
+        <TouchableOpacity
+          style={[styles.modeTab, shopMode === 'classic' && styles.modeTabActive]}
+          onPress={() => handleModeTab('classic')}
+          activeOpacity={0.8}>
+          <Icon name="restaurant" size={14} color={shopMode === 'classic' ? '#fff' : colors.textMuted} />
+          <Text style={[styles.modeTabText, shopMode === 'classic' && styles.modeTabTextActive]}>Classic</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeTab, shopMode === 'bites' && styles.modeTabActive]}
+          onPress={() => handleModeTab('bites')}
+          activeOpacity={0.8}>
+          <Icon name="pizza-outline" size={14} color={shopMode === 'bites' ? '#fff' : colors.textMuted} />
+          <Text style={[styles.modeTabText, shopMode === 'bites' && styles.modeTabTextActive]}>Bites</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.modeTab}
+          onPress={() => handleModeTab('stationery')}
+          activeOpacity={0.8}>
+          <Icon name="storefront-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.modeTabText}>Stationery</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -596,29 +789,7 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Category Pills — only show when shop is open */}
-            {isShopOpen && canteenShop && (
-            <View style={styles.cats}>
-              <View style={styles.catsContent}>
-                {allCategories.map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.catPill, selectedCategory === cat && styles.catPillActive]}
-                    onPress={() => { lightHaptic(); LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSelectedCategory(cat); }}
-                    activeOpacity={0.7}
-                    accessibilityLabel={`${cat} category`}
-                    accessibilityRole="button">
-                    <Icon
-                      name={getCategoryIcon(cat)}
-                      size={14}
-                      color={selectedCategory === cat ? '#fff' : colors.textMuted}
-                    />
-                    <Text style={[styles.catText, selectedCategory === cat && styles.catTextActive]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-            )}
+            {/* Category pills hidden — mode bar handles Classic/Bites filtering */}
 
             {menuLoading && !refreshing && (
               <View style={styles.loadingWrap}>
@@ -728,6 +899,23 @@ export default function StudentDashboard({ navigation }: Props) {
           setFailError(errorMessage || '');
           setShowFailAnim(true);
           setTimeout(() => setShowCart(false), 150);
+        }}
+      />
+
+      {/* Quick swipe-to-order PIN modal */}
+      <PINVerifyModal
+        visible={showQuickPIN}
+        amount={quickOrderItem
+          ? (quickOrderItem.isOffer && quickOrderItem.offerPrice ? quickOrderItem.offerPrice : quickOrderItem.price)
+          : 0}
+        title={quickOrderItem?.name ?? ''}
+        onVerified={() => {
+          setShowQuickPIN(false);
+          if (quickOrderItem) handleQuickOrderPlace(quickOrderItem);
+        }}
+        onCancel={() => {
+          setShowQuickPIN(false);
+          setQuickOrderItem(null);
         }}
       />
 
@@ -931,6 +1119,22 @@ function OrderPulseIcon({ color }: { color: string }) {
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  // ── Mode Tab Bar ──
+  modeBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 8, gap: 8,
+  },
+  modeTab: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: colors.border, backgroundColor: colors.card,
+    alignSelf: 'flex-start',
+  },
+  modeTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeTabText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  modeTabTextActive: { color: '#fff' },
+
   // ── Header ──
   headerBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
