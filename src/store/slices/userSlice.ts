@@ -54,7 +54,7 @@ export const fetchTransactions = createAsyncThunk(
   'user/fetchTransactions',
   async (params: { startDate?: string; endDate?: string } | undefined, { rejectWithValue }) => {
     try {
-      const res = await api.get('/student/wallet/transactions', { params });
+      const res = await api.get('/student/wallet/transactions', { params: { ...params, limit: 100 } });
       const raw = res.data.data?.transactions ?? res.data.data ?? res.data;
       // Normalize: backend lean() queries may return _id instead of id
       return (Array.isArray(raw) ? raw : []).map((tx: any) => ({

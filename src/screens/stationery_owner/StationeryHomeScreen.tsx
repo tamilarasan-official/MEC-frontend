@@ -8,7 +8,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import {
-  fetchShopDetails, fetchQRPayments, fetchWalletBalance,
+  fetchShopDetails, fetchQRPayments, fetchWalletBalance, fetchDashboardStats,
 } from '../../store/slices/userSlice';
 import {
   fetchActiveShopOrders, updateOrderStatus, acceptAllItems, rejectAllItems,
@@ -30,24 +30,21 @@ import NotificationsModal from '../../components/student/NotificationsModal';
 // ORDER DASHBOARD — Swipeable card (order-level only)
 // ============================================================
 
-type OrderFilter = 'pending' | 'ready';
-
 const SWIPE_THRESHOLD = 80;
 
 interface SwipeAction { label: string; icon: string; color: string; onAction: () => void }
 
 function getSwipeCfg(
-  filter: OrderFilter,
   order: Order,
   onAccept: (id: string) => void,
   onReject: (id: string) => void,
   onComplete: (id: string) => void,
 ): { right: SwipeAction | null; left: SwipeAction | null } {
-  if (filter === 'pending') return {
+  if (order.status === 'pending') return {
     right: { label: 'Accept', icon: 'checkmark-done', color: '#22c55e', onAction: () => onAccept(order.id) },
     left:  { label: 'Reject', icon: 'close',          color: '#ef4444', onAction: () => onReject(order.id) },
   };
-  if (filter === 'ready') return {
+  if (order.status === 'ready' || order.status === 'preparing' || order.status === 'partially_ready') return {
     right: { label: 'Complete', icon: 'checkmark', color: '#22c55e', onAction: () => onComplete(order.id) },
     left: null,
   };
@@ -228,33 +225,20 @@ export default function StationeryHomeScreen() {
   const qrPaymentsLoading = useAppSelector(s => s.user.qrPaymentsLoading);
   const shopOrders   = useAppSelector(s => s.orders.shopOrders);
 
+  const dashboardStats = useAppSelector(s => s.user.dashboardStats);
   const canGenerateQR = shopDetails?.canGenerateQR === true;
 
   // ── Order dashboard state ──────────────────────────────────
-  const [orderFilter, setOrderFilter] = useState<OrderFilter>('ready');
   const [updatingId,  setUpdatingId]  = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(20);
 
   const activeOrders = useMemo(() =>
     shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status)),
     [shopOrders]
   );
-  const pendingOrders = useMemo(() => activeOrders.filter(o => o.status === 'pending'), [activeOrders]);
-  const readyOrders   = useMemo(() =>
-    activeOrders.filter(o => o.status === 'ready' || o.status === 'preparing' || o.status === 'partially_ready'),
-    [activeOrders]
-  );
-  const filteredOrderList = orderFilter === 'pending' ? pendingOrders : readyOrders;
 
-  const todayOrderRevenue = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    return shopOrders
-      .filter(o => o.status === 'completed' && new Date(o.createdAt) >= today)
-      .reduce((s, o) => s + o.total, 0);
-  }, [shopOrders]);
-  const completedToday = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    return shopOrders.filter(o => o.status === 'completed' && new Date(o.createdAt) >= today).length;
-  }, [shopOrders]);
+  const todayOrderRevenue = dashboardStats?.todayRevenue ?? 0;
+  const completedToday = dashboardStats?.completedToday ?? 0;
 
   // ── QR dashboard state ─────────────────────────────────────
   const [refreshing,       setRefreshing]       = useState(false);
@@ -315,6 +299,7 @@ export default function StationeryHomeScreen() {
         dispatch(fetchQRPayments()),
         dispatch(fetchWalletBalance()),
         dispatch(fetchActiveShopOrders()),
+        dispatch(fetchDashboardStats()),
       ]);
     } finally {
       setLoading(false);
@@ -327,6 +312,7 @@ export default function StationeryHomeScreen() {
     dispatch(fetchWalletBalance());
     dispatch(fetchQRPayments());
     dispatch(fetchActiveShopOrders());
+    dispatch(fetchDashboardStats());
   }, [dispatch]));
 
   useEffect(() => {
@@ -342,6 +328,7 @@ export default function StationeryHomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    setVisibleCount(20);
     await fetchData();
     setRefreshing(false);
   };
@@ -468,11 +455,14 @@ export default function StationeryHomeScreen() {
   // ============================================================
   if (!canGenerateQR) {
     const filteredBySearch = searchQuery.trim()
-      ? filteredOrderList.filter(o =>
+      ? activeOrders.filter(o =>
           o.pickupToken?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           o.orderNumber?.toLowerCase().includes(searchQuery.toLowerCase())
         )
-      : filteredOrderList;
+      : activeOrders;
+
+    const visibleOrders = filteredBySearch.slice(0, visibleCount);
+    const hasMore = filteredBySearch.length > visibleCount;
 
     return (
       <ScreenWrapper>
@@ -498,47 +488,41 @@ export default function StationeryHomeScreen() {
             <Text style={styles.totalCardSub}>{completedToday} completed · {activeOrders.length} active</Text>
           </LinearGradient>
 
-          {/* Filter tabs */}
-          <View style={styles.filterRow}>
-            {([
-              { key: 'pending' as OrderFilter, label: 'New',   count: pendingOrders.length },
-              { key: 'ready'   as OrderFilter, label: 'Ready', count: readyOrders.length   },
-            ] as const).map(f => (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.filterTab, orderFilter === f.key && styles.filterTabActive]}
-                onPress={() => { lightHaptic(); setOrderFilter(f.key); }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.filterLabel, orderFilter === f.key && styles.filterLabelActive]}>
-                  {f.label} ({f.count})
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           {/* Order cards */}
           {filteredBySearch.length === 0 ? (
             <View style={styles.emptyState}>
               <Icon name="checkmark-circle-outline" size={48} color={colors.mutedForeground} />
-              <Text style={styles.emptyTitle}>No {orderFilter} orders</Text>
-              <Text style={styles.emptySubtext}>Orders appear here when available</Text>
+              <Text style={styles.emptyTitle}>No active orders</Text>
+              <Text style={styles.emptySubtext}>Orders appear here when students place them</Text>
             </View>
           ) : (
-            filteredBySearch.map(order => {
-              const cfg = getSwipeCfg(orderFilter, order, handleAccept, handleReject, handleComplete);
-              return (
-                <SwipeableOrderCard
-                  key={order.id}
-                  order={order}
-                  swipeRight={cfg.right}
-                  swipeLeft={cfg.left}
-                  colors={colors}
-                  styles={styles}
-                  isUpdating={updatingId === order.id}
-                />
-              );
-            })
+            <>
+              {visibleOrders.map(order => {
+                const cfg = getSwipeCfg(order, handleAccept, handleReject, handleComplete);
+                return (
+                  <SwipeableOrderCard
+                    key={order.id}
+                    order={order}
+                    swipeRight={cfg.right}
+                    swipeLeft={cfg.left}
+                    colors={colors}
+                    styles={styles}
+                    isUpdating={updatingId === order.id}
+                  />
+                );
+              })}
+              {hasMore && (
+                <TouchableOpacity
+                  style={styles.loadMoreBtn}
+                  onPress={() => setVisibleCount(c => c + 20)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.loadMoreText}>
+                    Load More ({filteredBySearch.length - visibleCount} remaining)
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
 
           <View style={{ height: 80 }} />
@@ -746,6 +730,12 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyState:  { alignItems: 'center', paddingVertical: 40, gap: 8 },
   emptyTitle:  { fontSize: 15, fontWeight: '600', color: colors.foreground },
   emptySubtext:{ fontSize: 12, color: colors.mutedForeground, textAlign: 'center' },
+  loadMoreBtn: {
+    marginTop: 8, marginBottom: 4, paddingVertical: 14, borderRadius: 14,
+    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center',
+  },
+  loadMoreText: { fontSize: 14, fontWeight: '600', color: colors.accent },
 
   // QR Overview card
   overviewCard: {
