@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList,
+  View, Text, StyleSheet, TouchableOpacity, FlatList,
   Image, ActivityIndicator, Dimensions, Animated,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -188,30 +188,25 @@ export default function StationeryScreen({ route, navigation }: Props) {
         </View>
 
         {/* Category pills */}
-        {allCats.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.pillsScroll}>
-            <View style={styles.pillsRow}>
+        <FlatList
+          data={['All', ...allCats]}
+          keyExtractor={item => item}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.pillsRow}
+          renderItem={({ item: cat }) => {
+            const isAll = cat === 'All';
+            const active = isAll ? !selectedCategory : selectedCategory === cat;
+            return (
               <TouchableOpacity
-                style={[styles.pill, !selectedCategory && styles.pillActive]}
-                onPress={() => setSelectedCategory(null)}
+                style={[styles.pill, active && styles.pillActive]}
+                onPress={() => setSelectedCategory(isAll ? null : cat)}
                 activeOpacity={0.8}>
-                <Text style={[styles.pillText, !selectedCategory && styles.pillTextActive]}>All</Text>
+                <Text style={[styles.pillText, active && styles.pillTextActive]}>{cat}</Text>
               </TouchableOpacity>
-              {allCats.map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.pill, selectedCategory === cat && styles.pillActive]}
-                  onPress={() => setSelectedCategory(cat)}
-                  activeOpacity={0.8}>
-                  <Text style={[styles.pillText, selectedCategory === cat && styles.pillTextActive]}>{cat}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-        )}
+            );
+          }}
+        />
 
         {/* Items grid */}
         {menuLoading && shopMenu.length === 0 ? (
@@ -338,10 +333,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   backBtn: { width: 36, padding: 4 },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: '700', color: colors.text, textAlign: 'center' },
 
-  pillsScroll: { flexGrow: 0 },
   pillsRow: {
-    flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 10,
+    alignItems: 'center', flexDirection: 'row',
   },
   pill: {
     paddingHorizontal: 12, paddingVertical: 6,
