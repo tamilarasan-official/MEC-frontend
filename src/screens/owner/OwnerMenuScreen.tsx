@@ -540,6 +540,10 @@ function AddEditModal({
       Alert.alert('Required', 'Name and selling price are required.');
       return;
     }
+    if (!costPrice.trim()) {
+      Alert.alert('Required', 'Cost price is required.');
+      return;
+    }
     if (!finalCategoryName) {
       Alert.alert('Required', 'Please select or enter a category.');
       return;
@@ -649,7 +653,7 @@ function AddEditModal({
                 />
               </View>
               <View style={styles.flex1}>
-                <Text style={styles.fieldLabel}>Cost Price (Rs.)</Text>
+                <Text style={styles.fieldLabel}>Cost Price (Rs.) *</Text>
                 <TextInput
                   style={styles.fieldInput}
                   value={costPrice}
