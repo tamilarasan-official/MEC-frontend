@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyActiveOrders } from '../../store/slices/ordersSlice';
@@ -194,6 +195,14 @@ export default function StudentDashboard({ navigation }: Props) {
       dispatch(fetchShopCategories(canteenShop.id));
     }
   }, [dispatch, canteenShop?.id, isShopOpen]);
+
+  // Re-fetch canteen menu when returning from any other screen (e.g. Stationery overwrites menuSlice)
+  useFocusEffect(useCallback(() => {
+    if (canteenShop?.id) {
+      dispatch(fetchShopMenu({ shopId: canteenShop.id }));
+      dispatch(fetchShopCategories(canteenShop.id));
+    }
+  }, [dispatch, canteenShop?.id]));
 
   useEffect(() => { loadData(); }, [loadData]);
 
