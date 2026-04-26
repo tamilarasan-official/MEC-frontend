@@ -141,6 +141,7 @@ export default function OwnerTabs() {
   const isNonFoodShop = shopDetails?.category
     ? NON_FOOD_CATEGORIES.includes(shopDetails.category)
     : false;
+  const isQRShop = isNonFoodShop && shopDetails?.canGenerateQR === true;
 
   const handleScanOrderUpdated = () => {
     dispatch(fetchActiveShopOrders());
@@ -273,7 +274,7 @@ export default function OwnerTabs() {
         />
         <Tab.Screen
           name="History"
-          component={isNonFoodShop ? StationeryHistoryScreen : OwnerHistoryScreen}
+          component={isQRShop ? StationeryHistoryScreen : OwnerHistoryScreen}
           options={{
             tabBarLabel: 'History',
             tabBarIcon: HistoryIcon,
@@ -282,7 +283,7 @@ export default function OwnerTabs() {
         {isNonFoodShop && (
           <Tab.Screen
             name="StationeryAnalytics"
-            component={StationeryAnalyticsScreen}
+            component={isQRShop ? StationeryAnalyticsScreen : OwnerAnalyticsScreen}
             options={{
               tabBarLabel: 'Analytics',
               tabBarIcon: AnalyticsIcon,

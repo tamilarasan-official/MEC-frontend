@@ -301,7 +301,7 @@ export default function RootNavigator() {
         } else if (appStateRef.current.match(/background|inactive/) && nextAppState === 'active') {
           // Await socket connection before setting up listeners — prevents
           // setupSocketListeners from running while socket is still null
-          await connectSocket(user.id, user.role, user.shopId);
+          connectSocket(user.id, user.role, user.shopId).catch(() => {});
           setupSocketListeners(dispatch, user.role, userModeRef.current, user.id);
           // Re-register FCM token — ensures tokens wiped by server-side
           // cleanup (logout, cron, force logout) are restored
