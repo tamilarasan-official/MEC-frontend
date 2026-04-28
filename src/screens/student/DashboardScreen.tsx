@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, PanResponder,
+  Image, FlatList, ScrollView, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, PanResponder,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,12 +9,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyActiveOrders, createOrder } from '../../store/slices/ordersSlice';
-import { fetchShops, fetchShopMenu, fetchShopCategories } from '../../store/slices/menuSlice';
+import { fetchShops, fetchShopMenu, fetchShopCategories, fetchStationeryMenu } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
-import RazorpayCheckout from 'react-native-razorpay';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
@@ -41,8 +40,6 @@ interface PendingPayment {
   status: 'pending' | 'paid' | 'cancelled';
   requestCreatedAt?: string;
 }
-
-type PaymentMethod = 'wallet' | 'razorpay';
 
 const CATEGORY_ICONS: Record<string, string> = {
   All: 'apps-outline',
@@ -170,7 +167,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
-  const { shops, menuItems: shopMenu, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
+  const { shops, menuItems: shopMenu, categories, isLoading: menuLoading, stationeryItems, stationeryCategories, stationeryLoading } = useAppSelector(s => s.menu);
   const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
   const { items: cartItems } = useAppSelector(s => s.cart);
   const { dietFilter } = useAppSelector(s => s.user);
@@ -178,6 +175,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [shopMode, setShopMode] = useState<'classic' | 'bites' | 'stationery'>('classic');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedStationeryCategory, setSelectedStationeryCategory] = useState<string | null>(null);
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -194,7 +192,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const [failError, setFailError] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<PendingPayment | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
+  const [showPaymentPIN, setShowPaymentPIN] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const submittingRef = useRef(false);
   const paymentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -203,6 +201,8 @@ export default function StudentDashboard({ navigation }: Props) {
   const [quickOrderItem, setQuickOrderItem] = useState<FoodItem | null>(null);
   const [showQuickPIN, setShowQuickPIN] = useState(false);
   const quickOrderingRef = useRef(false);
+  const [showInsufficientBalance, setShowInsufficientBalance] = useState(false);
+  const [insufficientMsg, setInsufficientMsg] = useState('');
   const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
@@ -284,7 +284,7 @@ export default function StudentDashboard({ navigation }: Props) {
     }
   }, [dispatch, canteenShop?.id, isShopOpen]);
 
-  // Re-fetch canteen menu when returning from any other screen (e.g. Stationery overwrites menuSlice)
+  // Re-fetch canteen menu when this screen regains focus (e.g. returning from Profile, Orders, etc.)
   useFocusEffect(useCallback(() => {
     if (canteenShop?.id) {
       dispatch(fetchShopMenu({ shopId: canteenShop.id }));
@@ -306,7 +306,9 @@ export default function StudentDashboard({ navigation }: Props) {
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
-    if (canteenShop?.id) {
+    if (shopMode === 'stationery' && stationeryShop?.id) {
+      await dispatch(fetchStationeryMenu(stationeryShop.id));
+    } else if (canteenShop?.id) {
       await dispatch(fetchShopMenu({ shopId: canteenShop.id }));
     }
     setRefreshing(false);
@@ -314,70 +316,47 @@ export default function StudentDashboard({ navigation }: Props) {
 
   const handlePayNow = (payment: PendingPayment) => {
     setSelectedPayment(payment);
-    const balance = user?.balance || 0;
-    setPaymentMethod(balance >= payment.amount ? 'wallet' : 'razorpay');
     setShowConfirmModal(true);
   };
 
-  const handleConfirmPayment = async () => {
-    if (submittingRef.current) return;
-    if (!selectedPayment) return;
+  const executeAdhocPayment = useCallback(async () => {
+    if (submittingRef.current || !selectedPayment) return;
     submittingRef.current = true;
-    const balance = user?.balance || 0;
-
-    setShowConfirmModal(false);
     setPayingId(selectedPayment.id);
-
+    const payment = selectedPayment;
     try {
-      if (paymentMethod === 'wallet') {
-        if (balance < selectedPayment.amount) {
-          Alert.alert('Insufficient Balance', `You need Rs. ${selectedPayment.amount - balance} more. Please top up your wallet or use Razorpay.`);
-          setPayingId(null);
-          return;
-        }
-        await walletService.payAdhocPayment(selectedPayment.id);
-      } else {
-        const orderData = await walletService.createRazorpayOrder(selectedPayment.amount);
-        const options = {
-          key: orderData.keyId,
-          amount: selectedPayment.amount * 100,
-          currency: orderData.currency || 'INR',
-          name: 'CampusOne',
-          description: selectedPayment.title,
-          order_id: orderData.orderId,
-          prefill: {
-            name: user?.name || '',
-            email: user?.email || '',
-            contact: user?.phone || '',
-          },
-          theme: { color: '#10b981' },
-        };
-        const paymentResponse = await RazorpayCheckout.open(options);
-        await walletService.verifyRazorpayPayment({
-          razorpay_order_id: paymentResponse.razorpay_order_id,
-          razorpay_payment_id: paymentResponse.razorpay_payment_id,
-          razorpay_signature: paymentResponse.razorpay_signature,
-        });
-        await walletService.payAdhocPayment(selectedPayment.id);
-      }
-
+      await walletService.payAdhocPayment(payment.id);
       successHaptic();
       setPaymentSuccess(true);
-      setPendingPayments(prev => prev.filter(p => p.id !== selectedPayment.id));
+      setPendingPayments(prev => prev.filter(p => p.id !== payment.id));
       dispatch(fetchWalletBalance());
-      dispatch(fetchMyActiveOrders()); // Refresh home screen orders to prevent stale UI (#66)
+      dispatch(fetchMyActiveOrders());
       paymentTimerRef.current = setTimeout(() => {
         setPaymentSuccess(false);
         setSelectedPayment(null);
       }, 2500);
     } catch (e: any) {
-      if (e?.code !== 'PAYMENT_CANCELLED') {
-        Alert.alert('Payment Failed', e?.response?.data?.message || e?.description || 'Please try again.');
-      }
+      Alert.alert('Payment Failed', e?.response?.data?.message || 'Please try again.');
     } finally {
       submittingRef.current = false;
+      setPayingId(null);
     }
-    setPayingId(null);
+  }, [selectedPayment, dispatch]);
+
+  const handleConfirmPayment = () => {
+    if (!selectedPayment) return;
+    const balance = user?.balance || 0;
+    setShowConfirmModal(false);
+    if (balance < selectedPayment.amount) {
+      setInsufficientMsg(`You need Rs. ${selectedPayment.amount - balance} more. Please top up your wallet.`);
+      setShowInsufficientBalance(true);
+      return;
+    }
+    if (user?.isPinSetup) {
+      setShowPaymentPIN(true);
+    } else {
+      executeAdhocPayment();
+    }
   };
 
   const CATEGORY_ORDER = ['Classic', 'Bites', 'Snacks', 'Drinks', 'Desserts', 'Meals', 'Breakfast'];
@@ -404,25 +383,27 @@ export default function StudentDashboard({ navigation }: Props) {
   }, [allCategories]);
 
   const filteredItems = useMemo(() => {
-    // Don't show any items when the shop is closed or in stationery mode
-    if (!canteenShop || !isShopOpen || shopMode === 'stationery') return [];
+    if (shopMode === 'stationery') {
+      return stationeryItems.filter(i =>
+        i.isAvailable && (!selectedStationeryCategory || i.category === selectedStationeryCategory),
+      );
+    }
+    if (!canteenShop || !isShopOpen) return [];
     const modeCategory = shopMode === 'classic' ? 'Classic' : 'Bites';
     return shopMenu.filter((item: FoodItem) => {
       const matchesMode = item.category === modeCategory;
       const matchesDiet = dietFilter === 'all' || (dietFilter === 'veg' && item.isVeg) || (dietFilter === 'nonveg' && !item.isVeg);
       return matchesMode && item.isAvailable && matchesDiet;
     });
-  }, [shopMenu, shopMode, dietFilter, canteenShop, isShopOpen]);
+  }, [shopMenu, shopMode, dietFilter, canteenShop, isShopOpen, stationeryItems, selectedStationeryCategory]);
 
   const handleModeTab = useCallback((mode: 'classic' | 'bites' | 'stationery') => {
-    if (mode === 'stationery') {
-      if (stationeryShop) {
-        navigation.navigate('Stationery', { shopId: stationeryShop.id, shopName: stationeryShop.name });
-      }
-      return;
-    }
     setShopMode(mode);
-  }, [stationeryShop, navigation]);
+    setSelectedStationeryCategory(null);
+    if (mode === 'stationery' && stationeryShop && stationeryItems.length === 0 && !stationeryLoading) {
+      dispatch(fetchStationeryMenu(stationeryShop.id));
+    }
+  }, [stationeryShop, stationeryItems.length, stationeryLoading, dispatch]);
 
   const keyExtractor = useCallback((i: FoodItem) => i.id, []);
   const getCartQty = useCallback((id: string) => cartItems.find(c => c.item.id === id)?.quantity || 0, [cartItems]);
@@ -483,10 +464,8 @@ export default function StudentDashboard({ navigation }: Props) {
     if (!item.isAvailable) return;
     const price = item.isOffer && item.offerPrice ? item.offerPrice : item.price;
     if ((user?.balance ?? 0) < price) {
-      Alert.alert(
-        'Insufficient Balance',
-        `You need Rs.${price} to order ${item.name}. Top up your wallet to continue.`,
-      );
+      setInsufficientMsg(`You need Rs.${price} to order ${item.name}. Top up your wallet to continue.`);
+      setShowInsufficientBalance(true);
       return;
     }
     setQuickOrderItem(item);
@@ -516,6 +495,60 @@ export default function StudentDashboard({ navigation }: Props) {
     partially_ready: { bg: 'rgba(139,92,246,0.15)', color: '#8b5cf6', label: 'Partially Ready' },
     ready: { bg: 'rgba(16,185,129,0.15)', color: '#10b981', label: 'Ready' },
     partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial' },
+  };
+
+  const renderStationeryCard = ({ item }: { item: FoodItem }) => {
+    const qty = getCartQty(item.id);
+    const imageUri = resolveImageUrl(item.image);
+    return (
+      <View style={styles.statCard}>
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={styles.statCardImage} resizeMode="cover" />
+        ) : (
+          <View style={[styles.statCardImage, styles.statCardImagePlaceholder]}>
+            <Icon name="cube-outline" size={28} color={colors.textMuted} />
+          </View>
+        )}
+        <View style={styles.statCardBody}>
+          <Text style={styles.statCardName} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.statCardFooter}>
+            <Text style={styles.statCardPrice}>₹{item.price}</Text>
+            {qty === 0 ? (
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => {
+                  if (!stationeryShop) return;
+                  lightHaptic();
+                  dispatch(addToCart({ item, shopId: stationeryShop.id, shopName: stationeryShop.name }));
+                }}
+                activeOpacity={0.7}
+                accessibilityLabel={`Add ${item.name} to cart`}
+                accessibilityRole="button">
+                <Icon name="add" size={18} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.qtyControl}>
+                <TouchableOpacity
+                  onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }}
+                  style={styles.qtyBtn}
+                  accessibilityLabel={`Decrease ${item.name} quantity`}
+                  accessibilityRole="button">
+                  <Icon name="remove" size={14} color="#3b82f6" />
+                </TouchableOpacity>
+                <Text style={styles.qtyText}>{qty}</Text>
+                <TouchableOpacity
+                  onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }}
+                  style={styles.qtyBtn}
+                  accessibilityLabel={`Increase ${item.name} quantity`}
+                  accessibilityRole="button">
+                  <Icon name="add" size={14} color="#3b82f6" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    );
   };
 
   const renderFoodCard = ({ item }: { item: FoodItem }) => {
@@ -646,18 +679,21 @@ export default function StudentDashboard({ navigation }: Props) {
           <Text style={[styles.modeTabText, shopMode === 'bites' && styles.modeTabTextActive]}>Bites</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.modeTab}
+          style={[styles.modeTab, shopMode === 'stationery' && styles.modeTabActive]}
           onPress={() => handleModeTab('stationery')}
           activeOpacity={0.8}>
-          <Icon name="storefront-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.modeTabText}>Stationery</Text>
+          <Icon name="storefront-outline" size={14} color={shopMode === 'stationery' ? '#fff' : colors.textMuted} />
+          <Text style={[styles.modeTabText, shopMode === 'stationery' && styles.modeTabTextActive]}>Stationery</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
+        key={shopMode === 'stationery' ? 'stationery-grid' : 'canteen-list'}
         data={filteredItems}
         keyExtractor={keyExtractor}
-        renderItem={renderFoodCard}
+        renderItem={shopMode === 'stationery' ? renderStationeryCard : renderFoodCard}
+        numColumns={shopMode === 'stationery' ? 2 : 1}
+        columnWrapperStyle={shopMode === 'stationery' ? styles.statRow : undefined}
         contentContainerStyle={styles.listContent}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -712,7 +748,7 @@ export default function StudentDashboard({ navigation }: Props) {
                         </TouchableOpacity>
                       </View>
                       {insufficientBalance && (
-                        <Text style={styles.lowBalanceText}>Low balance — Razorpay available</Text>
+                        <Text style={styles.lowBalanceText}>Insufficient balance — top up your wallet</Text>
                       )}
                     </View>
                   );
@@ -776,8 +812,8 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Shop Closed Banner */}
-            {(!canteenShop || !isShopOpen) && !menuLoading && (
+            {/* Shop Closed Banner — only shown for canteen modes */}
+            {shopMode !== 'stationery' && (!canteenShop || !isShopOpen) && !menuLoading && (
               <View style={styles.shopClosedBanner}>
                 <View style={styles.shopClosedIcon}>
                   <Icon name="storefront-outline" size={28} color="#ef4444" />
@@ -789,9 +825,37 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Category pills hidden — mode bar handles Classic/Bites filtering */}
+            {/* Stationery category pills */}
+            {shopMode === 'stationery' && stationeryCategories.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.statPillsScroll}
+                contentContainerStyle={styles.statPillsRow}>
+                {[null, ...stationeryCategories].map(cat => {
+                  const active = cat === selectedStationeryCategory;
+                  return (
+                    <TouchableOpacity
+                      key={cat ?? 'all'}
+                      style={[styles.statPill, active && styles.statPillActive]}
+                      onPress={() => setSelectedStationeryCategory(cat)}
+                      activeOpacity={0.8}>
+                      <Text style={[styles.statPillText, active && styles.statPillTextActive]} numberOfLines={1}>
+                        {cat ?? 'All'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
 
-            {menuLoading && !refreshing && (
+            {/* Loading indicators */}
+            {shopMode === 'stationery' && stationeryLoading && (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="large" color={colors.accent} />
+              </View>
+            )}
+            {shopMode !== 'stationery' && menuLoading && !refreshing && (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator size="large" color={colors.accent} />
               </View>
@@ -799,7 +863,13 @@ export default function StudentDashboard({ navigation }: Props) {
           </>
         }
         ListEmptyComponent={
-          !menuLoading && isShopOpen && canteenShop ? (
+          shopMode === 'stationery' && !stationeryLoading ? (
+            <View style={styles.empty}>
+              <Icon name="cube-outline" size={40} color={colors.textMuted} />
+              <Text style={styles.emptyTitle}>No items found</Text>
+              <Text style={styles.emptySubtitle}>{selectedStationeryCategory ? 'Try another category' : 'Check back later'}</Text>
+            </View>
+          ) : !menuLoading && isShopOpen && canteenShop && shopMode !== 'stationery' ? (
             <View style={styles.empty}>
               <Icon name="search" size={40} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No items found</Text>
@@ -919,6 +989,21 @@ export default function StudentDashboard({ navigation }: Props) {
         }}
       />
 
+      {/* Adhoc payment PIN modal */}
+      <PINVerifyModal
+        visible={showPaymentPIN}
+        amount={selectedPayment?.amount ?? 0}
+        title={selectedPayment?.title ?? ''}
+        onVerified={() => {
+          setShowPaymentPIN(false);
+          executeAdhocPayment();
+        }}
+        onCancel={() => {
+          setShowPaymentPIN(false);
+          setSelectedPayment(null);
+        }}
+      />
+
       {/* Order Success Animation */}
       {showSuccessAnim && successOrder && (
         <OrderAnimation
@@ -1002,42 +1087,21 @@ export default function StudentDashboard({ navigation }: Props) {
                   <Text style={[styles.confirmRowValue, { color: colors.primary }]}>Rs. {user?.balance || 0}</Text>
                 </View>
 
-                {paymentMethod === 'wallet' && (
-                  <View style={[styles.confirmRow, styles.confirmRowBorder]}>
-                    <Text style={styles.confirmRowLabel}>Balance After</Text>
-                    <Text style={styles.confirmRowValue}>
-                      Rs. {(user?.balance || 0) - selectedPayment.amount}
-                    </Text>
-                  </View>
-                )}
-
-                <Text style={styles.methodLabel}>Pay via</Text>
-                <View style={styles.methodRow}>
-                  <TouchableOpacity
-                    style={[styles.methodBtn, paymentMethod === 'wallet' && styles.methodBtnActive]}
-                    onPress={() => setPaymentMethod('wallet')}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Pay with wallet"
-                    accessibilityRole="button">
-                    <Icon name="wallet-outline" size={20} color={paymentMethod === 'wallet' ? '#fff' : colors.primary} />
-                    <Text style={[styles.methodBtnText, paymentMethod === 'wallet' && styles.methodBtnTextActive]}>Wallet</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.methodBtn, paymentMethod === 'razorpay' && styles.methodBtnActive]}
-                    onPress={() => setPaymentMethod('razorpay')}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Pay with Razorpay"
-                    accessibilityRole="button">
-                    <Icon name="card-outline" size={20} color={paymentMethod === 'razorpay' ? '#fff' : colors.primary} />
-                    <Text style={[styles.methodBtnText, paymentMethod === 'razorpay' && styles.methodBtnTextActive]}>Razorpay</Text>
-                  </TouchableOpacity>
+                <View style={[styles.confirmRow, styles.confirmRowBorder]}>
+                  <Text style={styles.confirmRowLabel}>Balance After</Text>
+                  <Text style={[
+                    styles.confirmRowValue,
+                    (user?.balance || 0) < selectedPayment.amount && { color: '#ef4444' },
+                  ]}>
+                    Rs. {(user?.balance || 0) - selectedPayment.amount}
+                  </Text>
                 </View>
 
-                {paymentMethod === 'wallet' && (user?.balance || 0) < selectedPayment.amount && (
+                {(user?.balance || 0) < selectedPayment.amount && (
                   <View style={styles.warningBanner}>
                     <Icon name="alert-circle-outline" size={16} color="#f97316" />
                     <Text style={styles.warningText}>
-                      Insufficient balance. Add Rs. {selectedPayment.amount - (user?.balance || 0)} or use Razorpay.
+                      Insufficient balance. Top up Rs. {selectedPayment.amount - (user?.balance || 0)} to pay.
                     </Text>
                   </View>
                 )}
@@ -1054,20 +1118,47 @@ export default function StudentDashboard({ navigation }: Props) {
                   <TouchableOpacity
                     style={[
                       styles.confirmBtn,
-                      paymentMethod === 'wallet' && (user?.balance || 0) < selectedPayment.amount && styles.confirmBtnDisabled,
+                      (user?.balance || 0) < selectedPayment.amount && styles.confirmBtnDisabled,
                     ]}
                     onPress={handleConfirmPayment}
-                    disabled={paymentMethod === 'wallet' && (user?.balance || 0) < selectedPayment.amount}
+                    disabled={(user?.balance || 0) < selectedPayment.amount}
                     activeOpacity={0.8}
                     accessibilityLabel="Confirm payment"
                     accessibilityRole="button">
-                    <Text style={styles.confirmBtnText}>
-                      {paymentMethod === 'razorpay' ? 'Pay with Razorpay' : 'Confirm'}
-                    </Text>
+                    <Icon name="wallet-outline" size={16} color="#fff" />
+                    <Text style={styles.confirmBtnText}>Pay Rs. {selectedPayment.amount}</Text>
                   </TouchableOpacity>
                 </View>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Insufficient Balance Modal */}
+      <Modal visible={showInsufficientBalance} animationType="fade" transparent statusBarTranslucent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.insufficientCard}>
+            <View style={styles.insufficientIconWrap}>
+              <Icon name="wallet-outline" size={28} color="#ef4444" />
+            </View>
+            <Text style={styles.insufficientTitle}>Insufficient Balance</Text>
+            <Text style={styles.insufficientMsg}>{insufficientMsg}</Text>
+            <View style={styles.insufficientActions}>
+              <TouchableOpacity
+                style={styles.insufficientDismiss}
+                onPress={() => setShowInsufficientBalance(false)}
+                activeOpacity={0.7}>
+                <Text style={styles.insufficientDismissText}>Dismiss</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.insufficientTopUp}
+                onPress={() => { setShowInsufficientBalance(false); setShowTopUp(true); }}
+                activeOpacity={0.8}>
+                <Icon name="add-circle-outline" size={16} color="#fff" />
+                <Text style={styles.insufficientTopUpText}>Top Up</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1280,6 +1371,28 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
   emptySubtitle: { fontSize: 13, color: colors.textMuted },
 
+  // ── Stationery inline grid ──
+  statPillsScroll: { marginBottom: 12 },
+  statPillsRow: { flexDirection: 'row', gap: 8, paddingBottom: 4 },
+  statPill: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+  },
+  statPillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  statPillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
+  statPillTextActive: { color: '#fff' },
+  statRow: { gap: 10, marginBottom: 10 },
+  statCard: {
+    flex: 1, backgroundColor: colors.card, borderRadius: 12,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  statCardImage: { width: '100%', aspectRatio: 1.4, backgroundColor: colors.surface },
+  statCardImagePlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  statCardBody: { padding: 8 },
+  statCardName: { fontSize: 11, fontWeight: '600', color: colors.text, minHeight: 28 },
+  statCardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  statCardPrice: { fontSize: 13, fontWeight: '800', color: colors.primary },
+
   // ── Floating Cart Bar ──
   floatingBarWrap: {
     position: 'absolute', bottom: 20, left: 16, right: 16,
@@ -1351,11 +1464,41 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cancelBtnText: { fontSize: 15, fontWeight: '600', color: colors.text },
   confirmBtn: {
-    flex: 1, paddingVertical: 14, borderRadius: 14,
-    backgroundColor: colors.primary, alignItems: 'center',
+    flex: 1, flexDirection: 'row', paddingVertical: 14, borderRadius: 14,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', gap: 8,
   },
   confirmBtnDisabled: { opacity: 0.4 },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  // ── Insufficient Balance Modal ──
+  insufficientCard: {
+    width: '100%', maxWidth: 340, backgroundColor: colors.background,
+    borderRadius: 24, padding: 28, alignItems: 'center',
+    shadowColor: '#ef4444', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 24, elevation: 12,
+  },
+  insufficientIconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 16,
+  },
+  insufficientTitle: {
+    fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 10, textAlign: 'center',
+  },
+  insufficientMsg: {
+    fontSize: 14, color: colors.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 24,
+  },
+  insufficientActions: { flexDirection: 'row', gap: 12, width: '100%' },
+  insufficientDismiss: {
+    flex: 1, paddingVertical: 13, borderRadius: 14,
+    backgroundColor: colors.surface, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  insufficientDismissText: { fontSize: 14, fontWeight: '600', color: colors.textMuted },
+  insufficientTopUp: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 13, borderRadius: 14, backgroundColor: colors.primary,
+  },
+  insufficientTopUpText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
   // ── Success Toast ──
   successToast: {

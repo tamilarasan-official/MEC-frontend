@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, StyleSheet, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState, AppDispatch } from '../../store';
 import { fetchActiveShopOrders } from '../../store/slices/ordersSlice';
+import { fetchShops } from '../../store/slices/menuSlice';
 import { CaptainTabParamList } from '../../types';
+import StationeryCaptainHomeScreen from '../../screens/stationery_owner/StationeryCaptainHomeScreen';
 import CaptainHomeScreen from '../../screens/captain/CaptainHomeScreen';
 import CaptainPrepListScreen from '../../screens/captain/CaptainPrepListScreen';
 import CaptainHistoryScreen from '../../screens/captain/CaptainHistoryScreen';
@@ -107,8 +109,24 @@ export default function CaptainTabs() {
   const tabBarHeight = 56 + Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
   const tabBarPaddingBottom = Math.max(insets.bottom, 8);
   const userMode = useSelector((s: RootState) => s.user.userMode);
+  const authUser  = useSelector((s: RootState) => s.auth.user);
+  const shops     = useSelector((s: RootState) => s.menu.shops);
   const dispatch = useDispatch<AppDispatch>();
   const [showScanner, setShowScanner] = useState(false);
+  const [captainTypeReady, setCaptainTypeReady] = useState(shops.length > 0);
+
+  // Fetch shop list once so we can detect stationery captain by shopId
+  useEffect(() => {
+    if (shops.length > 0) { setCaptainTypeReady(true); return; }
+    dispatch(fetchShops()).finally(() => setCaptainTypeReady(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const captainShop = useMemo(() =>
+    authUser?.shopId ? shops.find(s => s.id === authUser.shopId) : undefined,
+    [shops, authUser?.shopId],
+  );
+  const isStationeryCaptain = captainShop?.category === 'stationery';
 
   const handleScanOrderUpdated = () => {
     dispatch(fetchActiveShopOrders());
@@ -182,6 +200,20 @@ export default function CaptainTabs() {
         />
       </Tab.Navigator>
     );
+  }
+
+  // Loading: waiting for shops list to resolve captain type
+  if (!captainTypeReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.accent} />
+      </View>
+    );
+  }
+
+  // Stationery captain work mode: single order-management screen, no tab bar
+  if (isStationeryCaptain) {
+    return <StationeryCaptainHomeScreen />;
   }
 
   return (

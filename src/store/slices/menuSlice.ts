@@ -78,6 +78,9 @@ interface MenuState {
   ownerMenuLoading: boolean;
   ownerMenuLastFetched: number;
   error: string | null;
+  stationeryItems: FoodItem[];
+  stationeryCategories: string[];
+  stationeryLoading: boolean;
 }
 
 const initialState: MenuState = {
@@ -94,6 +97,9 @@ const initialState: MenuState = {
   ownerMenuLoading: false,
   ownerMenuLastFetched: 0,
   error: null,
+  stationeryItems: [],
+  stationeryCategories: [],
+  stationeryLoading: false,
 };
 
 export const fetchShops = createAsyncThunk('menu/fetchShops', async (_, { rejectWithValue }) => {
@@ -126,6 +132,24 @@ export const fetchShopCategories = createAsyncThunk(
       const res = await api.get(`/shops/${shopId}/categories`);
       const raw = res.data.data || res.data;
       return (Array.isArray(raw) ? raw.map((c: any) => typeof c === 'string' ? c : c.name) : []) as string[];
+    } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
+  },
+);
+
+export const fetchStationeryMenu = createAsyncThunk(
+  'menu/fetchStationeryMenu',
+  async (shopId: string, { rejectWithValue }) => {
+    try {
+      const [menuRes, catRes] = await Promise.all([
+        api.get(`/shops/${shopId}/menu`),
+        api.get(`/shops/${shopId}/categories`).catch(() => ({ data: { data: [] } })),
+      ]);
+      const items = unwrapItems(menuRes.data).map(mapMenuItem) as FoodItem[];
+      const catRaw = catRes.data?.data || catRes.data;
+      const categories = (Array.isArray(catRaw)
+        ? catRaw.map((c: any) => typeof c === 'string' ? c : c.name).filter(Boolean)
+        : []) as string[];
+      return { items, categories };
     } catch (e: any) { return rejectWithValue(e.response?.data?.message || 'Failed'); }
   },
 );
@@ -295,6 +319,14 @@ const menuSlice = createSlice({
       .addCase(fetchShopMenu.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     builder
       .addCase(fetchShopCategories.fulfilled, (s, a) => { s.categories = a.payload; });
+    builder
+      .addCase(fetchStationeryMenu.pending, (s) => { s.stationeryLoading = true; })
+      .addCase(fetchStationeryMenu.fulfilled, (s, a) => {
+        s.stationeryLoading = false;
+        s.stationeryItems = a.payload.items;
+        s.stationeryCategories = a.payload.categories;
+      })
+      .addCase(fetchStationeryMenu.rejected, (s) => { s.stationeryLoading = false; });
     builder
       .addCase(fetchOwnerMenu.fulfilled, (s, a) => {
         s.ownerMenuLoading = false;

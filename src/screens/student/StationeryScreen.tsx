@@ -88,10 +88,12 @@ export default function StationeryScreen({ route, navigation }: Props) {
 
   const dispatch = useAppDispatch();
   const cartItems = useAppSelector(selectCartItems);
-  const { menuItems: shopMenu, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
+  const { menuItems: rawMenuItems, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
+  const shopMenu = useMemo(() => rawMenuItems.filter((i: FoodItem) => i.shopId === shopId), [rawMenuItems, shopId]);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Cart sheet + success/failure flow (same as DashboardScreen)
   const [showCart, setShowCart] = useState(false);
@@ -119,9 +121,13 @@ export default function StationeryScreen({ route, navigation }: Props) {
     prevItemCount.current = cartCount;
   }, [cartCount, cartBarAnim]);
 
-  const loadMenu = useCallback(() => {
-    dispatch(fetchShopMenu({ shopId }));
-    dispatch(fetchShopCategories(shopId));
+  const loadMenu = useCallback(async () => {
+    setInitialLoading(true);
+    await Promise.all([
+      dispatch(fetchShopMenu({ shopId })),
+      dispatch(fetchShopCategories(shopId)),
+    ]);
+    setInitialLoading(false);
   }, [dispatch, shopId]);
 
   useEffect(() => { loadMenu(); }, [loadMenu]);
@@ -216,7 +222,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
         </View>
 
         {/* Items grid */}
-        {menuLoading && shopMenu.length === 0 ? (
+        {(initialLoading || menuLoading) && shopMenu.length === 0 ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
