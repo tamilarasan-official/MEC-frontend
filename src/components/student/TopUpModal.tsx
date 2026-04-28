@@ -51,7 +51,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   // Fetch minimum recharge amount set by accountant
   useEffect(() => {
     if (!visible) return;
-    api.get('/student/wallet/config')
+    api.get('/wallet/settings')
       .then(res => setMinRecharge(res.data?.data?.minRechargeAmount || 0))
       .catch(() => setMinRecharge(0));
   }, [visible]);
