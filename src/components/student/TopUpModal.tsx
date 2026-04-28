@@ -16,14 +16,13 @@ import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
 import walletService from '../../services/walletService';
+import api from '../../services/api';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 
 interface TopUpModalProps {
   visible: boolean;
   onClose: () => void;
 }
-
-const QUICK_AMOUNTS = [50, 100, 200, 500];
 
 export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const { colors } = useTheme();
@@ -35,6 +34,7 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   const [error, setError] = useState('');
   const [verificationFailed, setVerificationFailed] = useState(false);
   const [paymentResult, setPaymentResult] = useState<{ type: 'success' | 'failed'; amount: number } | null>(null);
+  const [minRecharge, setMinRecharge] = useState(0);
   const pendingPaymentRef = useRef<{ razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string } | null>(null);
 
   const bottomSheetRef = useRef<BottomSheetModal>(null);
@@ -46,6 +46,14 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
       setPaymentResult(null);
       bottomSheetRef.current?.present();
     }
+  }, [visible]);
+
+  // Fetch minimum recharge amount set by accountant
+  useEffect(() => {
+    if (!visible) return;
+    api.get('/student/wallet/config')
+      .then(res => setMinRecharge(res.data?.data?.minRechargeAmount || 0))
+      .catch(() => setMinRecharge(0));
   }, [visible]);
 
   // Reset state when modal closes
@@ -104,8 +112,13 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
   }, []);
 
   const handleTopUp = async () => {
-    if (numericAmount < 10 || numericAmount > 5000) {
-      setError('Amount must be between Rs. 10 and Rs. 5,000');
+    const effectiveMin = minRecharge > 0 ? minRecharge : 10;
+    if (numericAmount < effectiveMin) {
+      setError(`Minimum recharge amount is Rs. ${effectiveMin}`);
+      return;
+    }
+    if (numericAmount > 5000) {
+      setError('Amount must be Rs. 5,000 or less');
       return;
     }
     setLoading(true);
@@ -266,22 +279,10 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
           />
         </View>
 
-        {/* Quick amounts */}
-        <View style={styles.quickRow}>
-          {QUICK_AMOUNTS.map(a => (
-            <TouchableOpacity
-              key={a}
-              style={[styles.quickBtn, amount === String(a) && styles.quickBtnActive]}
-              onPress={() => { setAmount(String(a)); setError(''); }}
-              activeOpacity={0.7}
-              accessibilityLabel={`Select rupees ${a}`}
-              accessibilityRole="button">
-              <Text style={[styles.quickBtnText, amount === String(a) && styles.quickBtnTextActive]}>
-                Rs. {a}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Minimum recharge hint */}
+        {minRecharge > 0 && (
+          <Text style={styles.minHint}>Minimum recharge amount is Rs. {minRecharge}</Text>
+        )}
 
         {/* Error */}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -305,9 +306,9 @@ export default function TopUpModal({ visible, onClose }: TopUpModalProps) {
 
         {/* Submit */}
         <TouchableOpacity
-          style={[styles.submitBtn, (loading || numericAmount < 1) && styles.submitBtnDisabled]}
+          style={[styles.submitBtn, (loading || numericAmount < (minRecharge > 0 ? minRecharge : 1)) && styles.submitBtnDisabled]}
           onPress={handleTopUp}
-          disabled={loading || numericAmount < 1}
+          disabled={loading || numericAmount < (minRecharge > 0 ? minRecharge : 1)}
           activeOpacity={0.85}
           accessibilityLabel={numericAmount > 0 ? `Pay rupees ${numericAmount}` : 'Enter amount'}
           accessibilityRole="button">
@@ -395,15 +396,11 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.text,
   },
 
-  quickRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  quickBtn: {
-    flex: 1, paddingVertical: 11, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
-    alignItems: 'center',
+  minHint: {
+    fontSize: 12, fontWeight: '500',
+    color: colors.textMuted,
+    marginBottom: 14, marginTop: 4,
   },
-  quickBtnActive: { borderColor: colors.primary, backgroundColor: 'rgba(16,185,129,0.1)' },
-  quickBtnText: { fontSize: 13, fontWeight: '700', color: colors.textMuted },
-  quickBtnTextActive: { color: colors.primary },
 
   errorText: { fontSize: 12, color: colors.error, marginBottom: 10, textAlign: 'center' },
 
