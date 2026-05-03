@@ -1,26 +1,66 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import { MonthlySummary, LeaderboardPreview } from '../../types';
-import { useTheme } from '../../theme/ThemeContext';
-import type { ThemeColors } from '../../theme/colors';
-import HeatmapGrid from './HeatmapGrid';
+import { MonthlySummary, LeaderboardPreview, WeeklyChallenge, WeeklyChallengeDay } from '../../types';
 
 interface Props {
   summary: MonthlySummary | null;
   leaderboard: LeaderboardPreview | null;
+  weeklyChallenge: WeeklyChallenge | null;
   month: number;
   year: number;
   onPress: () => void;
+  onGiftBoxPress: () => void;
 }
 
-export default function StreakChatCard({ summary, leaderboard, month, year, onPress }: Props) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+function getDaySquareColor(day: WeeklyChallengeDay, completedDays: number): string {
+  if (day.isFuture) return 'rgba(255,255,255,0.15)';
+  if (!day.completed) return 'rgba(255,255,255,0.25)';
+  if (completedDays <= 3) return '#a78bfa';
+  if (completedDays <= 5) return '#c084fc';
+  return '#fbbf24';
+}
 
+function getGiftState(completedDays: number, claimed: boolean): { tint: string; glow: string; opacity: number } {
+  if (claimed) return { tint: '#fbbf24', glow: 'rgba(251,191,36,0.45)', opacity: 1 };
+  if (completedDays === 0) return { tint: 'rgba(255,255,255,0.5)', glow: 'transparent', opacity: 0.4 };
+  if (completedDays <= 2) return { tint: '#c4b5fd', glow: 'transparent', opacity: 0.7 };
+  if (completedDays <= 4) return { tint: '#a78bfa', glow: 'rgba(167,139,250,0.3)', opacity: 0.85 };
+  if (completedDays <= 6) return { tint: '#8b5cf6', glow: 'rgba(139,92,246,0.4)', opacity: 1 };
+  return { tint: '#fbbf24', glow: 'rgba(251,191,36,0.55)', opacity: 1 };
+}
+
+// Fallback weekly days when no data loaded yet
+const EMPTY_DAYS: WeeklyChallengeDay[] = Array.from({ length: 7 }, (_, i) => ({
+  date: '',
+  dayLabel: ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i],
+  orderCount: 0,
+  completed: false,
+  isFuture: true,
+}));
+
+export default function StreakChatCard({ summary, leaderboard, weeklyChallenge, month, year, onPress, onGiftBoxPress }: Props) {
   const streak = summary?.currentStreak ?? 0;
   const personality = summary?.personality;
   const userRank = leaderboard?.userRank;
+
+  const completedDays = weeklyChallenge?.completedDays ?? 0;
+  const isClaimable = weeklyChallenge?.isClaimable ?? false;
+  const claimed = weeklyChallenge?.claimed ?? false;
+  const days = weeklyChallenge?.days ?? EMPTY_DAYS;
+  const gift = getGiftState(completedDays, claimed);
+
+  // Pulse animation when gift is claimable
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isClaimable) { pulseAnim.setValue(1); return; }
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.25, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1.00, duration: 700, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim, isClaimable]);
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel="Open streak">
@@ -29,41 +69,55 @@ export default function StreakChatCard({ summary, leaderboard, month, year, onPr
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.card}>
+
         {/* Left: flame + streak */}
         <View style={styles.streakBlock}>
           <Text style={styles.flame}>🔥</Text>
           <Text style={styles.streakNum}>{streak}</Text>
-          <Text style={styles.streakLabel}>day{streak !== 1 ? 's' : ''}</Text>
+          <Text style={styles.streakLabel}>DAYS</Text>
         </View>
 
-        {/* Center: mini heatmap dots */}
-        <View style={styles.heatmapBlock}>
-          {summary ? (
-            <HeatmapGrid
-              heatmap={summary.heatmap}
-              month={month}
-              year={year}
-              compact
-              cardMode
-            />
-          ) : (
-            <Text style={styles.emptyHeat}>Tap to view your food activity</Text>
-          )}
+        {/* Center: 7-day weekly progress */}
+        <View style={styles.weekBlock}>
+          <View style={styles.weekRow}>
+            {days.map((day, i) => (
+              <View key={i} style={styles.dayCol}>
+                <Text style={styles.dayLabel}>{day.dayLabel}</Text>
+                <View style={[styles.daySquare, { backgroundColor: getDaySquareColor(day, completedDays) }]}>
+                  {day.completed && <Text style={styles.dayCheck}>✓</Text>}
+                </View>
+              </View>
+            ))}
+          </View>
+          {/* Personality row */}
+          <View style={styles.personalityRow}>
+            {personality && (
+              <Text style={styles.personalityText}>{personality.emoji} {personality.label}</Text>
+            )}
+            {userRank != null && (
+              <View style={styles.rankBadge}>
+                <Text style={styles.rankText}>#{userRank}</Text>
+              </View>
+            )}
+          </View>
         </View>
 
-        {/* Right: personality + rank */}
-        <View style={styles.rightBlock}>
-          {personality && (
-            <Text style={styles.personalityRow}>
-              {personality.emoji} {personality.label}
-            </Text>
+        {/* Right: gift box */}
+        <TouchableOpacity
+          style={styles.giftBtn}
+          onPress={e => { e.stopPropagation(); onGiftBoxPress(); }}
+          activeOpacity={0.75}
+          accessibilityLabel={isClaimable ? 'Claim weekly badge' : 'Weekly challenge progress'}
+          accessibilityRole="button">
+          <Animated.View style={[
+            styles.giftGlow,
+            { backgroundColor: gift.glow, transform: [{ scale: pulseAnim }] },
+          ]} />
+          <Text style={[styles.giftEmoji, { opacity: gift.opacity }]}>🎁</Text>
+          {completedDays > 0 && (
+            <Text style={styles.giftCount}>{completedDays}/7</Text>
           )}
-          {userRank != null && (
-            <View style={styles.rankBadge}>
-              <Text style={styles.rankText}>#{userRank}</Text>
-            </View>
-          )}
-        </View>
+        </TouchableOpacity>
 
         {/* Chevron */}
         <Text style={styles.chevron}>›</Text>
@@ -72,36 +126,51 @@ export default function StreakChatCard({ summary, leaderboard, month, year, onPr
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    card: {
-      borderRadius: 16,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      flexDirection: 'row',
-      alignItems: 'center',
-      elevation: 4,
-      shadowColor: '#000',
-      shadowOpacity: 0.15,
-      shadowOffset: { width: 0, height: 3 },
-      shadowRadius: 8,
-      gap: 10,
-    },
-    streakBlock: { alignItems: 'center', minWidth: 44 },
-    flame: { fontSize: 20 },
-    streakNum: { fontSize: 22, fontWeight: '900', color: '#fff', lineHeight: 26 },
-    streakLabel: { fontSize: 10, color: 'rgba(255,255,255,0.8)', fontWeight: '600' },
-    heatmapBlock: { flex: 1, alignItems: 'center' },
-    emptyHeat: { fontSize: 11, color: 'rgba(255,255,255,0.85)', textAlign: 'center' },
-    rightBlock: { alignItems: 'flex-end', gap: 4 },
-    personalityRow: { fontSize: 11, color: '#fff', fontWeight: '700', textAlign: 'right' },
-    rankBadge: {
-      backgroundColor: 'rgba(255,255,255,0.25)',
-      borderRadius: 8,
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-    },
-    rankText: { fontSize: 11, fontWeight: '800', color: '#fff' },
-    chevron: { fontSize: 22, color: 'rgba(255,255,255,0.7)', lineHeight: 24 },
-  });
-}
+const styles = StyleSheet.create({
+  card: {
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    gap: 8,
+  },
+  streakBlock: { alignItems: 'center', minWidth: 42 },
+  flame: { fontSize: 20 },
+  streakNum: { fontSize: 22, fontWeight: '900', color: '#fff', lineHeight: 26 },
+  streakLabel: { fontSize: 9, color: 'rgba(255,255,255,0.75)', fontWeight: '700', letterSpacing: 0.5 },
+  weekBlock: { flex: 1, gap: 6 },
+  weekRow: { flexDirection: 'row', gap: 3, justifyContent: 'center' },
+  dayCol: { alignItems: 'center', gap: 3 },
+  dayLabel: { fontSize: 8, color: 'rgba(255,255,255,0.65)', fontWeight: '700' },
+  daySquare: {
+    width: 20, height: 20, borderRadius: 5,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  dayCheck: { fontSize: 10, color: '#fff', fontWeight: '900' },
+  personalityRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  personalityText: { fontSize: 10, color: '#fff', fontWeight: '700' },
+  rankBadge: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1,
+  },
+  rankText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  giftBtn: {
+    width: 38, alignItems: 'center', justifyContent: 'center', gap: 1,
+  },
+  giftGlow: {
+    position: 'absolute', width: 38, height: 38, borderRadius: 19,
+  },
+  giftEmoji: { fontSize: 24 },
+  giftCount: {
+    fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.9)',
+  },
+  chevron: { fontSize: 22, color: 'rgba(255,255,255,0.7)', lineHeight: 24 },
+});

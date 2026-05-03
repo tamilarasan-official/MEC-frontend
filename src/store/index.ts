@@ -6,6 +6,7 @@ import {
   ordersReducer,
   menuReducer,
   userReducer,
+  streakReducer,
 } from './slices';
 
 export const store = configureStore({
@@ -15,6 +16,7 @@ export const store = configureStore({
     orders: ordersReducer,
     menu: menuReducer,
     user: userReducer,
+    streak: streakReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

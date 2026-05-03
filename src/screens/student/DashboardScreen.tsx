@@ -12,8 +12,9 @@ import { fetchMyActiveOrders, createOrder } from '../../store/slices/ordersSlice
 import { fetchShops, fetchShopMenu, fetchShopCategories, fetchStationeryMenu } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
-import { fetchMonthlySummary, fetchLeaderboardPreview } from '../../store/slices/streakSlice';
+import { fetchMonthlySummary, fetchLeaderboardPreview, fetchWeeklyChallenge } from '../../store/slices/streakSlice';
 import StreakChatCard from '../../components/student/StreakChatCard';
+import WeeklyChallengeModal from '../../components/student/WeeklyChallengeModal';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
@@ -188,6 +189,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const notifications = useAppSelector(s => s.user.notifications);
   const streakSummary = useAppSelector(s => s.streak.summary);
   const streakLeaderboard = useAppSelector(s => s.streak.leaderboardPreview);
+  const weeklyChallenge = useAppSelector(s => s.streak.weeklyChallenge);
   const streakMonth = useAppSelector(s => s.streak.selectedMonth);
   const streakYear = useAppSelector(s => s.streak.selectedYear);
   const [refreshing, setRefreshing] = useState(false);
@@ -223,6 +225,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const [insufficientMsg, setInsufficientMsg] = useState('');
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announcementCarouselIndex, setAnnouncementCarouselIndex] = useState(0);
+  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
   const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
@@ -329,6 +332,7 @@ export default function StudentDashboard({ navigation }: Props) {
       const now = new Date();
       dispatch(fetchMonthlySummary({ month: now.getMonth() + 1, year: now.getFullYear() }));
       dispatch(fetchLeaderboardPreview());
+      dispatch(fetchWeeklyChallenge());
     }
   }, [dispatch, isStudent]);
 
@@ -955,9 +959,11 @@ export default function StudentDashboard({ navigation }: Props) {
                 <StreakChatCard
                   summary={streakSummary}
                   leaderboard={streakLeaderboard}
+                  weeklyChallenge={weeklyChallenge}
                   month={streakMonth}
                   year={streakYear}
                   onPress={() => navigation.navigate('StreakChat')}
+                  onGiftBoxPress={() => setShowWeeklyModal(true)}
                 />
               </View>
             )}
@@ -1092,6 +1098,11 @@ export default function StudentDashboard({ navigation }: Props) {
       />
       <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
       <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
+      <WeeklyChallengeModal
+        visible={showWeeklyModal}
+        weeklyChallenge={weeklyChallenge}
+        onClose={() => setShowWeeklyModal(false)}
+      />
       <ProfileDropdown
         visible={showProfile}
         onClose={() => setShowProfile(false)}

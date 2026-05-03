@@ -298,6 +298,29 @@ export interface PaginatedResponse<T> {
   };
 }
 
+// ---- Weekly Challenge ----
+export interface WeeklyChallengeDay {
+  date: string;
+  dayLabel: string;
+  orderCount: number;
+  completed: boolean;
+  isFuture: boolean;
+}
+
+export interface WeeklyChallengeBadge {
+  weekStart: string;
+  claimedAt: string;
+}
+
+export interface WeeklyChallenge {
+  weekStart: string;
+  days: WeeklyChallengeDay[];
+  completedDays: number;
+  isClaimable: boolean;
+  claimed: boolean;
+  badge: WeeklyChallengeBadge | null;
+}
+
 // ---- Announcements ----
 export interface Announcement {
   id: string;
