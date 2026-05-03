@@ -222,6 +222,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const [showInsufficientBalance, setShowInsufficientBalance] = useState(false);
   const [insufficientMsg, setInsufficientMsg] = useState('');
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcementCarouselIndex, setAnnouncementCarouselIndex] = useState(0);
   const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
@@ -810,12 +811,33 @@ export default function StudentDashboard({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         ListHeaderComponent={
           <>
-            {/* Active Announcements */}
+            {/* Active Announcements — swipeable carousel */}
             {isStudent && announcements.length > 0 && (
               <View style={styles.section}>
-                {announcements.map(a => (
-                  <AnnouncementCard key={a.id} announcement={a} />
-                ))}
+                <FlatList
+                  data={announcements}
+                  keyExtractor={a => a.id}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  snapToInterval={screenWidth + 8}
+                  decelerationRate="fast"
+                  onScroll={e => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.x / (screenWidth + 8));
+                    setAnnouncementCarouselIndex(idx);
+                  }}
+                  scrollEventThrottle={16}
+                  renderItem={({ item: a }) => (
+                    <AnnouncementCard key={a.id} announcement={a} width={screenWidth} />
+                  )}
+                />
+                {announcements.length > 1 && (
+                  <View style={styles.dotsRow}>
+                    {announcements.map((_, i) => (
+                      <View key={i} style={[styles.dot, i === announcementCarouselIndex && styles.dotActive]} />
+                    ))}
+                  </View>
+                )}
               </View>
             )}
 

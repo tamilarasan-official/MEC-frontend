@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { useTheme } from '../../theme/ThemeContext';
-import type { ThemeColors } from '../../theme/colors';
 import Icon from '../common/Icon';
 import { Announcement } from '../../types';
 
 interface Props {
   announcement: Announcement;
+  width: number;
 }
 
 function formatCountdown(expiresAt: string): string {
@@ -19,9 +19,9 @@ function formatCountdown(expiresAt: string): string {
   return `Expires in ${minutes} m`;
 }
 
-export default function AnnouncementCard({ announcement }: Props) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+export default function AnnouncementCard({ announcement, width }: Props) {
+  const { mode } = useTheme();
+  const isDark = mode === 'dark';
   const [countdown, setCountdown] = useState(() => formatCountdown(announcement.expiresAt));
 
   useEffect(() => {
@@ -31,66 +31,60 @@ export default function AnnouncementCard({ announcement }: Props) {
     return () => clearInterval(timer);
   }, [announcement.expiresAt]);
 
+  const cardBg = isDark ? '#2d1b4e' : '#f3e8ff';
+  const titleColor = isDark ? '#c084fc' : '#7c3aed';
+  const textColor = isDark ? '#e9d5ff' : '#4c1d95';
+  const mutedColor = isDark ? '#a78bda' : '#7c3aed';
+  const iconBg = isDark ? 'rgba(192,132,252,0.15)' : 'rgba(168,85,247,0.12)';
+
   return (
-    <View style={styles.card}>
-      <View style={styles.headerRow}>
-        <View style={styles.iconWrap}>
-          <Icon name="megaphone-outline" size={16} color="#f97316" />
+    <View style={[styles.card, { width, backgroundColor: cardBg }]}>
+      <View style={styles.row}>
+        <View style={styles.textBlock}>
+          <Text style={[styles.title, { color: titleColor }]} numberOfLines={2}>
+            {announcement.title}
+          </Text>
+          <Text style={[styles.message, { color: textColor }]} numberOfLines={3}>
+            {announcement.message}
+          </Text>
+          <View style={styles.footer}>
+            <Icon name="time-outline" size={11} color={mutedColor} />
+            <Text style={[styles.countdown, { color: mutedColor }]}>{countdown}</Text>
+          </View>
         </View>
-        <Text style={styles.label}>ANNOUNCEMENT</Text>
-      </View>
-      <Text style={styles.title} numberOfLines={2}>{announcement.title}</Text>
-      <Text style={styles.message} numberOfLines={3}>{announcement.message}</Text>
-      <View style={styles.footer}>
-        <Icon name="time-outline" size={12} color={colors.textMuted} />
-        <Text style={styles.countdown}>{countdown}</Text>
+        <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
+          <Icon name="megaphone-outline" size={28} color={titleColor} />
+        </View>
       </View>
     </View>
   );
 }
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(249,115,22,0.3)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#f97316',
+    borderRadius: 18,
+    padding: 18,
+    marginRight: 8,
   },
-  headerRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: 12,
   },
-  iconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    backgroundColor: 'rgba(249,115,22,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#f97316',
-    letterSpacing: 1,
+  textBlock: {
+    flex: 1,
   },
   title: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
-    color: colors.text,
-    marginBottom: 4,
+    marginBottom: 6,
+    lineHeight: 20,
   },
   message: {
     fontSize: 13,
-    color: colors.textMuted,
     lineHeight: 18,
     marginBottom: 10,
+    opacity: 0.85,
   },
   footer: {
     flexDirection: 'row',
@@ -99,6 +93,14 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   countdown: {
     fontSize: 11,
-    color: colors.textMuted,
+    fontWeight: '500',
+  },
+  iconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
   },
 });
