@@ -32,7 +32,7 @@ export interface User {
   canCreateAdhoc?: boolean;
   canteenName?: string;
   institution?: string;
-  userTag?: 'Student' | 'Staff' | 'Faculty' | 'MEC ADMIN' | 'Owner' | 'Accountant' | 'Officials';
+  userTag?: 'Student' | 'Staff' | 'Faculty' | 'MEC ADMIN' | 'Owner' | 'Accountant' | 'Officials' | 'Hosteller' | 'Day Scholar';
   staffId?: string;
   isPinSetup?: boolean;
   createdAt?: string;
@@ -298,6 +298,16 @@ export interface PaginatedResponse<T> {
   };
 }
 
+// ---- Announcements ----
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  createdByName: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
 // ---- Navigation ----
 export type RootStackParamList = {
   Auth: undefined;
@@ -328,6 +338,8 @@ export type StudentHomeStackParamList = {
   OrderHistory: undefined;
   TransactionDetail: { transactionId: string };
   Leaderboard: undefined;
+  StreakChat: undefined;
+  WhatsNew: undefined;
   Profile: undefined;
   Wallet: undefined;
   Notifications: undefined;
@@ -365,6 +377,93 @@ export type OwnerTabParamList = {
   TransactionPIN: undefined;
 };
 
+
+// ---- Changelog / What's New ----
+export type ChangelogSectionType = 'new' | 'improved' | 'fixed';
+
+export interface ChangelogSection {
+  type: ChangelogSectionType;
+  title: string;
+  items: string[];
+}
+
+export interface ChangelogEntry {
+  id: string;
+  version: string;
+  releaseDate: string;
+  sections: ChangelogSection[];
+  isHighlighted: boolean;
+  createdAt: string;
+}
+
+// ---- Streak / Activity ----
+export type SessionSlot = 'morning' | 'afternoon' | 'night';
+export type SessionStatus = 'completed' | 'pending' | 'missed';
+export type PersonalityType =
+  | 'biriyani_boss' | 'coffee_addict' | 'snack_monster' | 'meal_planner'
+  | 'healthy_eater' | 'night_owl' | 'early_bird' | 'big_spender'
+  | 'loyal_regular' | 'weekend_warrior';
+
+export interface HeatmapDay {
+  date: string;
+  orderCount: number;
+  sessions: SessionSlot[];
+  isPerfect: boolean;
+}
+
+export interface TopFood {
+  itemId: string;
+  name: string;
+  imageUrl?: string;
+  count: number;
+  isVeg?: boolean;
+}
+
+export interface StreakPersonality {
+  type: PersonalityType;
+  label: string;
+  emoji: string;
+  flavourText: string;
+}
+
+export interface TodayCompliance {
+  morning: SessionStatus;
+  afternoon: SessionStatus;
+  night: SessionStatus;
+}
+
+export interface ShopHeatmap {
+  shopId: string;
+  shopName: string;
+  heatmap: HeatmapDay[];
+}
+
+export interface MonthlySummary {
+  heatmap: HeatmapDay[];
+  shopBreakdowns: ShopHeatmap[];
+  currentStreak: number;
+  longestStreak: number;
+  totalOrders: number;
+  totalSpent: number;
+  vegDays: number;
+  topFoods: TopFood[];
+  personality: StreakPersonality;
+  todayCompliance: TodayCompliance;
+}
+
+export interface LeaderboardPreviewEntry {
+  userId: string;
+  userName: string;
+  avatarUrl?: string;
+  totalSpent: number;
+  rank: number;
+}
+
+export interface LeaderboardPreview {
+  userRank: number;
+  top3: LeaderboardPreviewEntry[];
+  userEntry: LeaderboardPreviewEntry | null;
+}
 
 // ---- SuperAdmin Types ----
 export interface SuperAdminDashboardStats {

@@ -6,18 +6,22 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult } from '../../types';
+import { StudentHomeStackParamList, FoodItem, Order, CreateOrderResult, Announcement } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchMyActiveOrders, createOrder } from '../../store/slices/ordersSlice';
 import { fetchShops, fetchShopMenu, fetchShopCategories, fetchStationeryMenu } from '../../store/slices/menuSlice';
 import { addToCart, updateQuantity } from '../../store/slices/cartSlice';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
+import { fetchMonthlySummary, fetchLeaderboardPreview } from '../../store/slices/streakSlice';
+import StreakChatCard from '../../components/student/StreakChatCard';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
+import announcementService from '../../services/announcementService';
 import SearchModal from '../../components/student/SearchModal';
+import AnnouncementCard from '../../components/student/AnnouncementCard';
 import WalletModal from '../../components/student/WalletModal';
 import NotificationsModal from '../../components/student/NotificationsModal';
 import TopUpModal from '../../components/student/TopUpModal';
@@ -28,6 +32,7 @@ import { OrderAnimation } from '../../components/common/OrderAnimation';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import { getSocket } from '../../services/socketService';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Dashboard'>;
 
@@ -162,6 +167,15 @@ const quickSwipeStyles = StyleSheet.create({
   stripLabel: { color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 3 },
 });
 
+// ── Fire glow config ──────────────────────────────────────────────────────────
+const FIRE_LEVELS = [
+  { color: '#475569', bg: 'transparent', elevation: 0, opacity: 0.4 },   // 0 – no streak
+  { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', elevation: 4, opacity: 0.8 },   // 1 – low
+  { color: '#60a5fa', bg: 'rgba(96,165,250,0.18)', elevation: 8, opacity: 0.9 },   // 2 – normal
+  { color: '#93c5fd', bg: 'rgba(147,197,253,0.22)', elevation: 12, opacity: 1 },   // 3 – good
+  { color: '#bfdbfe', bg: 'rgba(191,219,254,0.28)', elevation: 18, opacity: 1 },   // 4 – heavy
+] as const;
+
 export default function StudentDashboard({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -172,6 +186,10 @@ export default function StudentDashboard({ navigation }: Props) {
   const { items: cartItems } = useAppSelector(s => s.cart);
   const { dietFilter } = useAppSelector(s => s.user);
   const notifications = useAppSelector(s => s.user.notifications);
+  const streakSummary = useAppSelector(s => s.streak.summary);
+  const streakLeaderboard = useAppSelector(s => s.streak.leaderboardPreview);
+  const streakMonth = useAppSelector(s => s.streak.selectedMonth);
+  const streakYear = useAppSelector(s => s.streak.selectedYear);
   const [refreshing, setRefreshing] = useState(false);
   const [shopMode, setShopMode] = useState<'classic' | 'bites' | 'stationery'>('classic');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -203,6 +221,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const quickOrderingRef = useRef(false);
   const [showInsufficientBalance, setShowInsufficientBalance] = useState(false);
   const [insufficientMsg, setInsufficientMsg] = useState('');
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
@@ -256,6 +275,33 @@ export default function StudentDashboard({ navigation }: Props) {
     };
   }, []);
 
+  // Blue fire glow level (0–4) based on current streak
+  const fireLevel = useMemo(() => {
+    const streak = streakSummary?.currentStreak ?? 0;
+    if (streak === 0) return 0;
+    if (streak <= 2) return 1;
+    if (streak <= 5) return 2;
+    if (streak <= 9) return 3;
+    return 4;
+  }, [streakSummary?.currentStreak]);
+
+  const fireAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (fireLevel < 4) {
+      fireAnim.setValue(1);
+      return;
+    }
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(fireAnim, { toValue: 1.18, duration: 600, useNativeDriver: true }),
+        Animated.timing(fireAnim, { toValue: 0.92, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [fireAnim, fireLevel]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
   const canteenShop = shops.find(s => s.category === 'canteen');
   const stationeryShop = shops.find(s => s.category === 'stationery');
@@ -274,6 +320,14 @@ export default function StudentDashboard({ navigation }: Props) {
         const payments = await walletService.getPendingPayments();
         setPendingPayments(payments || []);
       } catch { /* ignore */ }
+      try {
+        const active = await announcementService.getActive();
+        const now = new Date();
+        setAnnouncements(active.filter(a => new Date(a.expiresAt) > now));
+      } catch { /* ignore */ }
+      const now = new Date();
+      dispatch(fetchMonthlySummary({ month: now.getMonth() + 1, year: now.getFullYear() }));
+      dispatch(fetchLeaderboardPreview());
     }
   }, [dispatch, isStudent]);
 
@@ -302,6 +356,43 @@ export default function StudentDashboard({ navigation }: Props) {
     });
     return () => sub.remove();
   }, [dispatch, isStudent]);
+
+  // Socket listeners for announcement cards
+  useEffect(() => {
+    if (!isStudent) return;
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleNew = (payload: { id: string; title: string; message: string; expiresAt: string; createdByName: string; createdAt: string }) => {
+      if (new Date(payload.expiresAt) <= new Date()) return;
+      setAnnouncements(prev => {
+        if (prev.some(a => a.id === payload.id)) return prev;
+        return [payload, ...prev].slice(0, 3);
+      });
+    };
+
+    const handleRemoved = (payload: { id: string }) => {
+      setAnnouncements(prev => prev.filter(a => a.id !== payload.id));
+    };
+
+    socket.on('announcement:new', handleNew);
+    socket.on('announcement:removed', handleRemoved);
+
+    return () => {
+      socket.off('announcement:new', handleNew);
+      socket.off('announcement:removed', handleRemoved);
+    };
+  }, [isStudent]);
+
+  // Remove expired announcement cards every 60 seconds
+  useEffect(() => {
+    if (announcements.length === 0) return;
+    const timer = setInterval(() => {
+      const now = new Date();
+      setAnnouncements(prev => prev.filter(a => new Date(a.expiresAt) > now));
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [announcements.length]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -384,6 +475,7 @@ export default function StudentDashboard({ navigation }: Props) {
 
   const filteredItems = useMemo(() => {
     if (shopMode === 'stationery') {
+      if (!stationeryShop || !stationeryShop.isActive) return [];
       return stationeryItems.filter(i =>
         i.isAvailable && (!selectedStationeryCategory || i.category === selectedStationeryCategory),
       );
@@ -641,10 +733,24 @@ export default function StudentDashboard({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Right: Search + Profile */}
+        {/* Right: Search + Fire + Profile */}
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.headerIconBtn} activeOpacity={0.7} onPress={() => setShowSearch(true)} accessibilityLabel="Search" accessibilityRole="button">
             <Icon name="search" size={20} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.fireIconBtn, { backgroundColor: FIRE_LEVELS[fireLevel].bg }]}
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate('StreakChat')}
+            accessibilityLabel="Open streak"
+            accessibilityRole="button">
+            <Animated.View style={{ transform: [{ scale: fireAnim }] }}>
+              <Icon
+                name="flame"
+                size={22}
+                color={FIRE_LEVELS[fireLevel].color}
+              />
+            </Animated.View>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.profileIcon}
@@ -704,6 +810,15 @@ export default function StudentDashboard({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         ListHeaderComponent={
           <>
+            {/* Active Announcements */}
+            {isStudent && announcements.length > 0 && (
+              <View style={styles.section}>
+                {announcements.map(a => (
+                  <AnnouncementCard key={a.id} announcement={a} />
+                ))}
+              </View>
+            )}
+
             {/* Pending Payments */}
             {pendingPayments.length > 0 && (
               <View style={styles.section}>
@@ -812,7 +927,20 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Shop Closed Banner — only shown for canteen modes */}
+            {/* Streak Chat Card */}
+            {isStudent && (
+              <View style={{ marginBottom: 12 }}>
+                <StreakChatCard
+                  summary={streakSummary}
+                  leaderboard={streakLeaderboard}
+                  month={streakMonth}
+                  year={streakYear}
+                  onPress={() => navigation.navigate('StreakChat')}
+                />
+              </View>
+            )}
+
+            {/* Shop Closed Banner — canteen modes */}
             {shopMode !== 'stationery' && (!canteenShop || !isShopOpen) && !menuLoading && (
               <View style={styles.shopClosedBanner}>
                 <View style={styles.shopClosedIcon}>
@@ -825,8 +953,21 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
+            {/* Shop Closed Banner — stationery mode */}
+            {shopMode === 'stationery' && (!stationeryShop || !stationeryShop.isActive) && !stationeryLoading && (
+              <View style={styles.shopClosedBanner}>
+                <View style={styles.shopClosedIcon}>
+                  <Icon name="storefront-outline" size={28} color="#ef4444" />
+                </View>
+                <Text style={styles.shopClosedTitle}>Shop is Closed</Text>
+                <Text style={styles.shopClosedSubtitle}>
+                  The stationery shop is currently closed. Please check back later.
+                </Text>
+              </View>
+            )}
+
             {/* Stationery category pills */}
-            {shopMode === 'stationery' && stationeryCategories.length > 0 && (
+            {shopMode === 'stationery' && stationeryShop?.isActive && stationeryCategories.length > 0 && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -863,7 +1004,7 @@ export default function StudentDashboard({ navigation }: Props) {
           </>
         }
         ListEmptyComponent={
-          shopMode === 'stationery' && !stationeryLoading ? (
+          shopMode === 'stationery' && !stationeryLoading && stationeryShop?.isActive ? (
             <View style={styles.empty}>
               <Icon name="cube-outline" size={40} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No items found</Text>
@@ -939,6 +1080,7 @@ export default function StudentDashboard({ navigation }: Props) {
         onNavigateCart={() => { setShowProfile(false); setShowCart(true); }}
         onNavigateNotifications={() => { setShowProfile(false); setShowNotifications(true); }}
         onAddBalance={() => setShowTopUp(true)}
+        onNavigateWhatsNew={() => { setShowProfile(false); navigation.navigate('WhatsNew'); }}
       />
 
       {/* Cart Bottom Sheet */}
@@ -1245,6 +1387,9 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   walletPillText: { fontSize: 13, fontWeight: '700', color: '#3b82f6' },
   headerIconBtn: {
+    width: 38, height: 38, justifyContent: 'center', alignItems: 'center', borderRadius: 12,
+  },
+  fireIconBtn: {
     width: 38, height: 38, justifyContent: 'center', alignItems: 'center', borderRadius: 12,
   },
   profileIcon: {

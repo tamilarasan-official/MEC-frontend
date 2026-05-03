@@ -50,8 +50,7 @@ export default function SearchModal({ visible, onClose }: SearchModalProps) {
     if (itemsLoaded.current) return;
     setLoading(true);
     try {
-      // Exclude stationery shops — they use QR payment flow, not cart ordering
-      const activeShops = shops.filter(s => s.isActive && s.category !== 'stationery');
+      const activeShops = shops.filter(s => s.isActive);
       const allResults = await Promise.all(
         activeShops.map(async (shop) => {
           try {

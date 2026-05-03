@@ -298,12 +298,15 @@ const menuSlice = createSlice({
       if (shop) {
         shop.isActive = a.payload.isActive;
       }
-      // If the shop was deactivated and it's the current canteen shop, clear menu
       if (!a.payload.isActive) {
         const closedShopMenu = s.menuItems.filter(item => item.shopId === a.payload.shopId);
         if (closedShopMenu.length > 0) {
           s.menuItems = [];
           s.categories = [];
+        }
+        if (shop?.category === 'stationery') {
+          s.stationeryItems = [];
+          s.stationeryCategories = [];
         }
       }
     },
