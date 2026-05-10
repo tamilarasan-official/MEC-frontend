@@ -40,7 +40,7 @@ const walletService = {
       userId: e._id || e.id || '',
       userName: e.name || e.username || '',
       avatarUrl: e.avatarUrl,
-      totalOrders: e.totalOrders || 0,
+      totalOrders: e.totalOrders ?? e.ordersCount ?? 0,
       totalSpent: e.totalSpent || 0,
       rank: e.rank,
     }));

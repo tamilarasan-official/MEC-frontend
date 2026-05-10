@@ -8,8 +8,6 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { mediumHaptic, successHaptic } from '../../utils/haptics';
 import api from '../../services/api';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 const PIN_LENGTH = 4;
 const { width: SW } = Dimensions.get('window');
 
@@ -21,7 +19,6 @@ export default function SetupPINScreen({ onComplete }: SetupPINScreenProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  useSecureScreen();
   const [step, setStep] = useState<'enter' | 'confirm'>('enter');
   const [pin, setPin] = useState('');
   const [firstPin, setFirstPin] = useState('');

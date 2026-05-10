@@ -6,10 +6,11 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import Config from 'react-native-config';
+import DeviceInfo from 'react-native-device-info';
 import { API_ORIGIN } from './api';
 
-// App version derived from package.json — single source of truth
-const APP_VERSION: string = require('../../package.json').version;
+// Use the installed native app version for update checks.
+const APP_VERSION: string = DeviceInfo.getVersion();
 
 // API key for mobile app verification — must be set in .env as APP_API_KEY
 const APP_API_KEY = Config.APP_API_KEY as string;

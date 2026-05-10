@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Image, Switch, Animated, Linking, Alert,
 } from 'react-native';
@@ -43,6 +43,9 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
   const isShopOpen = shopDetails?.isActive ?? true;
   const displayBalance = user?.balance ?? balance ?? 0;
   const [showSignOut, setShowSignOut] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const signOutScale = useRef(new Animated.Value(0.9)).current;
 
   useEffect(() => {
@@ -52,6 +55,10 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
       signOutScale.setValue(0.9);
     }
   }, [showSignOut, signOutScale]);
+
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
 
   const handleDietChange = async (value: DietFilter) => {
     dispatch(setDietFilter(value));
@@ -69,7 +76,24 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
     const action = isShopOpen ? 'close' : 'open';
     Alert.alert(`${isShopOpen ? 'Close' : 'Open'} Shop`, `Are you sure you want to ${action} the shop?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: isShopOpen ? 'Close' : 'Open', style: isShopOpen ? 'destructive' : 'default', onPress: () => dispatch(toggleShopStatus()) },
+      {
+        text: isShopOpen ? 'Close' : 'Open',
+        style: isShopOpen ? 'destructive' : 'default',
+        onPress: async () => {
+          try {
+            await dispatch(toggleShopStatus()).unwrap();
+          } catch (err) {
+            const msg = typeof err === 'string' ? err : 'Failed to update shop status. Please try again.';
+            if (toastTimer.current) clearTimeout(toastTimer.current);
+            setToastMsg(msg);
+            toastAnim.setValue(0);
+            Animated.timing(toastAnim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+            toastTimer.current = setTimeout(() => {
+              Animated.timing(toastAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => setToastMsg(''));
+            }, 2600);
+          }
+        },
+      },
     ]);
   };
 
@@ -87,7 +111,7 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
     <>
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={styles.dropdown}>
+          <TouchableOpacity activeOpacity={1} style={styles.dropdown}>
 
           {/* User Info */}
           <View style={styles.userSection}>
@@ -285,6 +309,23 @@ export default function OwnerProfileDropdown({ visible, onClose, onNavigateNotif
         </TouchableOpacity>
       </TouchableOpacity>
 
+      {toastMsg !== '' && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            {
+              opacity: toastAnim,
+              transform: [{
+                translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }),
+              }],
+            },
+          ]}>
+          <Icon name="alert-circle-outline" size={16} color="#fff" />
+          <Text style={styles.toastText}>{toastMsg}</Text>
+        </Animated.View>
+      )}
+
     </Modal>
 
     {/* Sign Out Confirmation Modal */}
@@ -460,4 +501,25 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   signOutConfirmText: {
     fontSize: 14, fontWeight: '600', color: '#fff',
   },
+  toast: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(15,23,42,0.95)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    shadowColor: '#000',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  toastText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#fff', lineHeight: 18 },
 });

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { StreakPersonality, PersonalityType } from '../../types';
 import { useTheme } from '../../theme/ThemeContext';
+import Icon from '../common/Icon';
 
 interface Props {
   personality: StreakPersonality;
@@ -36,6 +37,22 @@ const DARK_GRADIENTS: Record<PersonalityType, GradientDef> = {
   weekend_warrior:  { start: '#3b0764', end: '#6b21a8', textColor: '#fdf4ff', subColor: '#e9d5ff' },
 };
 
+function getPersonalityIcon(type: PersonalityType): string {
+  switch (type) {
+    case 'coffee_addict': return 'cafe-outline';
+    case 'biriyani_boss': return 'restaurant-outline';
+    case 'snack_monster': return 'fast-food-outline';
+    case 'meal_planner': return 'calendar-outline';
+    case 'healthy_eater': return 'leaf-outline';
+    case 'night_owl': return 'moon-outline';
+    case 'early_bird': return 'sunny-outline';
+    case 'big_spender': return 'card-outline';
+    case 'loyal_regular': return 'heart-outline';
+    case 'weekend_warrior': return 'rocket-outline';
+    default: return 'sparkles-outline';
+  }
+}
+
 export default function PersonalityCard({ personality }: Props) {
   const { mode } = useTheme();
   const isDark = mode === 'dark';
@@ -47,7 +64,9 @@ export default function PersonalityCard({ personality }: Props) {
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.card}>
-      <Text style={styles.emoji}>{personality.emoji}</Text>
+      <View style={styles.iconWrap}>
+        <Icon name={getPersonalityIcon(personality.type)} size={32} color={grad.textColor} />
+      </View>
       <View style={styles.textBlock}>
         <Text style={[styles.label, { color: grad.textColor }]}>{personality.label}</Text>
         <Text style={[styles.flavour, { color: grad.subColor }]} numberOfLines={2}>
@@ -71,7 +90,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
   },
-  emoji: { fontSize: 40 },
+  iconWrap: { width: 40, alignItems: 'center', justifyContent: 'center' },
   textBlock: { flex: 1 },
   label: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
   flavour: { fontSize: 13, fontWeight: '500', lineHeight: 18 },

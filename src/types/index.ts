@@ -48,6 +48,7 @@ export interface Shop {
   imageUrl?: string;
   category: ShopCategory;
   isActive: boolean;
+  isMealComplianceShop?: boolean;
   ownerId?: string;
   rating?: number;
   bannerUrl?: string;
@@ -155,6 +156,7 @@ export interface Transaction {
   type: TransactionType;
   amount: number;
   description: string;
+  source?: string;
   balanceBefore?: number;
   balanceAfter?: number;
   orderId?: string;
@@ -360,6 +362,7 @@ export type StudentHomeStackParamList = {
   Cart: undefined;
   OrderHistory: undefined;
   TransactionDetail: { transactionId: string };
+  MealComplianceHistory: undefined;
   Leaderboard: undefined;
   StreakChat: undefined;
   WhatsNew: undefined;
@@ -370,6 +373,7 @@ export type StudentHomeStackParamList = {
   PrivacySecurity: undefined;
   HelpSupport: undefined;
   ChangePassword: undefined;
+  TransactionPIN: undefined;
 };
 
 export type CaptainTabParamList = {

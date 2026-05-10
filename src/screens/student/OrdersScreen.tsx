@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl, ActivityIndicator, Animated, Easing,
+  View, Text, StyleSheet, TouchableOpacity, Image, RefreshControl, ActivityIndicator, Animated, Easing, FlatList, InteractionManager,
 } from 'react-native';
 import { mediumHaptic } from '../../utils/haptics';
 import LinearGradient from 'react-native-linear-gradient';
@@ -14,6 +14,8 @@ import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { Order } from '../../types';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import CachedImage from '../../components/common/CachedImage';
+import { OrderCardSkeletonList } from '../../components/common/SkeletonLoader';
 
 const ACTIVE_STATUSES = new Set(['pending', 'preparing', 'partially_ready', 'ready', 'partially_delivered']);
 
@@ -67,10 +69,13 @@ export default function OrdersScreen() {
     }
   }, [myOrders, selectedOrder]);
 
-  // Auto-refresh orders every time this screen gains focus
+  // Auto-refresh orders every time this screen gains focus (deferred until transition completes)
   useFocusEffect(
     useCallback(() => {
-      dispatch(fetchMyOrders());
+      const task = InteractionManager.runAfterInteractions(() => {
+        dispatch(fetchMyOrders());
+      });
+      return () => task.cancel();
     }, [dispatch])
   );
 
@@ -95,9 +100,14 @@ export default function OrdersScreen() {
   if (loading && !refreshing) {
     return (
       <ScreenWrapper>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Loading orders...</Text>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.title}>My Orders</Text>
+              <Text style={styles.subtitle}>Track your active orders</Text>
+            </View>
+          </View>
+          <OrderCardSkeletonList count={2} />
         </View>
       </ScreenWrapper>
     );
@@ -116,13 +126,17 @@ export default function OrdersScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={displayOrders}
+        keyExtractor={o => o.id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}>
-        {displayOrders.length === 0 ? (
+        initialNumToRender={4}
+        removeClippedSubviews={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+        ListEmptyComponent={
           <AnimatedEmptyState colors={colors} styles={styles} onStartOrdering={() => navigation.navigate('Home', { screen: 'Dashboard' })} />
-        ) : (
-          displayOrders.map(order => {
+        }
+        renderItem={({ item: order }) => {
             const sc = statusConfig[order.status] || statusConfig.pending;
             return (
               <View key={order.id} style={styles.orderCard}>
@@ -195,8 +209,8 @@ export default function OrdersScreen() {
                   return (
                     <View key={imgKey} style={styles.orderItem}>
                       {imageUri && !imgFailed ? (
-                        <Image
-                          source={{ uri: imageUri }}
+                        <CachedImage
+                          uri={imageUri}
                           style={[styles.itemImage, isRejected && styles.itemImageRejected]}
                           onError={() => handleImageError(imgKey)}
                           accessibilityLabel={`${item.name} image`}
@@ -262,22 +276,23 @@ export default function OrdersScreen() {
                 })()}
               </View>
             );
-          })
-        )}
-
-        {/* View Order History */}
-        <TouchableOpacity
-          style={styles.historyLink}
-          activeOpacity={0.6}
-          onPress={() => navigation.navigate('Home', { screen: 'OrderHistory' })}
-          accessibilityLabel="View order history"
-          accessibilityRole="button">
-          <Icon name="time-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.historyLinkText}>View Order History</Text>
-        </TouchableOpacity>
-
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+          }}
+        ListFooterComponent={
+          <>
+            {/* View Order History */}
+            <TouchableOpacity
+              style={styles.historyLink}
+              activeOpacity={0.6}
+              onPress={() => navigation.navigate('Home', { screen: 'OrderHistory' })}
+              accessibilityLabel="View order history"
+              accessibilityRole="button">
+              <Icon name="time-outline" size={14} color={colors.textMuted} />
+              <Text style={styles.historyLinkText}>View Order History</Text>
+            </TouchableOpacity>
+            <View style={styles.bottomSpacer} />
+          </>
+        }
+      />
 
       {/* QR Modal */}
       {selectedOrder && (

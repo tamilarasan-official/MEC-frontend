@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ScrollView, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, PanResponder,
+  Image, FlatList, ScrollView, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, PanResponder, InteractionManager,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -34,6 +34,9 @@ import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { lightHaptic, mediumHaptic, successHaptic } from '../../utils/haptics';
 import { resolveImageUrl } from '../../utils/imageUrl';
 import { getSocket } from '../../services/socketService';
+import CachedImage from '../../components/common/CachedImage';
+import { FoodCardSkeletonList } from '../../components/common/SkeletonLoader';
+import mealComplianceService, { MealComplianceTodayResponse } from '../../services/mealComplianceService';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Dashboard'>;
 
@@ -75,8 +78,8 @@ const FoodCardImage = React.memo(({ uri, style, placeholderStyle }: { uri: strin
   }
 
   return (
-    <Image
-      source={{ uri }}
+    <CachedImage
+      uri={uri}
       style={style}
       onError={onError}
       accessibilityLabel="Food item image"
@@ -168,6 +171,155 @@ const quickSwipeStyles = StyleSheet.create({
   stripLabel: { color: '#fff', fontSize: 11, fontWeight: '700', marginTop: 3 },
 });
 
+// ── Extracted list-item components (React.memo) ──────────────────────────────
+
+const FoodCard = React.memo(function FoodCard({
+  item,
+  qty,
+  canteenShop,
+  styles,
+  onSwipeOrder,
+  dispatch,
+}: {
+  item: FoodItem;
+  qty: number;
+  canteenShop: any;
+  styles: any;
+  onSwipeOrder: (item: FoodItem) => void;
+  dispatch: any;
+}) {
+  const displayPrice = item.isOffer && item.offerPrice ? item.offerPrice : item.price;
+  const imageUri = resolveImageUrl(item.image);
+
+  return (
+    <SwipeableQuickOrderCard item={item} onSwipeOrder={onSwipeOrder}>
+      <View style={[styles.foodCard, { marginBottom: 0 }]}>
+        {/* Food image / placeholder */}
+        <TouchableOpacity
+          style={styles.foodImageWrap}
+          onPress={() => { if (!canteenShop) return; lightHaptic(); qty === 0
+            ? dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name }))
+            : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }));
+          }}
+          activeOpacity={0.8}
+          accessibilityLabel={`Add ${item.name}`}
+          accessibilityRole="button">
+          <FoodCardImage
+            uri={imageUri}
+            style={styles.foodImage}
+            placeholderStyle={styles.foodImagePlaceholder}
+          />
+          {item.isOffer && (
+            <View style={styles.offerBadge}>
+              <Text style={styles.offerBadgeText}>OFFER</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Food info */}
+        <View style={styles.foodInfo}>
+          <View style={styles.foodNameRow}>
+            <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
+            {item.isInstant && (
+              <Icon name="flash-sharp" size={13} color="#f97316" />
+            )}
+          </View>
+          <View style={styles.foodBottom}>
+            <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
+            {qty === 0 ? (
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => { if (!canteenShop) return; lightHaptic(); dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name })); }}
+                activeOpacity={0.7}
+                accessibilityLabel={`Add ${item.name} to cart`}
+                accessibilityRole="button">
+                <Icon name="add" size={18} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.qtyControl}>
+                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
+                  <Icon name="remove" size={14} color="#3b82f6" />
+                </TouchableOpacity>
+                <Text style={styles.qtyText}>{qty}</Text>
+                <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
+                  <Icon name="add" size={14} color="#3b82f6" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    </SwipeableQuickOrderCard>
+  );
+});
+
+const StationeryCard = React.memo(function StationeryCard({
+  item,
+  qty,
+  colors,
+  styles,
+  stationeryShop,
+  dispatch,
+}: {
+  item: FoodItem;
+  qty: number;
+  colors: any;
+  styles: any;
+  stationeryShop: any;
+  dispatch: any;
+}) {
+  const imageUri = resolveImageUrl(item.image);
+  return (
+    <View style={styles.statCard}>
+      {imageUri ? (
+        <CachedImage uri={imageUri} style={styles.statCardImage} resizeMode="cover" />
+      ) : (
+        <View style={[styles.statCardImage, styles.statCardImagePlaceholder]}>
+          <Icon name="cube-outline" size={28} color={colors.textMuted} />
+        </View>
+      )}
+      <View style={styles.statCardBody}>
+        <Text style={styles.statCardName} numberOfLines={2}>{item.name}</Text>
+        <View style={styles.statCardFooter}>
+          <Text style={styles.statCardPrice}>₹{item.price}</Text>
+          {qty === 0 ? (
+            <TouchableOpacity
+              style={styles.addBtn}
+              onPress={() => {
+                if (!stationeryShop) return;
+                lightHaptic();
+                dispatch(addToCart({ item, shopId: stationeryShop.id, shopName: stationeryShop.name }));
+              }}
+              activeOpacity={0.7}
+              accessibilityLabel={`Add ${item.name} to cart`}
+              accessibilityRole="button">
+              <Icon name="add" size={18} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.qtyControl}>
+              <TouchableOpacity
+                onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }}
+                style={styles.qtyBtn}
+                accessibilityLabel={`Decrease ${item.name} quantity`}
+                accessibilityRole="button">
+                <Icon name="remove" size={14} color="#3b82f6" />
+              </TouchableOpacity>
+              <Text style={styles.qtyText}>{qty}</Text>
+              <TouchableOpacity
+                onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }}
+                style={styles.qtyBtn}
+                accessibilityLabel={`Increase ${item.name} quantity`}
+                accessibilityRole="button">
+                <Icon name="add" size={14} color="#3b82f6" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+});
+
 // ── Fire glow config ──────────────────────────────────────────────────────────
 const FIRE_LEVELS = [
   { color: '#475569', bg: 'transparent', elevation: 0, opacity: 0.4 },   // 0 – no streak
@@ -182,7 +334,7 @@ export default function StudentDashboard({ navigation }: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
   const user = useAppSelector(s => s.auth.user);
-  const { shops, menuItems: shopMenu, categories, isLoading: menuLoading, stationeryItems, stationeryCategories, stationeryLoading } = useAppSelector(s => s.menu);
+  const { shops, menuItems: shopMenu, categories, isLoading: menuLoading, stationeryItems, stationeryCategories, stationeryLoading, menuLastFetchedAt } = useAppSelector(s => s.menu);
   const { activeOrders, orders: allOrders } = useAppSelector(s => s.orders);
   const { items: cartItems } = useAppSelector(s => s.cart);
   const { dietFilter } = useAppSelector(s => s.user);
@@ -226,6 +378,8 @@ export default function StudentDashboard({ navigation }: Props) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [announcementCarouselIndex, setAnnouncementCarouselIndex] = useState(0);
   const [showWeeklyModal, setShowWeeklyModal] = useState(false);
+  const [mealComplianceToday, setMealComplianceToday] = useState<MealComplianceTodayResponse | null>(null);
+  const [mealNow, setMealNow] = useState(new Date());
   const screenWidth = Dimensions.get('window').width - 32; // 16px padding each side
 
   // Keep QR modal order in sync with Redux so real-time status updates reflect immediately.
@@ -279,6 +433,11 @@ export default function StudentDashboard({ navigation }: Props) {
     };
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => setMealNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Blue fire glow level (0–4) based on current streak
   const fireLevel = useMemo(() => {
     const streak = streakSummary?.currentStreak ?? 0;
@@ -329,12 +488,19 @@ export default function StudentDashboard({ navigation }: Props) {
         const now = new Date();
         setAnnouncements(active.filter(a => new Date(a.expiresAt) > now));
       } catch { /* ignore */ }
+      if (user?.userTag === 'Hosteller') {
+        try {
+          setMealComplianceToday(await mealComplianceService.getToday());
+        } catch { /* ignore */ }
+      } else {
+        setMealComplianceToday(null);
+      }
       const now = new Date();
       dispatch(fetchMonthlySummary({ month: now.getMonth() + 1, year: now.getFullYear() }));
       dispatch(fetchLeaderboardPreview());
       dispatch(fetchWeeklyChallenge());
     }
-  }, [dispatch, isStudent]);
+  }, [dispatch, isStudent, user?.userTag]);
 
   useEffect(() => {
     if (canteenShop?.id && isShopOpen) {
@@ -343,15 +509,21 @@ export default function StudentDashboard({ navigation }: Props) {
     }
   }, [dispatch, canteenShop?.id, isShopOpen]);
 
-  // Re-fetch canteen menu when this screen regains focus (e.g. returning from Profile, Orders, etc.)
+  // Re-fetch canteen menu when this screen regains focus — but only if data is stale (> 60s)
   useFocusEffect(useCallback(() => {
-    if (canteenShop?.id) {
+    if (canteenShop?.id && Date.now() - menuLastFetchedAt > 60_000) {
       dispatch(fetchShopMenu({ shopId: canteenShop.id }));
       dispatch(fetchShopCategories(canteenShop.id));
     }
-  }, [dispatch, canteenShop?.id]));
+  }, [dispatch, canteenShop?.id, menuLastFetchedAt]));
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Defer data loading until screen transition animation completes
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      loadData();
+    });
+    return () => task.cancel();
+  }, [loadData]);
 
   // Refetch active orders when app returns to foreground — socket handles live updates (#70)
   useEffect(() => {
@@ -409,6 +581,13 @@ export default function StudentDashboard({ navigation }: Props) {
     }
     setRefreshing(false);
   };
+
+  const parseMealMinutes = (time: string) => {
+    const [hour, minute] = time.split(':').map(Number);
+    return hour * 60 + minute;
+  };
+  const currentMealMinutes = mealNow.getHours() * 60 + mealNow.getMinutes();
+  const mealAlert = mealComplianceToday?.sessions.find(session => session.status === 'debited');
 
   const handlePayNow = (payment: PendingPayment) => {
     setSelectedPayment(payment);
@@ -594,126 +773,31 @@ export default function StudentDashboard({ navigation }: Props) {
     partially_delivered: { bg: 'rgba(59,130,246,0.15)', color: '#3b82f6', label: 'Partial' },
   };
 
-  const renderStationeryCard = ({ item }: { item: FoodItem }) => {
-    const qty = getCartQty(item.id);
-    const imageUri = resolveImageUrl(item.image);
+  const renderStationeryCard = useCallback(({ item }: { item: FoodItem }) => {
     return (
-      <View style={styles.statCard}>
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.statCardImage} resizeMode="cover" />
-        ) : (
-          <View style={[styles.statCardImage, styles.statCardImagePlaceholder]}>
-            <Icon name="cube-outline" size={28} color={colors.textMuted} />
-          </View>
-        )}
-        <View style={styles.statCardBody}>
-          <Text style={styles.statCardName} numberOfLines={2}>{item.name}</Text>
-          <View style={styles.statCardFooter}>
-            <Text style={styles.statCardPrice}>₹{item.price}</Text>
-            {qty === 0 ? (
-              <TouchableOpacity
-                style={styles.addBtn}
-                onPress={() => {
-                  if (!stationeryShop) return;
-                  lightHaptic();
-                  dispatch(addToCart({ item, shopId: stationeryShop.id, shopName: stationeryShop.name }));
-                }}
-                activeOpacity={0.7}
-                accessibilityLabel={`Add ${item.name} to cart`}
-                accessibilityRole="button">
-                <Icon name="add" size={18} color="#fff" />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.qtyControl}>
-                <TouchableOpacity
-                  onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }}
-                  style={styles.qtyBtn}
-                  accessibilityLabel={`Decrease ${item.name} quantity`}
-                  accessibilityRole="button">
-                  <Icon name="remove" size={14} color="#3b82f6" />
-                </TouchableOpacity>
-                <Text style={styles.qtyText}>{qty}</Text>
-                <TouchableOpacity
-                  onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }}
-                  style={styles.qtyBtn}
-                  accessibilityLabel={`Increase ${item.name} quantity`}
-                  accessibilityRole="button">
-                  <Icon name="add" size={14} color="#3b82f6" />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
+      <StationeryCard
+        item={item}
+        qty={getCartQty(item.id)}
+        colors={colors}
+        styles={styles}
+        stationeryShop={stationeryShop}
+        dispatch={dispatch}
+      />
     );
-  };
+  }, [getCartQty, colors, styles, stationeryShop, dispatch]);
 
-  const renderFoodCard = ({ item }: { item: FoodItem }) => {
-    const qty = getCartQty(item.id);
-    const displayPrice = item.isOffer && item.offerPrice ? item.offerPrice : item.price;
-    const imageUri = resolveImageUrl(item.image);
-
+  const renderFoodCard = useCallback(({ item }: { item: FoodItem }) => {
     return (
-      <SwipeableQuickOrderCard item={item} onSwipeOrder={handleSwipeOrder}>
-        <View style={[styles.foodCard, { marginBottom: 0 }]}>
-          {/* Food image / placeholder */}
-          <TouchableOpacity
-            style={styles.foodImageWrap}
-            onPress={() => { if (!canteenShop) return; lightHaptic(); qty === 0
-              ? dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name }))
-              : dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 }));
-            }}
-            activeOpacity={0.8}
-            accessibilityLabel={`Add ${item.name}`}
-            accessibilityRole="button">
-            <FoodCardImage
-              uri={imageUri}
-              style={styles.foodImage}
-              placeholderStyle={styles.foodImagePlaceholder}
-            />
-            {item.isOffer && (
-              <View style={styles.offerBadge}>
-                <Text style={styles.offerBadgeText}>OFFER</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Food info */}
-          <View style={styles.foodInfo}>
-            <View style={styles.foodNameRow}>
-              <Text style={styles.foodName} numberOfLines={1}>{item.name}</Text>
-              {item.isInstant && (
-                <Icon name="flash-sharp" size={13} color="#f97316" />
-              )}
-            </View>
-            <View style={styles.foodBottom}>
-              <Text style={styles.foodPrice}>Rs.{displayPrice}</Text>
-              {qty === 0 ? (
-                <TouchableOpacity
-                  style={styles.addBtn}
-                  onPress={() => { if (!canteenShop) return; lightHaptic(); dispatch(addToCart({ item, shopId: canteenShop.id, shopName: canteenShop.name })); }}
-                  activeOpacity={0.7}
-                  accessibilityLabel={`Add ${item.name} to cart`}
-                  accessibilityRole="button">
-                  <Icon name="add" size={18} color="#fff" />
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.qtyControl}>
-                  <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty - 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Decrease ${item.name} quantity`} accessibilityRole="button">
-                    <Icon name="remove" size={14} color="#3b82f6" />
-                  </TouchableOpacity>
-                  <Text style={styles.qtyText}>{qty}</Text>
-                  <TouchableOpacity onPress={() => { lightHaptic(); dispatch(updateQuantity({ itemId: item.id, quantity: qty + 1 })); }} style={styles.qtyBtn} accessibilityLabel={`Increase ${item.name} quantity`} accessibilityRole="button">
-                    <Icon name="add" size={14} color="#3b82f6" />
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
-      </SwipeableQuickOrderCard>
+      <FoodCard
+        item={item}
+        qty={getCartQty(item.id)}
+        canteenShop={canteenShop}
+        styles={styles}
+        onSwipeOrder={handleSwipeOrder}
+        dispatch={dispatch}
+      />
     );
-  };
+  }, [getCartQty, canteenShop, styles, handleSwipeOrder, dispatch]);
 
   return (
     <ScreenWrapper>
@@ -765,7 +849,7 @@ export default function StudentDashboard({ navigation }: Props) {
             accessibilityRole="button">
             {unreadCount > 0 && <View style={styles.profileBadge} />}
             {resolveImageUrl(user?.avatarUrl) ? (
-              <Image source={{ uri: resolveImageUrl(user?.avatarUrl) ?? undefined }} style={styles.profileAvatarImg} accessibilityLabel="Profile avatar" />
+              <CachedImage uri={resolveImageUrl(user?.avatarUrl)} style={styles.profileAvatarImg} accessibilityLabel="Profile avatar" />
             ) : (
               <Text style={styles.profileInitial}>{user?.name?.[0]?.toUpperCase() || 'S'}</Text>
             )}
@@ -811,7 +895,13 @@ export default function StudentDashboard({ navigation }: Props) {
         initialNumToRender={8}
         maxToRenderPerBatch={6}
         windowSize={5}
+        updateCellsBatchingPeriod={30}
         removeClippedSubviews={Platform.OS === 'android'}
+        getItemLayout={shopMode !== 'stationery' ? (_data: any, index: number) => ({
+          length: 98,
+          offset: 98 * index,
+          index,
+        }) : undefined}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         ListHeaderComponent={
           <>
@@ -953,8 +1043,8 @@ export default function StudentDashboard({ navigation }: Props) {
               </View>
             )}
 
-            {/* Streak Chat Card */}
-            {isStudent && (
+            {/* Streak Chat Card — only show for food shops, not stationery */}
+            {isStudent && shopMode !== 'stationery' && (
               <View style={{ marginBottom: 12 }}>
                 <StreakChatCard
                   summary={streakSummary}
@@ -966,6 +1056,65 @@ export default function StudentDashboard({ navigation }: Props) {
                   onGiftBoxPress={() => setShowWeeklyModal(true)}
                 />
               </View>
+            )}
+
+            {isStudent && user?.userTag === 'Hosteller' && mealComplianceToday && (
+              <TouchableOpacity
+                style={styles.mealComplianceCard}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate('MealComplianceHistory')}
+              >
+                <View style={styles.mealComplianceHeader}>
+                  <View>
+                    <Text style={styles.mealComplianceTitle}>Meal Session Times</Text>
+                    <Text style={styles.mealComplianceSubtitle}>Classic Kitchen hosteller compliance</Text>
+                  </View>
+                  <Icon name="chevron-forward" size={18} color={colors.textMuted} />
+                </View>
+
+                {mealComplianceToday.holiday && (
+                  <View style={styles.mealHolidayBanner}>
+                    <Icon name="sunny-outline" size={14} color="#b45309" />
+                    <Text style={styles.mealHolidayText}>
+                      Holiday lock active{mealComplianceToday.holiday.name ? ` · ${mealComplianceToday.holiday.name}` : ''}
+                    </Text>
+                  </View>
+                )}
+
+                {mealComplianceToday.sessions.map((session) => {
+                  const start = parseMealMinutes(session.startTime);
+                  const end = parseMealMinutes(session.endTime);
+                  const isCurrent = currentMealMinutes >= start && currentMealMinutes <= end && session.status === 'pending';
+                  const statusLabel =
+                    session.status === 'eaten' ? 'Ate' :
+                      session.status === 'debited' ? `Missed · Rs.${session.amount || 0}` :
+                        session.status === 'holiday_locked' ? 'Holiday' :
+                          isCurrent ? 'Now' : currentMealMinutes < start ? 'Later' : 'Pending';
+
+                  return (
+                    <View key={session.sessionType} style={styles.mealSessionRow}>
+                      <View style={styles.mealSessionLeft}>
+                        <Text style={styles.mealSessionName}>{session.sessionType[0].toUpperCase() + session.sessionType.slice(1)}</Text>
+                        <Text style={styles.mealSessionTime}>{session.startTime} - {session.endTime}</Text>
+                      </View>
+                      <View style={[styles.mealSessionBadge, isCurrent && styles.mealSessionBadgeCurrent, session.status === 'debited' && styles.mealSessionBadgeMissed]}>
+                        <Text style={[styles.mealSessionBadgeText, session.status === 'debited' && styles.mealSessionBadgeTextMissed]}>
+                          {statusLabel}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {mealAlert && (
+                  <View style={styles.mealAlertBanner}>
+                    <Icon name="alert-circle-outline" size={16} color="#ef4444" />
+                    <Text style={styles.mealAlertText}>
+                      You missed {mealAlert.sessionType} - Rs.{mealAlert.amount || 0} debited from wallet
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             )}
 
             {/* Shop Closed Banner — canteen modes */}
@@ -1018,16 +1167,12 @@ export default function StudentDashboard({ navigation }: Props) {
               </ScrollView>
             )}
 
-            {/* Loading indicators */}
+            {/* Loading indicators — shimmer skeletons instead of spinner */}
             {shopMode === 'stationery' && stationeryLoading && (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={colors.accent} />
-              </View>
+              <FoodCardSkeletonList count={4} />
             )}
             {shopMode !== 'stationery' && menuLoading && !refreshing && (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="large" color={colors.accent} />
-              </View>
+              <FoodCardSkeletonList count={4} />
             )}
           </>
         }
@@ -1484,6 +1629,65 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '600' },
   tokenText: { fontSize: 12, color: colors.textMuted },
+  mealComplianceCard: {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 12,
+  },
+  mealComplianceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  mealComplianceTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  mealComplianceSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  mealHolidayBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(245,158,11,0.14)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  mealHolidayText: { fontSize: 12, color: '#b45309', fontWeight: '700' },
+  mealSessionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  mealSessionLeft: { flex: 1, paddingRight: 8 },
+  mealSessionName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  mealSessionTime: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  mealSessionBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
+  },
+  mealSessionBadgeCurrent: { backgroundColor: colors.primaryBg },
+  mealSessionBadgeMissed: { backgroundColor: 'rgba(239,68,68,0.12)' },
+  mealSessionBadgeText: { fontSize: 11, color: colors.textSecondary, fontWeight: '700' },
+  mealSessionBadgeTextMissed: { color: '#ef4444' },
+  mealAlertBanner: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  mealAlertText: { fontSize: 12, color: '#ef4444', fontWeight: '700', flex: 1 },
 
   // ── Category Pills ──
   cats: { marginBottom: 14 },

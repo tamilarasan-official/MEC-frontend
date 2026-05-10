@@ -12,10 +12,7 @@ import { decodeQrData, decodeQrPaymentData } from '../../utils/qrDecode';
 import type { QRPaymentData } from '../../utils/qrDecode';
 import { useAppDispatch } from '../../store';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 export default function ScannerScreen() {
-  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [permission, setPermission] = useState<CameraPermissionStatus | null>(null);

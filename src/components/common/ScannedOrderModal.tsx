@@ -54,14 +54,8 @@ export function ScannedOrderModal({ orderId, onClose, onActionComplete }: Scanne
         return;
       }
       try {
-        // Use getMyOrders and find the specific order, or direct endpoint if available
-        const res = await orderService.getShopOrders();
-        const found = res?.find((o: Order) => o.id === orderId);
-        if (!cancelled && found) {
-          setOrder(found);
-        } else if (!cancelled) {
-          setError('Order not found');
-        }
+        const found = await orderService.getOrderById(orderId);
+        if (!cancelled) setOrder(found);
       } catch {
         if (!cancelled) setError('Failed to load order');
       }

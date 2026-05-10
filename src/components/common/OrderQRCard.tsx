@@ -7,15 +7,12 @@ import Icon from './Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { Order } from '../../types';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 interface OrderQRCardProps {
   order: Order;
   onClose: () => void;
 }
 
 export function OrderQRCard({ order, onClose }: OrderQRCardProps) {
-  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const statusMeta: Record<string, { label: string; icon: string; color: string; bg: string }> = useMemo(() => ({

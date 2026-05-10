@@ -11,8 +11,6 @@ import { mediumHaptic, successHaptic, errorHaptic } from '../../utils/haptics';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { refreshUserData } from '../../store/slices/authSlice';
 import api from '../../services/api';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 const PIN_LENGTH = 4;
 const OTP_LENGTH = 6;
 const { width: SW } = Dimensions.get('window');
@@ -22,7 +20,6 @@ type ChangeStep = 'current' | 'new' | 'confirm';
 type ForgotStep = 'send' | 'otp' | 'newPin' | 'confirmPin';
 
 export default function TransactionPINScreen({ navigation, onClose }: { navigation?: any; onClose?: () => void }) {
-  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();

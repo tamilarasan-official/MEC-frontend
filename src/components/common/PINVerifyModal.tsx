@@ -8,8 +8,6 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { mediumHaptic, errorHaptic } from '../../utils/haptics';
 import api from '../../services/api';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 const PIN_LENGTH = 4;
 const { width: SW } = Dimensions.get('window');
 
@@ -24,7 +22,6 @@ interface PINVerifyModalProps {
 export default function PINVerifyModal({
   visible, amount, title, onVerified, onCancel,
 }: PINVerifyModalProps) {
-  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 

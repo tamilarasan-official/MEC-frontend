@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Animated,
 } from 'react-native';
@@ -39,10 +39,15 @@ export default function NotificationsScreen({ navigation }: Props) {
   }), [colors]);
   const dispatch = useAppDispatch();
   const { notifications } = useAppSelector(s => s.user);
+  const [expandedNotificationId, setExpandedNotificationId] = useState<string | null>(null);
 
   const handleMarkRead = useCallback((id: string) => {
     dispatch(markNotificationRead(id));
   }, [dispatch]);
+
+  const handleToggleExpanded = useCallback((id: string) => {
+    setExpandedNotificationId(currentId => (currentId === id ? null : id));
+  }, []);
 
   const handleRemove = useCallback((id: string) => {
     lightHaptic();
@@ -61,6 +66,7 @@ export default function NotificationsScreen({ navigation }: Props) {
 
   const renderItem = ({ item }: { item: AppNotification }) => {
     const config = NOTIF_ICONS[item.type] || NOTIF_ICONS.system;
+    const isExpanded = expandedNotificationId === item.id;
     return (
       <SwipeableNotification
         item={item}
@@ -68,7 +74,9 @@ export default function NotificationsScreen({ navigation }: Props) {
         styles={styles}
         colors={colors}
         onPress={handleMarkRead}
+        onToggleExpanded={handleToggleExpanded}
         onRemove={handleRemove}
+        isExpanded={isExpanded}
       />
     );
   };
@@ -126,14 +134,16 @@ export default function NotificationsScreen({ navigation }: Props) {
 /* ─── Swipeable Notification Card ─── */
 
 function SwipeableNotification({
-  item, config, styles, colors, onPress, onRemove,
+  item, config, styles, colors, onPress, onToggleExpanded, onRemove, isExpanded,
 }: {
   item: AppNotification;
   config: { icon: string; color: string; bg: string };
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   onPress: (id: string) => void;
+  onToggleExpanded: (id: string) => void;
   onRemove: (id: string) => void;
+  isExpanded: boolean;
 }) {
   const swipeRef = useRef<Swipeable>(null);
 
@@ -170,7 +180,10 @@ function SwipeableNotification({
     >
       <TouchableOpacity
         style={[styles.notifCard, !item.read && styles.notifUnread]}
-        onPress={() => onPress(item.id)}
+        onPress={() => {
+          onPress(item.id);
+          onToggleExpanded(item.id);
+        }}
         activeOpacity={0.7}
         accessibilityLabel={`Notification: ${item.title}`}
         accessibilityRole="button"
@@ -180,12 +193,15 @@ function SwipeableNotification({
         </View>
         <View style={styles.notifContent}>
           <View style={styles.notifHeader}>
-            <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
+            <Text
+              style={[styles.notifTitle, !item.read && styles.notifTitleUnread]}
+              numberOfLines={isExpanded ? undefined : 1}
+            >
               {item.title}
             </Text>
             {!item.read && <View style={styles.unreadDot} />}
           </View>
-          <Text style={styles.notifMessage} numberOfLines={2}>{item.message}</Text>
+          <Text style={styles.notifMessage} numberOfLines={isExpanded ? undefined : 2}>{item.message}</Text>
           <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
         </View>
       </TouchableOpacity>

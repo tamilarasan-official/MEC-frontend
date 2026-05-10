@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, Image, Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
 import Icon from '../common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
@@ -10,7 +11,10 @@ import { useAppSelector, useAppDispatch } from '../../store';
 import { setDietFilter } from '../../store/slices/userSlice';
 import { logout } from '../../store/slices/authSlice';
 import walletService from '../../services/walletService';
+import changelogService from '../../services/changelogService';
 import { DietFilter } from '../../types';
+
+const LAST_SEEN_KEY = '@madrasone_whats_new_seen';
 
 interface ProfileDropdownProps {
   visible: boolean;
@@ -19,6 +23,7 @@ interface ProfileDropdownProps {
   onNavigateCart?: () => void;
   onNavigateNotifications?: () => void;
   onAddBalance?: () => void;
+  onNavigateWhatsNew?: () => void;
 }
 
 const DIET_OPTIONS: { label: string; value: DietFilter }[] = [
@@ -28,7 +33,7 @@ const DIET_OPTIONS: { label: string; value: DietFilter }[] = [
 
 export default function ProfileDropdown({
   visible, onClose, onNavigateSettings,
-  onNavigateCart, onNavigateNotifications, onAddBalance,
+  onNavigateCart, onNavigateNotifications, onAddBalance, onNavigateWhatsNew,
 }: ProfileDropdownProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -38,7 +43,17 @@ export default function ProfileDropdown({
   const cartItems = useAppSelector(s => s.cart.items);
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [hasUnread, setHasUnread] = useState(false);
   const signOutScale = useMemo(() => new Animated.Value(0), []);
+
+  useEffect(() => {
+    if (!visible) return;
+    changelogService.getLatest().then(async latest => {
+      if (!latest) return;
+      const seen = await AsyncStorage.getItem(LAST_SEEN_KEY);
+      setHasUnread(seen !== latest.version);
+    }).catch(() => {});
+  }, [visible]);
 
   const handleDietChange = async (value: DietFilter) => {
     dispatch(setDietFilter(value));
@@ -75,10 +90,25 @@ export default function ProfileDropdown({
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user?.name || 'Student'}</Text>
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleText}>
-                  {user?.rollNumber ? 'MEC Student' : 'CampusOne User'}
-                </Text>
+              <View style={styles.badgeRow}>
+                <View style={styles.roleBadge}>
+                  <Text style={styles.roleText}>
+                    {user?.rollNumber ? 'MEC Student' : 'CampusOne User'}
+                  </Text>
+                </View>
+                {(user?.userTag === 'Hosteller' || user?.userTag === 'Day Scholar') && (
+                  <View style={[
+                    styles.accomBadge,
+                    user.userTag === 'Hosteller' ? styles.accomBadgeHosteller : styles.accomBadgeDayScholar,
+                  ]}>
+                    <Text style={[
+                      styles.accomBadgeText,
+                      user.userTag === 'Hosteller' ? styles.accomTextHosteller : styles.accomTextDayScholar,
+                    ]}>
+                      {user.userTag}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -164,6 +194,25 @@ export default function ProfileDropdown({
             <Text style={styles.menuItemText}>Add Balance</Text>
           </TouchableOpacity>
 
+          {/* What's New */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => { onClose(); onNavigateWhatsNew?.(); }}
+            activeOpacity={0.7}
+            accessibilityLabel="What's New"
+            accessibilityRole="button">
+            <View>
+              <Icon name="sparkles-outline" size={18} color="#7c3aed" />
+              {hasUnread && <View style={styles.unreadDot} />}
+            </View>
+            <Text style={styles.menuItemText}>What's New</Text>
+            {hasUnread && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>New</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
           {/* Settings */}
           <TouchableOpacity
             style={styles.menuItem}
@@ -242,11 +291,18 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   avatarText: { fontSize: 18, fontWeight: '700', color: '#fff' },
   userInfo: { flex: 1 },
   userName: { fontSize: 15, fontWeight: '700', color: colors.text },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4, flexWrap: 'wrap' },
   roleBadge: {
-    alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-    backgroundColor: 'rgba(59,130,246,0.15)', marginTop: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+    backgroundColor: 'rgba(59,130,246,0.15)',
   },
   roleText: { fontSize: 11, fontWeight: '600', color: '#3b82f6' },
+  accomBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
+  accomBadgeHosteller: { backgroundColor: 'rgba(99,102,241,0.12)', borderColor: 'rgba(99,102,241,0.3)' },
+  accomBadgeDayScholar: { backgroundColor: 'rgba(13,148,136,0.12)', borderColor: 'rgba(13,148,136,0.3)' },
+  accomBadgeText: { fontSize: 11, fontWeight: '600' },
+  accomTextHosteller: { color: '#6366f1' },
+  accomTextDayScholar: { color: '#0d9488' },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 10 },
 
   // Diet
@@ -272,6 +328,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: 'rgba(34,197,94,0.15)', borderWidth: 1.5, borderColor: '#22c55e',
     justifyContent: 'center', alignItems: 'center',
   },
+  unreadDot: {
+    position: 'absolute', top: -3, right: -3,
+    width: 7, height: 7, borderRadius: 4, backgroundColor: '#ef4444',
+  },
+  unreadBadge: {
+    marginLeft: 'auto', backgroundColor: '#7c3aed',
+    borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2,
+  },
+  unreadBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
   cartBadge: {
     position: 'absolute', top: -6, right: -8,
     minWidth: 16, height: 16, borderRadius: 8,

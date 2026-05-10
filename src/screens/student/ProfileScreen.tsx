@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
-  Image, ActivityIndicator, Alert, Modal,
+  Image, ActivityIndicator, Alert, Modal, InteractionManager,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -17,6 +17,7 @@ import walletService from '../../services/walletService';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
+import CachedImage from '../../components/common/CachedImage';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Profile'>;
 
@@ -41,7 +42,10 @@ export default function ProfileScreen({ navigation }: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   useEffect(() => {
-    dispatch(fetchWalletBalance());
+    const task = InteractionManager.runAfterInteractions(() => {
+      dispatch(fetchWalletBalance());
+    });
+    return () => task.cancel();
   }, [dispatch]);
 
   const handleDeleteAccount = async () => {
@@ -140,8 +144,9 @@ export default function ProfileScreen({ navigation }: Props) {
             style={styles.profileCard}>
             <View style={styles.avatar} accessibilityLabel="Profile picture managed by admin">
               {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
-                <Image
-                  source={{ uri: `${resolveAvatarUrl(user?.avatarUrl)!}?t=${avatarTs}`, cache: 'reload' }}
+                <CachedImage
+                  uri={resolveAvatarUrl(user?.avatarUrl)}
+                  cacheControl={avatarTs > 0 ? 'web' : 'immutable'}
                   style={styles.avatarImg}
                   resizeMode="cover"
                   onError={() => setAvatarError(true)}
@@ -159,10 +164,25 @@ export default function ProfileScreen({ navigation }: Props) {
               {user?.department && (
                 <Text style={styles.profileDept}>{user.department} Department</Text>
               )}
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleBadgeText}>
-                  {user?.rollNumber ? 'MEC Student' : 'CampusOne User'}
-                </Text>
+              <View style={styles.badgeRow}>
+                <View style={styles.roleBadge}>
+                  <Text style={styles.roleBadgeText}>
+                    {user?.rollNumber ? 'MEC Student' : 'CampusOne User'}
+                  </Text>
+                </View>
+                {(user?.userTag === 'Hosteller' || user?.userTag === 'Day Scholar') && (
+                  <View style={[
+                    styles.accomBadge,
+                    user.userTag === 'Hosteller' ? styles.accomBadgeHosteller : styles.accomBadgeDayScholar,
+                  ]}>
+                    <Text style={[
+                      styles.accomBadgeText,
+                      user.userTag === 'Hosteller' ? styles.accomBadgeTextHosteller : styles.accomBadgeTextDayScholar,
+                    ]}>
+                      {user.userTag}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           </LinearGradient>
@@ -392,12 +412,20 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   profileInfo: { flex: 1 },
   profileName: { fontSize: 18, fontWeight: '700', color: c.text },
   profileDept: { fontSize: 13, color: c.textSecondary, marginTop: 2 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' },
   roleBadge: {
-    alignSelf: 'flex-start', marginTop: 6,
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10,
     backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.3)',
   },
   roleBadgeText: { fontSize: 11, fontWeight: '600', color: '#3b82f6' },
+  accomBadge: {
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, borderWidth: 1,
+  },
+  accomBadgeHosteller: { backgroundColor: 'rgba(99,102,241,0.12)', borderColor: 'rgba(99,102,241,0.35)' },
+  accomBadgeDayScholar: { backgroundColor: 'rgba(13,148,136,0.12)', borderColor: 'rgba(13,148,136,0.35)' },
+  accomBadgeText: { fontSize: 11, fontWeight: '600' },
+  accomBadgeTextHosteller: { color: '#6366f1' },
+  accomBadgeTextDayScholar: { color: '#0d9488' },
 
   // Info row
   infoRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },

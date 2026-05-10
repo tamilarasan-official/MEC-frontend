@@ -86,6 +86,9 @@ const streakSlice = createSlice({
     setSelectedMonth(state, action: PayloadAction<{ month: number; year: number }>) {
       state.selectedMonth = action.payload.month;
       state.selectedYear = action.payload.year;
+      // Clear stale data so previous month's heatmap doesn't flash while new data loads
+      state.summary = null;
+      state.loading = true;
     },
     resetStreakState: () => initialState,
   },

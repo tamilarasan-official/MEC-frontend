@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as Keychain from 'react-native-keychain';
 import Config from 'react-native-config';
+import DeviceInfo from 'react-native-device-info';
 import uuid from 'react-native-uuid';
 
 // ── Server origin ───────────────────────────────────────────────
@@ -17,7 +18,7 @@ const APP_API_KEY = Config.APP_API_KEY as string;
 if (!APP_API_KEY) {
   throw new Error('[Security] APP_API_KEY is not configured. Set APP_API_KEY in your .env file.');
 }
-const APP_VERSION: string = require('../../package.json').version;
+const APP_VERSION: string = DeviceInfo.getVersion();
 
 // Max retries for token refresh before giving up
 const TOKEN_REFRESH_MAX_RETRIES = 2;

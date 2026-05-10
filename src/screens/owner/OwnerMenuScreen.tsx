@@ -12,7 +12,7 @@ import {
   fetchOwnerMenu, createMenuItem, updateMenuItem, deleteMenuItem,
   toggleItemAvailability, setItemOffer, removeItemOffer,
 } from '../../store/slices/menuSlice';
-import { fetchDashboardStats } from '../../store/slices/userSlice';
+import { fetchDashboardStats, fetchShopDetails } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
@@ -35,6 +35,7 @@ export default function OwnerMenuScreen() {
   const ownerMenuLastFetched = useSelector((s: RootState) => s.menu.ownerMenuLastFetched);
   const ownerCategories = useSelector((s: RootState) => s.menu.ownerCategories);
   const dashboardStats = useSelector((s: RootState) => s.user.dashboardStats);
+  const shopDetails = useSelector((s: RootState) => s.user.shopDetails);
   const [showProfile, setShowProfile] = useState(false);
   const [showWallet, setShowWallet] = useState(false);
   const [showHeaderSearch, setShowHeaderSearch] = useState(false);
@@ -47,6 +48,7 @@ export default function OwnerMenuScreen() {
   const [editingItem, setEditingItem] = useState<FoodItem | null>(null);
   const [offerModal, setOfferModal] = useState<FoodItem | null>(null);
   const [discountPercent, setDiscountPercent] = useState('');
+  const [mealSessionSavingKey, setMealSessionSavingKey] = useState<string | null>(null);
   const menuRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadMenu = useCallback(async (force = false) => {
@@ -57,6 +59,7 @@ export default function OwnerMenuScreen() {
 
   useEffect(() => { loadMenu(); }, [loadMenu]);
   useEffect(() => { if (!dashboardStats) dispatch(fetchDashboardStats()); }, [dashboardStats, dispatch]);
+  useEffect(() => { if (!shopDetails) dispatch(fetchShopDetails()); }, [shopDetails, dispatch]);
   useEffect(() => { return () => { if (menuRefreshTimerRef.current !== null) clearTimeout(menuRefreshTimerRef.current); }; }, []);
 
   const onRefresh = async () => { setRefreshing(true); await loadMenu(true); setRefreshing(false); };
@@ -107,6 +110,37 @@ export default function OwnerMenuScreen() {
     dispatch(removeItemOffer(item.id));
   }, [dispatch]);
 
+  const handleSetOfficialMealSession = useCallback((item: FoodItem) => {
+    const submit = async (sessionType: 'breakfast' | 'lunch' | 'dinner') => {
+      const key = `${item.id}:${sessionType}`;
+      setMealSessionSavingKey(key);
+      try {
+        const res = await api.post(`/owner/menu/${item.id}/official-meal-session`, { sessionType });
+        const message = res.data?.message || `${item.name} set for ${sessionType}`;
+        Alert.alert('Official meal veg set', message);
+      } catch (err: any) {
+        const message = err?.response?.data?.error?.message
+          || err?.response?.data?.message
+          || err?.message
+          || 'Failed to set official meal veg item';
+        Alert.alert('Unable to set meal veg', message);
+      } finally {
+        setMealSessionSavingKey(null);
+      }
+    };
+
+    Alert.alert(
+      'Set Official Meal Veg',
+      `Use "${item.name}" as today's official veg item for which session?`,
+      [
+        { text: 'Breakfast', onPress: () => submit('breakfast') },
+        { text: 'Lunch', onPress: () => submit('lunch') },
+        { text: 'Dinner', onPress: () => submit('dinner') },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, []);
+
   const renderItem = useCallback(({ item }: { item: FoodItem }) => (
     <MenuItemCard
       item={item}
@@ -117,8 +151,11 @@ export default function OwnerMenuScreen() {
       onDelete={handleDelete}
       onOffer={(it) => { setOfferModal(it); setDiscountPercent(''); }}
       onRemoveOffer={handleRemoveOffer}
+      onSetMealSession={handleSetOfficialMealSession}
+      mealSessionSavingKey={mealSessionSavingKey}
+      canSetMealSession={shopDetails?.isMealComplianceShop === true || shopDetails?.category === 'classic'}
     />
-  ), [colors, styles, handleToggleAvailability, handleDelete, handleRemoveOffer]);
+  ), [colors, styles, handleToggleAvailability, handleDelete, handleRemoveOffer, handleSetOfficialMealSession, mealSessionSavingKey, shopDetails?.category, shopDetails?.isMealComplianceShop]);
 
   const keyExtractor = useCallback((item: FoodItem) => item.id, []);
 
@@ -330,7 +367,7 @@ export default function OwnerMenuScreen() {
 
 /* ----------- Menu Item Card (memoized for FlatList perf) ----------- */
 const MenuItemCard = React.memo(function MenuItemCard({
-  item, colors, styles, onToggle, onEdit, onDelete, onOffer, onRemoveOffer,
+  item, colors, styles, onToggle, onEdit, onDelete, onOffer, onRemoveOffer, onSetMealSession, mealSessionSavingKey, canSetMealSession,
 }: {
   item: FoodItem;
   colors: ThemeColors;
@@ -340,8 +377,12 @@ const MenuItemCard = React.memo(function MenuItemCard({
   onDelete: (i: FoodItem) => void;
   onOffer: (i: FoodItem) => void;
   onRemoveOffer: (i: FoodItem) => void;
+  onSetMealSession: (i: FoodItem) => void;
+  mealSessionSavingKey: string | null;
+  canSetMealSession: boolean;
 }) {
   const imageUri = resolveImageUrl(item.image);
+  const isSettingMealVeg = mealSessionSavingKey !== null && mealSessionSavingKey.startsWith(`${item.id}:`);
 
   return (
     <View style={[styles.card, !item.isAvailable && styles.cardUnavailable]}>
@@ -386,6 +427,25 @@ const MenuItemCard = React.memo(function MenuItemCard({
             <Text style={styles.prepTime}>{'\u00B7'} {item.preparationTime}</Text>
           ) : null}
         </View>
+        {canSetMealSession && item.isVeg && item.isAvailable && (
+          <TouchableOpacity
+            style={styles.mealVegButton}
+            onPress={() => onSetMealSession(item)}
+            activeOpacity={0.8}
+            disabled={isSettingMealVeg}
+            accessibilityLabel={`Set ${item.name} as official meal veg`}
+            accessibilityRole="button"
+          >
+            {isSettingMealVeg ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Icon name="restaurant-outline" size={13} color="#fff" />
+                <Text style={styles.mealVegButtonText}>Set Meal Veg</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Actions */}
@@ -981,6 +1041,18 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   offerPriceInline: { fontSize: 12, fontWeight: '600', color: '#f59e0b' },
   profitInline: { fontSize: 11, fontWeight: '600' },
   prepTime: { fontSize: 11, color: colors.mutedForeground },
+  mealVegButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#16a34a',
+  },
+  mealVegButtonText: { fontSize: 12, fontWeight: '700', color: '#fff' },
 
   // Card actions
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },

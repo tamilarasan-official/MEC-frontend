@@ -19,7 +19,7 @@ function formatCountdown(expiresAt: string): string {
   return `Expires in ${minutes} m`;
 }
 
-export default function AnnouncementCard({ announcement, width }: Props) {
+function AnnouncementCard({ announcement, width }: Props) {
   const { mode } = useTheme();
   const isDark = mode === 'dark';
   const [countdown, setCountdown] = useState(() => formatCountdown(announcement.expiresAt));
@@ -59,6 +59,8 @@ export default function AnnouncementCard({ announcement, width }: Props) {
     </View>
   );
 }
+
+export default React.memo(AnnouncementCard);
 
 const styles = StyleSheet.create({
   card: {

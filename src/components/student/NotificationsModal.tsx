@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useMemo, useEffect, useRef, useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
 } from 'react-native';
@@ -39,6 +39,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
   const dispatch = useAppDispatch();
   const { notifications } = useAppSelector(s => s.user);
   const unreadCount = notifications.filter(n => !n.read).length;
+  const [expandedNotificationId, setExpandedNotificationId] = useState<string | null>(null);
 
   const bottomSheetRef = useRef<BottomSheetModal>(null);
   const snapPoints = useMemo(() => ['55%', '95%'], []);
@@ -81,6 +82,10 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
     dispatch(markNotificationRead(id));
   }, [dispatch]);
 
+  const handleToggleExpanded = useCallback((id: string) => {
+    setExpandedNotificationId(currentId => (currentId === id ? null : id));
+  }, []);
+
   const handleClearAll = useCallback(() => {
     dispatch(clearNotifications());
     walletService.clearAllNotifications().catch(() => {});
@@ -88,22 +93,29 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
 
   const renderItem = useCallback(({ item }: { item: AppNotification }) => {
     const config = NOTIF_ICONS[item.type] || NOTIF_ICONS.system;
+    const isExpanded = expandedNotificationId === item.id;
     return (
       <TouchableOpacity
         style={[styles.notifCard, !item.read && styles.notifUnread]}
-        onPress={() => handleMarkRead(item.id)}
+        onPress={() => {
+          handleMarkRead(item.id);
+          handleToggleExpanded(item.id);
+        }}
         activeOpacity={0.7}>
         <View style={[styles.notifIcon, { backgroundColor: config.bg }]}>
           <Icon name={config.icon} size={20} color={config.color} />
         </View>
         <View style={styles.notifContent}>
           <View style={styles.notifHeader}>
-            <Text style={[styles.notifTitle, !item.read && styles.notifTitleUnread]} numberOfLines={1}>
+            <Text
+              style={[styles.notifTitle, !item.read && styles.notifTitleUnread]}
+              numberOfLines={isExpanded ? undefined : 1}
+            >
               {item.title}
             </Text>
             {!item.read && <View style={styles.unreadDot} />}
           </View>
-          <Text style={styles.notifMessage} numberOfLines={2}>{item.message}</Text>
+          <Text style={styles.notifMessage} numberOfLines={isExpanded ? undefined : 2}>{item.message}</Text>
           {item.type === 'order' && item.data?.pickupToken ? (
             <View style={styles.pickupIdRow}>
               <Icon name="qr-code-outline" size={12} color="#3b82f6" />

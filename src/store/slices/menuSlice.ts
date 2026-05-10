@@ -77,6 +77,8 @@ interface MenuState {
   isLoading: boolean;
   ownerMenuLoading: boolean;
   ownerMenuLastFetched: number;
+  /** Timestamp of last student-facing menu fetch — used for TTL caching */
+  menuLastFetchedAt: number;
   error: string | null;
   stationeryItems: FoodItem[];
   stationeryCategories: string[];
@@ -96,6 +98,7 @@ const initialState: MenuState = {
   isLoading: false,
   ownerMenuLoading: false,
   ownerMenuLastFetched: 0,
+  menuLastFetchedAt: 0,
   error: null,
   stationeryItems: [],
   stationeryCategories: [],
@@ -317,7 +320,7 @@ const menuSlice = createSlice({
       .addCase(fetchShops.pending, (s) => { s.isLoading = true; })
       .addCase(fetchShops.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     builder
-      .addCase(fetchShopMenu.fulfilled, (s, a) => { s.isLoading = false; s.menuItems = a.payload; })
+      .addCase(fetchShopMenu.fulfilled, (s, a) => { s.isLoading = false; s.menuItems = a.payload; s.menuLastFetchedAt = Date.now(); })
       .addCase(fetchShopMenu.pending, (s) => { s.isLoading = true; })
       .addCase(fetchShopMenu.rejected, (s, a) => { s.isLoading = false; s.error = a.payload as string; });
     builder

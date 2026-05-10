@@ -9,8 +9,6 @@ import type { ThemeColors } from '../../theme/colors';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { updateQRPaymentAmount, cancelQRPayment } from '../../store/slices/userSlice';
 import { QRPayment } from '../../types';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 interface QRPaymentDisplayModalProps {
   visible: boolean;
   payment: QRPayment | null;
@@ -19,7 +17,6 @@ interface QRPaymentDisplayModalProps {
 }
 
 export default function QRPaymentDisplayModal({ visible, payment, onClose, onPaymentUpdated }: QRPaymentDisplayModalProps) {
-  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();

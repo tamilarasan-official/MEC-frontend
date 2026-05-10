@@ -8,6 +8,8 @@ import OffersScreen from '../../screens/student/OffersScreen';
 import CartScreen from '../../screens/student/CartScreen';
 import OrderHistoryScreen from '../../screens/student/OrderHistoryScreen';
 import LeaderboardScreen from '../../screens/student/LeaderboardScreen';
+import StreakChatScreen from '../../screens/student/StreakChatScreen';
+import WhatsNewScreen from '../../screens/student/WhatsNewScreen';
 import ProfileScreen from '../../screens/student/ProfileScreen';
 import NotificationsScreen from '../../screens/student/NotificationsScreen';
 import NotificationSettingsScreen from '../../screens/student/NotificationSettingsScreen';
@@ -15,6 +17,7 @@ import PrivacySecurityScreen from '../../screens/student/PrivacySecurityScreen';
 import HelpSupportScreen from '../../screens/student/HelpSupportScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
 import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
+import MealComplianceHistoryScreen from '../../screens/student/MealComplianceHistoryScreen';
 import ChangePasswordScreen from '../../screens/shared/ChangePasswordScreen';
 import TransactionPINScreen from '../../screens/shared/TransactionPINScreen';
 
@@ -36,12 +39,15 @@ export default function StudentHomeStack() {
       <Stack.Screen name="OrderHistory" component={OrderHistoryScreen} />
       <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+      <Stack.Screen name="StreakChat" component={StreakChatScreen} />
+      <Stack.Screen name="WhatsNew" component={WhatsNewScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
       <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="MealComplianceHistory" component={MealComplianceHistoryScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="TransactionPIN" component={TransactionPINScreen} />
     </Stack.Navigator>

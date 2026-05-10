@@ -12,8 +12,6 @@ import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
-import { useSecureScreen } from '../../utils/useSecureScreen';
-
 type Period = 'today' | 'week' | 'month' | 'all'
 
 const PERIODS: { label: string; value: Period }[] = [
@@ -50,7 +48,6 @@ function formatDate(dateString: string) {
 }
 
 export default function WalletScreen({ navigation }: Props) {
-  useSecureScreen();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
@@ -90,6 +87,8 @@ export default function WalletScreen({ navigation }: Props) {
   };
 
   const isCredit = (type: string) => type === 'credit' || type === 'refund';
+  const isMissedMealDebit = (source?: string) => source === 'missed_meal_debit';
+  const isMissedMealRefund = (source?: string) => source === 'missed_meal_refund';
 
   return (
     <ScreenWrapper>
@@ -118,9 +117,23 @@ export default function WalletScreen({ navigation }: Props) {
                 end={{ x: 1, y: 1 }}
                 style={styles.balanceCard}>
                 <Text style={styles.balanceLabel}>Available Balance</Text>
-                <Text style={styles.balanceAmount}>Rs. {balance}</Text>
+                <Text style={[styles.balanceAmount, balance < 0 && styles.balanceAmountNegative]}>Rs. {balance}</Text>
                 <Text style={styles.balanceHint}>Visit the accountant office to add money</Text>
               </LinearGradient>
+
+              <TouchableOpacity
+                style={styles.historyShortcut}
+                onPress={() => navigation.navigate('MealComplianceHistory')}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Open meal compliance history"
+              >
+                <View>
+                  <Text style={styles.historyShortcutTitle}>Meal Compliance History</Text>
+                  <Text style={styles.historyShortcutSub}>See missed meal debits, refunds, and exemptions</Text>
+                </View>
+                <Icon name="chevron-forward" size={16} color={colors.primary} />
+              </TouchableOpacity>
 
               {/* Period Filter */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.periodRow} contentContainerStyle={styles.periodContent}>
@@ -158,6 +171,13 @@ export default function WalletScreen({ navigation }: Props) {
           }
           renderItem={({ item: tx }) => {
             const credit = isCredit(tx.type);
+            const missedMealDebit = isMissedMealDebit(tx.source);
+            const missedMealRefund = isMissedMealRefund(tx.source);
+            const description = missedMealDebit
+              ? (tx.description.includes('Missed') ? tx.description : `Missed meal debit · ${tx.description}`)
+              : missedMealRefund
+                ? (tx.description.includes('Refund') ? tx.description : `Missed meal refund · ${tx.description}`)
+                : tx.description;
             return (
               <TouchableOpacity
                 style={styles.txRow}
@@ -167,13 +187,13 @@ export default function WalletScreen({ navigation }: Props) {
                 accessibilityRole="button">
                 <View style={[styles.txIconWrap, credit ? styles.txIconCredit : styles.txIconDebit]}>
                   <Icon
-                    name={credit ? 'arrow-down' : 'arrow-up'}
+                    name={missedMealDebit ? 'alert-circle-outline' : credit ? 'arrow-down' : 'arrow-up'}
                     size={16}
-                    color={credit ? '#10b981' : '#f97316'}
+                    color={missedMealDebit ? '#ef4444' : credit ? '#10b981' : '#f97316'}
                   />
                 </View>
                 <View style={styles.txInfo}>
-                  <Text style={styles.txDesc} numberOfLines={1}>{tx.description}</Text>
+                  <Text style={[styles.txDesc, missedMealDebit && styles.txDescMissed]} numberOfLines={1}>{description}</Text>
                   <Text style={styles.txDate}>{formatDate(tx.createdAt)}</Text>
                 </View>
                 <View style={styles.txRight}>
@@ -209,7 +229,21 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   balanceLabel: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '500', marginBottom: 6 },
   balanceAmount: { fontSize: 36, fontWeight: '900', color: '#fff', marginBottom: 8 },
+  balanceAmountNegative: { color: '#fecaca' },
   balanceHint: { fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  historyShortcut: {
+    marginBottom: 20,
+    backgroundColor: c.card,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  historyShortcutTitle: { fontSize: 14, fontWeight: '700', color: c.text },
+  historyShortcutSub: { fontSize: 12, color: c.textSecondary, marginTop: 2, maxWidth: 240 },
 
   sectionTitle: {
     fontSize: 15, fontWeight: '700', color: c.text, marginBottom: 12,
@@ -240,6 +274,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   txIconCredit: { backgroundColor: 'rgba(16,185,129,0.15)' },
   txInfo: { flex: 1 },
   txDesc: { fontSize: 13, fontWeight: '500', color: c.text },
+  txDescMissed: { color: '#ef4444' },
   txDate: { fontSize: 11, color: c.textSecondary, marginTop: 2 },
   txRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   txAmount: { fontSize: 14, fontWeight: '700' },

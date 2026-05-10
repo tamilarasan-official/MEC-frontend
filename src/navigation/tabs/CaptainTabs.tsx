@@ -9,6 +9,7 @@ import { fetchActiveShopOrders } from '../../store/slices/ordersSlice';
 import { fetchShops } from '../../store/slices/menuSlice';
 import { CaptainTabParamList } from '../../types';
 import StationeryCaptainHomeScreen from '../../screens/stationery_owner/StationeryCaptainHomeScreen';
+import StationeryHistoryScreen from '../../screens/stationery_owner/StationeryHistoryScreen';
 import CaptainHomeScreen from '../../screens/captain/CaptainHomeScreen';
 import CaptainPrepListScreen from '../../screens/captain/CaptainPrepListScreen';
 import CaptainHistoryScreen from '../../screens/captain/CaptainHistoryScreen';
@@ -213,7 +214,49 @@ export default function CaptainTabs() {
 
   // Stationery captain work mode: single order-management screen, no tab bar
   if (isStationeryCaptain) {
-    return <StationeryCaptainHomeScreen />;
+    return (
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: colors.accent,
+          tabBarInactiveTintColor: colors.mutedForeground,
+          tabBarHideOnKeyboard: true,
+          tabBarStyle: {
+            backgroundColor: colors.card,
+            borderTopWidth: 0,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+            elevation: 8,
+            height: tabBarHeight,
+            paddingBottom: tabBarPaddingBottom,
+            paddingTop: 4,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: '600',
+          },
+        }}
+      >
+        <Tab.Screen
+          name="Home"
+          component={StationeryCaptainHomeScreen}
+          options={{
+            tabBarLabel: 'Home',
+            tabBarIcon: HomeIcon,
+          }}
+        />
+        <Tab.Screen
+          name="History"
+          component={StationeryHistoryScreen}
+          options={{
+            tabBarLabel: 'History',
+            tabBarIcon: HistoryIcon,
+          }}
+        />
+      </Tab.Navigator>
+    );
   }
 
   return (

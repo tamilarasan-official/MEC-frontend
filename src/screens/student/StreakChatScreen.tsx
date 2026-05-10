@@ -4,9 +4,9 @@ import {
   ActivityIndicator, RefreshControl, Image, Dimensions,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { StudentHomeStackParamList, SessionStatus } from '../../types';
+import { StudentHomeStackParamList } from '../../types';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { fetchMonthlySummary, fetchLeaderboardPreview, setSelectedMonth } from '../../store/slices/streakSlice';
+import { fetchMonthlySummary, fetchLeaderboardPreview, fetchWeeklyChallenge, setSelectedMonth } from '../../store/slices/streakSlice';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import Icon from '../../components/common/Icon';
@@ -14,71 +14,28 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import HeatmapGrid from '../../components/student/HeatmapGrid';
 import PersonalityCard from '../../components/student/PersonalityCard';
 import StreakChatCard from '../../components/student/StreakChatCard';
+import WeeklyChallengeModal from '../../components/student/WeeklyChallengeModal';
 import { resolveImageUrl } from '../../utils/imageUrl';
+import mealComplianceService, { MealComplianceTodayResponse } from '../../services/mealComplianceService';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'StreakChat'>;
+type StreakHeaderIcon = 'restaurant-outline' | 'sparkles-outline' | 'trophy-outline' | 'stats-chart-outline';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-const SESSION_CONFIG: Record<string, { label: string; icon: string; timeRange: string; gradStart: string; gradEnd: string }> = {
-  morning:   { label: 'Morning',   icon: '🌅', timeRange: '7–10 AM',    gradStart: '#fbbf24', gradEnd: '#f59e0b' },
-  afternoon: { label: 'Afternoon', icon: '☀️', timeRange: '12–2:30 PM', gradStart: '#60a5fa', gradEnd: '#3b82f6' },
-  night:     { label: 'Night',     icon: '🌙', timeRange: '6:30–9 PM',  gradStart: '#818cf8', gradEnd: '#6366f1' },
-};
-
-function SessionPill({ session, status }: { session: string; status: SessionStatus }) {
-  const cfg = SESSION_CONFIG[session];
-  const isCompleted = status === 'completed';
-  const isMissed = status === 'missed';
-
-  const bg = isCompleted
-    ? (session === 'morning' ? '#fbbf24' : session === 'afternoon' ? '#60a5fa' : '#818cf8')
-    : isMissed ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)';
-  const borderColor = isCompleted
-    ? 'transparent'
-    : isMissed ? '#ef4444' : '#94a3b8';
-  const textColor = isCompleted ? '#fff' : isMissed ? '#ef4444' : '#94a3b8';
-
-  return (
-    <View style={[pillStyles.pill, { backgroundColor: bg, borderColor }]}>
-      <Text style={pillStyles.icon}>{cfg.icon}</Text>
-      <View>
-        <Text style={[pillStyles.label, { color: textColor }]}>{cfg.label}</Text>
-        <Text style={[pillStyles.time, { color: textColor, opacity: 0.75 }]}>{cfg.timeRange}</Text>
-      </View>
-      {isCompleted && <Text style={pillStyles.tick}>✓</Text>}
-      {isMissed && <Text style={[pillStyles.tick, { color: '#ef4444' }]}>✗</Text>}
-    </View>
-  );
-}
-
-const pillStyles = StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 6,
-    flex: 1,
-  },
-  icon: { fontSize: 16 },
-  label: { fontSize: 12, fontWeight: '700' },
-  time: { fontSize: 10, fontWeight: '500' },
-  tick: { fontSize: 12, fontWeight: '800', color: '#fff', marginLeft: 'auto' },
-});
-
 export default function StreakChatScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
-  const { summary, leaderboardPreview, selectedMonth, selectedYear, loading, leaderboardLoading } = useAppSelector(s => s.streak);
+  const user = useAppSelector(s => s.auth.user);
+  const { summary, leaderboardPreview, weeklyChallenge, selectedMonth, selectedYear, loading, leaderboardLoading } = useAppSelector(s => s.streak);
   const [refreshing, setRefreshing] = useState(false);
   const [heatmapPage, setHeatmapPage] = useState(0);
+  const [showWeeklyModal, setShowWeeklyModal] = useState(false);
+  const [mealComplianceToday, setMealComplianceToday] = useState<MealComplianceTodayResponse | null>(null);
   // Section card = screenWidth - 32 (scroll container has 16px padding each side)
   const heatmapPageWidth = Dimensions.get('window').width - 32;
 
@@ -94,16 +51,33 @@ export default function StreakChatScreen({ navigation }: Props) {
   const loadData = useCallback(() => {
     dispatch(fetchMonthlySummary({ month: selectedMonth, year: selectedYear }));
     dispatch(fetchLeaderboardPreview());
+    dispatch(fetchWeeklyChallenge());
   }, [dispatch, selectedMonth, selectedYear]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (user?.userTag !== 'Hosteller') {
+      setMealComplianceToday(null);
+      return;
+    }
+    mealComplianceService.getToday()
+      .then(setMealComplianceToday)
+      .catch(() => undefined);
+  }, [user?.userTag]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
       dispatch(fetchMonthlySummary({ month: selectedMonth, year: selectedYear })),
       dispatch(fetchLeaderboardPreview()),
+      dispatch(fetchWeeklyChallenge()),
     ]);
+    if (user?.userTag === 'Hosteller') {
+      try {
+        setMealComplianceToday(await mealComplianceService.getToday());
+      } catch { /* ignore */ }
+    }
     setRefreshing(false);
   };
 
@@ -112,6 +86,7 @@ export default function StreakChatScreen({ navigation }: Props) {
     let y = selectedYear;
     if (m < 1) { m = 12; y -= 1; }
     if (y < minYear) return;
+    setHeatmapPage(0);
     dispatch(setSelectedMonth({ month: m, year: y }));
   };
 
@@ -120,16 +95,17 @@ export default function StreakChatScreen({ navigation }: Props) {
     let y = selectedYear;
     if (m > 12) { m = 1; y += 1; }
     if (y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth() + 1)) return;
+    setHeatmapPage(0);
     dispatch(setSelectedMonth({ month: m, year: y }));
   };
 
   const isCurrentMonth = selectedMonth === now.getMonth() + 1 && selectedYear === now.getFullYear();
 
   const statTiles = summary ? [
-    { icon: '🍽', label: 'Total Meals', value: `${summary.totalOrders}`, sub: 'orders placed' },
-    { icon: '💳', label: 'Total Spent', value: `₹${summary.totalSpent.toLocaleString('en-IN')}`, sub: 'this month' },
-    { icon: '🔥', label: 'Best Streak', value: `${summary.longestStreak}`, sub: 'days in a row' },
-    { icon: '🥗', label: 'Veg Days',    value: `${summary.vegDays}`, sub: 'full veg days' },
+    { icon: 'restaurant-outline', label: 'Total Meals', value: `${summary.totalOrders}`, sub: 'orders placed' },
+    { icon: 'card-outline', label: 'Total Spent', value: `₹${summary.totalSpent.toLocaleString('en-IN')}`, sub: 'this month' },
+    { icon: 'flame-outline', label: 'Best Streak', value: `${summary.longestStreak}`, sub: 'days in a row' },
+    { icon: 'leaf-outline', label: 'Veg Days', value: `${summary.vegDays}`, sub: 'full veg days' },
   ] : [];
 
   return (
@@ -153,11 +129,41 @@ export default function StreakChatScreen({ navigation }: Props) {
           <StreakChatCard
             summary={summary}
             leaderboard={leaderboardPreview}
+            weeklyChallenge={weeklyChallenge}
             month={selectedMonth}
             year={selectedYear}
             onPress={() => {}}
+            onGiftBoxPress={() => setShowWeeklyModal(true)}
           />
         </View>
+
+        {user?.userTag === 'Hosteller' && mealComplianceToday && (
+          <TouchableOpacity style={styles.complianceCard} activeOpacity={0.85} onPress={() => navigation.navigate('MealComplianceHistory')}>
+            <SectionHeader icon="restaurant-outline" title="Today's Meal Compliance" textColor={colors.text} />
+            {mealComplianceToday.holiday && (
+              <View style={styles.complianceHoliday}>
+                <Text style={styles.complianceHolidayText}>
+                  Holiday lock active{mealComplianceToday.holiday.name ? ` · ${mealComplianceToday.holiday.name}` : ''}
+                </Text>
+              </View>
+            )}
+            {mealComplianceToday.sessions.map(session => (
+              <View key={session.sessionType} style={styles.complianceRow}>
+                <View>
+                  <Text style={styles.complianceName}>{session.sessionType[0].toUpperCase() + session.sessionType.slice(1)}</Text>
+                  <Text style={styles.complianceTime}>{session.startTime} - {session.endTime}</Text>
+                </View>
+                <Text style={[
+                  styles.complianceStatus,
+                  session.status === 'debited' && styles.complianceStatusMissed,
+                  session.status === 'eaten' && styles.complianceStatusAte,
+                ]}>
+                  {session.status === 'debited' ? `Missed · Rs.${session.amount || 0}` : session.status}
+                </Text>
+              </View>
+            ))}
+          </TouchableOpacity>
+        )}
 
         {/* Month selector */}
         <View style={styles.monthRow}>
@@ -184,12 +190,11 @@ export default function StreakChatScreen({ navigation }: Props) {
             {/* ── Section 1: Per-shop heatmap swipe cards ── */}
             <View style={[styles.section, styles.sectionNoPadX]}>
               <View style={styles.sectionPadX}>
-                <SectionHeader icon="🗓" title="Your Month in Bites" textColor={colors.text} />
                 {summary && (
                   <View style={styles.streakBanner}>
                     <Text style={styles.streakBannerText}>
                       {summary.currentStreak > 0
-                        ? `🔥 ${summary.currentStreak} day streak`
+                        ? `${summary.currentStreak} day streak`
                         : 'Start your streak today!'}
                     </Text>
                     <Text style={styles.streakBannerSub}>
@@ -202,9 +207,14 @@ export default function StreakChatScreen({ navigation }: Props) {
               {summary && (
                 <>
                   {(() => {
-                    const pages = summary.shopBreakdowns.length > 0
-                      ? summary.shopBreakdowns
-                      : [{ shopId: 'all', shopName: 'All Canteens', heatmap: summary.heatmap }];
+                    // Always show global 'All Canteens' page first (has real colors),
+                    // then append per-shop pages if the user ordered from multiple shops
+                    const globalPage = { shopId: 'all', shopName: 'All Canteens', heatmap: summary.heatmap };
+                    const pages = summary.shopBreakdowns.length > 1
+                      ? [globalPage, ...summary.shopBreakdowns]
+                      : summary.shopBreakdowns.length === 1
+                        ? summary.shopBreakdowns  // single shop: just show that shop
+                        : [globalPage];
                     return (
                       <>
                         <ScrollView
@@ -243,30 +253,18 @@ export default function StreakChatScreen({ navigation }: Props) {
               <View style={styles.sectionPadBottom} />
             </View>
 
-            {/* ── Section 2: Today's Compliance ── */}
-            {summary && isCurrentMonth && (
-              <View style={styles.section}>
-                <SectionHeader icon="📍" title="Today's Meals" textColor={colors.text} />
-                <View style={styles.pillsRow}>
-                  {(['morning', 'afternoon', 'night'] as const).map(s => (
-                    <SessionPill key={s} session={s} status={summary.todayCompliance[s]} />
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* ── Section 3: Your Personality ── */}
+            {/* ── Section 2: Your Personality ── */}
             {summary?.personality && (
               <View style={styles.section}>
-                <SectionHeader icon="✨" title="This Month You Are…" textColor={colors.text} />
+                <SectionHeader icon="sparkles-outline" title="This Month You Are…" textColor={colors.text} />
                 <PersonalityCard personality={summary.personality} />
               </View>
             )}
 
-            {/* ── Section 4: Top Foods ── */}
+            {/* ── Section 3: Top Foods ── */}
             {summary && summary.topFoods.length > 0 && (
               <View style={styles.section}>
-                <SectionHeader icon="🍽" title="Most Eaten This Month" textColor={colors.text} />
+                <SectionHeader icon="restaurant-outline" title="Most Eaten This Month" textColor={colors.text} />
                 {summary.topFoods.map((food, idx) => {
                   const maxCount = summary.topFoods[0].count;
                   const barWidth = maxCount > 0 ? (food.count / maxCount) * 100 : 0;
@@ -282,7 +280,7 @@ export default function StreakChatScreen({ navigation }: Props) {
                           />
                         ) : (
                           <View style={[styles.topFoodImage, styles.topFoodImagePlaceholder]}>
-                            <Text style={{ fontSize: 16 }}>🍱</Text>
+                            <Icon name="restaurant-outline" size={16} color={colors.textMuted} />
                           </View>
                         )}
                       </View>
@@ -301,9 +299,9 @@ export default function StreakChatScreen({ navigation }: Props) {
               </View>
             )}
 
-            {/* ── Section 5: Leaderboard Preview ── */}
+            {/* ── Section 4: Leaderboard Preview ── */}
             <View style={styles.section}>
-              <SectionHeader icon="🏆" title="This Month's Top Spenders" textColor={colors.text} />
+              <SectionHeader icon="trophy-outline" title="This Month's Top Spenders" textColor={colors.text} />
               {leaderboardLoading && !leaderboardPreview ? (
                 <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />
               ) : leaderboardPreview ? (
@@ -323,11 +321,12 @@ export default function StreakChatScreen({ navigation }: Props) {
 
                   {leaderboardPreview.top3.map((entry, idx) => {
                     const podiumColors = ['#eab308', '#94a3b8', '#d97706'];
-                    const podiumEmojis = ['🥇', '🥈', '🥉'];
                     const isMe = entry.userId === leaderboardPreview.userEntry?.userId;
                     return (
                       <View key={entry.userId} style={[styles.lbRow, isMe && styles.lbRowHighlight]}>
-                        <Text style={styles.lbEmoji}>{podiumEmojis[idx]}</Text>
+                        <View style={styles.lbIconWrap}>
+                          <Icon name={idx === 0 ? 'trophy' : 'medal-outline'} size={20} color={podiumColors[idx]} />
+                        </View>
                         <View style={[styles.lbAvatar, { borderColor: podiumColors[idx] }]}>
                           {entry.avatarUrl ? (
                             <Image source={{ uri: resolveImageUrl(entry.avatarUrl) ?? undefined }} style={styles.lbAvatarImg} />
@@ -358,11 +357,11 @@ export default function StreakChatScreen({ navigation }: Props) {
             {/* ── Section 6: Stats Grid ── */}
             {summary && (
               <View style={styles.section}>
-                <SectionHeader icon="📊" title="Month Summary" textColor={colors.text} />
+                <SectionHeader icon="stats-chart-outline" title="Month Summary" textColor={colors.text} />
                 <View style={styles.statsGrid}>
                   {statTiles.map(tile => (
                     <View key={tile.label} style={[styles.statTile, { backgroundColor: colors.card }]}>
-                      <Text style={styles.statTileIcon}>{tile.icon}</Text>
+                      <Icon name={tile.icon as any} size={22} color={colors.primary} />
                       <Text style={styles.statTileValue}>{tile.value}</Text>
                       <Text style={styles.statTileLabel}>{tile.label}</Text>
                       <Text style={styles.statTileSub}>{tile.sub}</Text>
@@ -376,14 +375,20 @@ export default function StreakChatScreen({ navigation }: Props) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <WeeklyChallengeModal
+        visible={showWeeklyModal}
+        weeklyChallenge={weeklyChallenge}
+        onClose={() => setShowWeeklyModal(false)}
+      />
     </ScreenWrapper>
   );
 }
 
-function SectionHeader({ icon, title, textColor }: { icon: string; title: string; textColor: string }) {
+function SectionHeader({ icon, title, textColor }: { icon: StreakHeaderIcon; title: string; textColor: string }) {
   return (
     <View style={sectionHeaderStyles.row}>
-      <Text style={sectionHeaderStyles.icon}>{icon}</Text>
+      <Icon name={icon} size={16} color={textColor} />
       <Text style={[sectionHeaderStyles.title, { color: textColor }]}>{title}</Text>
     </View>
   );
@@ -391,7 +396,6 @@ function SectionHeader({ icon, title, textColor }: { icon: string; title: string
 
 const sectionHeaderStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
-  icon: { fontSize: 16 },
   title: { fontSize: 15, fontWeight: '800' },
 });
 
@@ -409,6 +413,35 @@ function createStyles(colors: ThemeColors) {
     headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.text },
     scroll: { paddingHorizontal: 16, paddingTop: 12 },
     bannerWrap: { marginBottom: 16 },
+    complianceCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    complianceHoliday: {
+      backgroundColor: 'rgba(245,158,11,0.14)',
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginBottom: 10,
+    },
+    complianceHolidayText: { color: '#b45309', fontSize: 12, fontWeight: '700' },
+    complianceRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    complianceName: { fontSize: 14, fontWeight: '700', color: colors.text },
+    complianceTime: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+    complianceStatus: { fontSize: 12, color: colors.textSecondary, textTransform: 'capitalize', fontWeight: '700' },
+    complianceStatusMissed: { color: '#ef4444' },
+    complianceStatusAte: { color: '#10b981' },
     loaderWrap: { paddingVertical: 60, alignItems: 'center' },
 
     // Month selector
@@ -502,7 +535,7 @@ function createStyles(colors: ThemeColors) {
       borderRadius: 10,
       paddingHorizontal: 8,
     },
-    lbEmoji: { fontSize: 20, width: 28, textAlign: 'center' },
+    lbIconWrap: { width: 28, alignItems: 'center', justifyContent: 'center' },
     lbAvatar: {
       width: 36, height: 36, borderRadius: 18, borderWidth: 2,
       overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
@@ -542,7 +575,6 @@ function createStyles(colors: ThemeColors) {
       shadowOpacity: 0.04,
       shadowRadius: 4,
     },
-    statTileIcon: { fontSize: 22, marginBottom: 4 },
     statTileValue: { fontSize: 20, fontWeight: '900', color: colors.text },
     statTileLabel: { fontSize: 12, fontWeight: '700', color: colors.text, marginTop: 2 },
     statTileSub: { fontSize: 10, color: colors.textMuted, marginTop: 2 },

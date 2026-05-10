@@ -27,16 +27,18 @@ const EMPTY_DAYS: WeeklyChallengeDay[] = Array.from({ length: 7 }, (_, i) => ({
 }));
 
 function getDaySquareColor(day: WeeklyChallengeDay, completedDays: number): string {
-  if (day.isFuture) return 'rgba(255,255,255,0.12)';
-  if (!day.completed) return 'rgba(255,255,255,0.22)';
-  if (completedDays <= 3) return '#a78bfa';
-  if (completedDays <= 5) return '#c084fc';
-  return '#fbbf24';
+  if (day.isFuture) return 'rgba(255,255,255,0.12)';   // future — very faint
+  if (!day.completed) return 'rgba(255,255,255,0.22)';  // past missed — muted
+  if (completedDays <= 3) return '#a78bfa';   // early week — light purple
+  if (completedDays <= 5) return '#7c3aed';   // mid week — deep purple
+  return '#fbbf24';                            // 6-7 days — gold!
 }
 
 export default function WeeklyChallengeModal({ visible, weeklyChallenge, onClose }: Props) {
   const dispatch = useAppDispatch();
   const claimLoading = useAppSelector(s => s.streak.weeklyClaimLoading);
+  // Get personality for personalized badge reveal
+  const personality = useAppSelector(s => s.streak.summary?.personality ?? null);
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [claimError, setClaimError] = useState('');
@@ -234,7 +236,13 @@ export default function WeeklyChallengeModal({ visible, weeklyChallenge, onClose
                   transform: [{ scale: badgeScale }],
                   opacity: Animated.multiply(badgeOpacity, glowAnim),
                 }]}>
-                  <Text style={styles.badgeEmoji}>🏅</Text>
+                  {/* Show personality badge if available, else fallback to medal */}
+                  <Text style={styles.badgeEmoji}>
+                    {personality ? personality.emoji : '🏅'}
+                  </Text>
+                  {personality && (
+                    <Text style={styles.badgePersonalityLabel}>{personality.label}</Text>
+                  )}
                 </Animated.View>
               )}
             </View>
@@ -242,7 +250,9 @@ export default function WeeklyChallengeModal({ visible, weeklyChallenge, onClose
             {/* Status / label */}
             {showBadge ? (
               <Text style={styles.badgeLabel}>
-                {phase === 'claimed' ? 'Badge Claimed! 🎉' : 'Perfect Week!'}
+                {phase === 'claimed'
+                  ? `${personality?.label ?? 'Badge'} Claimed! 🎉`
+                  : `Perfect Week! You're a ${personality?.label ?? 'Champion'}!`}
               </Text>
             ) : (
               <Text style={styles.statusText}>
@@ -357,6 +367,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeEmoji: { fontSize: 72 },
+  badgePersonalityLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#fbbf24',
+    marginTop: 6,
+    textAlign: 'center',
+    letterSpacing: 0.3,
+  },
   badgeLabel: {
     fontSize: 17,
     fontWeight: '900',
