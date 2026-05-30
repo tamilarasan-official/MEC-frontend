@@ -1,7 +1,7 @@
 import api from './api';
 
 export type MealSessionType = 'breakfast' | 'lunch' | 'dinner';
-export type MealComplianceStatus = 'pending' | 'eaten' | 'missed' | 'debited' | 'exempted' | 'holiday_locked' | 'refunded';
+export type MealComplianceStatus = 'pending' | 'eaten' | 'missed' | 'debited' | 'exempted' | 'leave_exempted' | 'holiday_locked' | 'refunded';
 
 export interface MealComplianceTodaySession {
   sessionType: MealSessionType;
@@ -28,11 +28,23 @@ export interface MealComplianceHistoryRecord {
   id: string;
   date: string;
   sessionType: MealSessionType;
-  status: 'debited' | 'refunded' | 'exempted';
+  status: 'debited' | 'refunded' | 'exempted' | 'leave_exempted';
   officialFoodNameSnapshot: string;
   officialAmountSnapshot: number;
   debitAmount?: number;
   exemptReason?: string;
+}
+
+export interface MealComplianceSettings {
+  leaveExemptionEnabled: boolean;
+  leaveAutoApprovalEnabled: boolean;
+  campusLatitude?: number | null;
+  campusLongitude?: number | null;
+  mealLeaveDistanceThresholdKm: number;
+  leavePhotoGpsMatchThresholdKm: number;
+  leaveGpsRequired: boolean;
+  leavePhotoRequired: boolean;
+  leaveProofRequired: boolean;
 }
 
 const mealComplianceService = {
@@ -53,6 +65,11 @@ const mealComplianceService = {
   async getActiveHoliday(): Promise<MealComplianceTodayResponse['holiday']> {
     const res = await api.get('/student/holidays/active');
     return res.data.data || null;
+  },
+
+  async getSettings(): Promise<MealComplianceSettings> {
+    const res = await api.get('/meal-compliance/settings');
+    return res.data.data;
   },
 };
 

@@ -25,6 +25,7 @@ const FORCE_LOGOUT_COOLDOWN_MS = 5 * 60 * 1000;
 export interface OrderUpdatePayload {
   orderId: string;
   orderNumber: string;
+  serviceType?: 'food' | 'stationery';
   status: string;
   pickupToken?: string;
   previousStatus?: string;
@@ -32,6 +33,22 @@ export interface OrderUpdatePayload {
   user?: string;
   notification?: { title: string; body: string };
   items?: { name: string; quantity: number; itemStatus?: string; delivered?: boolean }[];
+}
+
+function getOrderStatusMessage(
+  serviceType: 'food' | 'stationery' | undefined,
+  status: string,
+  itemsSuffix: string,
+): string {
+  const orderLabel = serviceType === 'stationery' ? 'Your stationery order' : 'Your order';
+  const statusLabels: Record<string, string> = {
+    preparing: `${orderLabel} is being prepared${itemsSuffix}`,
+    partially_ready: `Some items from ${serviceType === 'stationery' ? 'your stationery order' : 'your order'} are ready for pickup${itemsSuffix}`,
+    ready: `${orderLabel} is ready for pickup${itemsSuffix}`,
+    completed: `${orderLabel} has been completed${itemsSuffix}`,
+    cancelled: `${orderLabel} has been cancelled${itemsSuffix}`,
+  };
+  return statusLabels[status] || `Status updated to ${status}`;
 }
 
 export const connectSocket = async (userId: string, role: string, shopId?: string) => {
@@ -173,23 +190,16 @@ export const setupSocketListeners = (dispatch: AppDispatch, userRole: string, us
       // Add to Redux notification list
       const itemNames = (payload.items || []).map(i => i.name).filter(Boolean);
       const itemsSuffix = itemNames.length > 0 ? ` (${itemNames.join(', ')})` : '';
-      const statusLabels: Record<string, string> = {
-        preparing: `Your order is being prepared${itemsSuffix}`,
-        partially_ready: `Some items from your order are ready for pickup!${itemsSuffix}`,
-        ready: `Your order is ready for pickup!${itemsSuffix}`,
-        completed: `Your order has been completed${itemsSuffix}`,
-        cancelled: `Your order has been cancelled${itemsSuffix}`,
-      };
       const orderNum = payload.orderNumber || payload.orderId.slice(-6);
-      const title = payload.notification?.title || `Order #${orderNum}`;
-      const message = payload.notification?.body || statusLabels[status] || `Status updated to ${status}`;
+      const title = payload.notification?.title || `${payload.serviceType === 'stationery' ? 'Stationery Order' : 'Order'} #${orderNum}`;
+      const message = payload.notification?.body || getOrderStatusMessage(payload.serviceType, status, itemsSuffix);
 
       dispatch(addNotification({
         id: `notif-${Date.now()}`,
         type: 'order',
         title,
         message,
-        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status, pickupToken: payload.pickupToken },
+        data: { orderId: payload.orderId, orderNumber: payload.orderNumber, status, pickupToken: payload.pickupToken, serviceType: payload.serviceType },
         createdAt: payload.updatedAt,
         read: false,
       }));

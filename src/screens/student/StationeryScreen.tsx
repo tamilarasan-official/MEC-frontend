@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList,
-  Image, ActivityIndicator, Dimensions, Animated,
+  Image, ActivityIndicator, Dimensions, Animated, TextInput, Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -18,8 +18,10 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import { OrderQRCard } from '../../components/common/OrderQRCard';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
 import { CartBottomSheet } from '../../components/student/CartBottomSheet';
+import StationeryRequestsModal from '../../components/student/StationeryRequestsModal';
 import { resolveImageUrl } from '../../utils/imageUrl';
 import { mediumHaptic } from '../../utils/haptics';
+import stationeryRequestService from '../../services/stationeryRequestService';
 
 type Props = NativeStackScreenProps<StudentHomeStackParamList, 'Stationery'>;
 
@@ -39,7 +41,7 @@ interface ItemCardProps {
   styles: ReturnType<typeof createStyles>;
 }
 
-const ItemCard = React.memo(({ item, quantity, onAdd, onDecrement, colors, styles }: ItemCardProps) => {
+const ItemCard = React.memo(({ item, quantity, onAdd, onDecrement, colors: _colors, styles }: ItemCardProps) => {
   const imageUri = resolveImageUrl(item.image);
 
   return (
@@ -80,20 +82,19 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { shopId, shopName } = route.params || {};
-
-  if (!shopId) {
-    navigation.goBack();
-    return null;
-  }
+  const activeShopId = shopId || '';
 
   const dispatch = useAppDispatch();
   const cartItems = useAppSelector(selectCartItems);
   const { menuItems: rawMenuItems, categories, isLoading: menuLoading } = useAppSelector(s => s.menu);
-  const shopMenu = useMemo(() => rawMenuItems.filter((i: FoodItem) => i.shopId === shopId), [rawMenuItems, shopId]);
+  const shopMenu = useMemo(() => rawMenuItems.filter((i: FoodItem) => i.shopId === activeShopId), [rawMenuItems, activeShopId]);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [requestText, setRequestText] = useState('');
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [showSubmittedRequests, setShowSubmittedRequests] = useState(false);
 
   // Cart sheet + success/failure flow (same as DashboardScreen)
   const [showCart, setShowCart] = useState(false);
@@ -106,7 +107,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
   const cartBarAnim = useRef(new Animated.Value(0)).current;
   const prevItemCount = useRef(0);
 
-  const cartShopItems = cartItems.filter(c => c.item.shopId === shopId);
+  const cartShopItems = cartItems.filter(c => c.item.shopId === activeShopId);
   const cartCount = cartShopItems.reduce((s, c) => s + c.quantity, 0);
   const cartTotal = cartShopItems.reduce((s, c) => s + c.item.price * c.quantity, 0);
 
@@ -122,21 +123,31 @@ export default function StationeryScreen({ route, navigation }: Props) {
   }, [cartCount, cartBarAnim]);
 
   const loadMenu = useCallback(async () => {
+    if (!activeShopId) {
+      setInitialLoading(false);
+      return;
+    }
     setInitialLoading(true);
     await Promise.all([
-      dispatch(fetchShopMenu({ shopId })),
-      dispatch(fetchShopCategories(shopId)),
+      dispatch(fetchShopMenu({ shopId: activeShopId })),
+      dispatch(fetchShopCategories(activeShopId)),
     ]);
     setInitialLoading(false);
-  }, [dispatch, shopId]);
+  }, [dispatch, activeShopId]);
 
   useEffect(() => { loadMenu(); }, [loadMenu]);
+  useEffect(() => {
+    if (!activeShopId) {
+      navigation.goBack();
+    }
+  }, [activeShopId, navigation]);
 
   const onRefresh = async () => {
+    if (!activeShopId) return;
     setRefreshing(true);
     await Promise.all([
-      dispatch(fetchShopMenu({ shopId })),
-      dispatch(fetchShopCategories(shopId)),
+      dispatch(fetchShopMenu({ shopId: activeShopId })),
+      dispatch(fetchShopCategories(activeShopId)),
     ]);
     setRefreshing(false);
   };
@@ -157,8 +168,9 @@ export default function StationeryScreen({ route, navigation }: Props) {
   }, [cartItems]);
 
   const handleAdd = useCallback((item: FoodItem) => {
-    dispatch(addToCart({ item, shopId, shopName: shopName || '' }));
-  }, [dispatch, shopId, shopName]);
+    if (!activeShopId) return;
+    dispatch(addToCart({ item, shopId: activeShopId, shopName: shopName || '' }));
+  }, [dispatch, activeShopId, shopName]);
 
   const handleDecrement = useCallback((itemId: string) => {
     dispatch(decrementQuantity(itemId));
@@ -176,6 +188,10 @@ export default function StationeryScreen({ route, navigation }: Props) {
       />
     </View>
   ), [getQty, handleAdd, handleDecrement, colors, styles]);
+
+  if (!activeShopId) {
+    return null;
+  }
 
   const cartBarTranslate = cartBarAnim.interpolate({
     inputRange: [0, 1], outputRange: [100, 0],
@@ -219,6 +235,54 @@ export default function StationeryScreen({ route, navigation }: Props) {
               );
             })}
           </ScrollView>
+        </View>
+
+        <View style={styles.requestCard}>
+          <View style={styles.requestHeader}>
+            <Icon name="chatbox-ellipses-outline" size={18} color={colors.primary} />
+            <Text style={styles.requestTitle}>Request for owner</Text>
+          </View>
+          <Text style={styles.requestHint}>Add item details, brand, size, or any special request.</Text>
+          <TextInput
+            style={styles.requestInput}
+            value={requestText}
+            onChangeText={setRequestText}
+            placeholder="Example: Need 2 blue gel pens and 1 long notebook"
+            placeholderTextColor={colors.textMuted}
+            multiline
+            maxLength={500}
+            textAlignVertical="top"
+          />
+          <Text style={styles.requestCount}>{requestText.trim().length}/500</Text>
+          {requestText.trim().length > 0 && (
+            <TouchableOpacity
+              style={styles.requestSubmitBtn}
+              onPress={async () => {
+                if (submittingRequest) return;
+                setSubmittingRequest(true);
+                try {
+                  await stationeryRequestService.create(activeShopId, requestText);
+                  setRequestText('');
+                  Alert.alert('Request sent', 'Your stationery request was sent to the owner for the next 24 hours.');
+                } catch (error: any) {
+                  Alert.alert('Request failed', error?.response?.data?.error?.message || error?.message || 'Could not submit stationery request');
+                } finally {
+                  setSubmittingRequest(false);
+                }
+              }}
+              activeOpacity={0.85}
+              disabled={submittingRequest}
+            >
+              <Text style={styles.requestSubmitBtnText}>{submittingRequest ? 'Submitting...' : 'Submit Request'}</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.requestViewBtn}
+            onPress={() => setShowSubmittedRequests(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.requestViewBtnText}>View Submitted Requests</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Items grid */}
@@ -284,11 +348,13 @@ export default function StationeryScreen({ route, navigation }: Props) {
         <CartBottomSheet
           visible={showCart}
           onClose={() => setShowCart(false)}
+          orderNotes={requestText}
           onOrderSuccess={(result: CreateOrderResult) => {
             dispatch(fetchMyActiveOrders());
             dispatch(fetchWalletBalance());
             setSuccessOrder(result.order);
             setShowSuccessAnim(true);
+            setRequestText('');
             setTimeout(() => setShowCart(false), 150);
           }}
           onOrderFailure={(errorMessage) => {
@@ -330,6 +396,7 @@ export default function StationeryScreen({ route, navigation }: Props) {
             }}
           />
         )}
+        <StationeryRequestsModal visible={showSubmittedRequests} onClose={() => setShowSubmittedRequests(false)} />
       </View>
     </ScreenWrapper>
   );
@@ -363,6 +430,56 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted, includeFontPadding: false },
   pillTextActive: { color: '#fff' },
+
+  requestCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  requestHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  requestTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  requestHint: { fontSize: 12, color: colors.textMuted, marginBottom: 10 },
+  requestInput: {
+    minHeight: 84,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: colors.text,
+  },
+  requestCount: {
+    marginTop: 8,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'right',
+  },
+  requestSubmitBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+  },
+  requestSubmitBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  requestViewBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  requestViewBtnText: { fontSize: 13, fontWeight: '700', color: colors.text },
 
   listContent: { padding: 16, paddingBottom: 20 },
   listContentWithBar: { paddingBottom: 100 },

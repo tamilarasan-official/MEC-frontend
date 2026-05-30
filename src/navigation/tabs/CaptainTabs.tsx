@@ -9,7 +9,6 @@ import { fetchActiveShopOrders } from '../../store/slices/ordersSlice';
 import { fetchShops } from '../../store/slices/menuSlice';
 import { CaptainTabParamList } from '../../types';
 import StationeryCaptainHomeScreen from '../../screens/stationery_owner/StationeryCaptainHomeScreen';
-import StationeryHistoryScreen from '../../screens/stationery_owner/StationeryHistoryScreen';
 import CaptainHomeScreen from '../../screens/captain/CaptainHomeScreen';
 import CaptainPrepListScreen from '../../screens/captain/CaptainPrepListScreen';
 import CaptainHistoryScreen from '../../screens/captain/CaptainHistoryScreen';
@@ -249,7 +248,7 @@ export default function CaptainTabs() {
         />
         <Tab.Screen
           name="History"
-          component={StationeryHistoryScreen}
+          component={CaptainHistoryScreen}
           options={{
             tabBarLabel: 'History',
             tabBarIcon: HistoryIcon,

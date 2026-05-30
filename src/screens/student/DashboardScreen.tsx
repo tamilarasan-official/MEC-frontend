@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl, Dimensions, Easing,
-  Image, FlatList, ScrollView, ActivityIndicator, Modal, Alert, Animated, LayoutAnimation, Platform, AppState, PanResponder, InteractionManager,
+  Image, FlatList, ScrollView, ActivityIndicator, Modal, Alert, Animated, Platform, AppState, PanResponder, InteractionManager, TextInput,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,12 +21,14 @@ import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
 import walletService from '../../services/walletService';
 import announcementService from '../../services/announcementService';
+import stationeryRequestService from '../../services/stationeryRequestService';
 import SearchModal from '../../components/student/SearchModal';
 import AnnouncementCard from '../../components/student/AnnouncementCard';
 import WalletModal from '../../components/student/WalletModal';
 import NotificationsModal from '../../components/student/NotificationsModal';
 import TopUpModal from '../../components/student/TopUpModal';
 import ProfileDropdown from '../../components/student/ProfileDropdown';
+import StationeryRequestsModal from '../../components/student/StationeryRequestsModal';
 import { CartBottomSheet } from '../../components/student/CartBottomSheet';
 import PINVerifyModal from '../../components/common/PINVerifyModal';
 import { OrderAnimation } from '../../components/common/OrderAnimation';
@@ -48,21 +50,6 @@ interface PendingPayment {
   dueDate: string;
   status: 'pending' | 'paid' | 'cancelled';
   requestCreatedAt?: string;
-}
-
-const CATEGORY_ICONS: Record<string, string> = {
-  All: 'apps-outline',
-  Classic: 'restaurant',
-  Bites: 'pizza-outline',
-  Snacks: 'fast-food-outline',
-  Drinks: 'cafe-outline',
-  Desserts: 'ice-cream-outline',
-  Meals: 'restaurant-outline',
-  Breakfast: 'sunny-outline',
-};
-
-function getCategoryIcon(cat: string): string {
-  return CATEGORY_ICONS[cat] || 'grid-outline';
 }
 
 const FoodCardImage = React.memo(({ uri, style, placeholderStyle }: { uri: string | null; style: any; placeholderStyle: any }) => {
@@ -348,6 +335,9 @@ export default function StudentDashboard({ navigation }: Props) {
   const [shopMode, setShopMode] = useState<'classic' | 'bites' | 'stationery'>('classic');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedStationeryCategory, setSelectedStationeryCategory] = useState<string | null>(null);
+  const [stationeryRequestText, setStationeryRequestText] = useState('');
+  const [submittingStationeryRequest, setSubmittingStationeryRequest] = useState(false);
+  const [showStationeryRequests, setShowStationeryRequests] = useState(false);
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -671,7 +661,7 @@ export default function StudentDashboard({ navigation }: Props) {
       const matchesDiet = dietFilter === 'all' || (dietFilter === 'veg' && item.isVeg) || (dietFilter === 'nonveg' && !item.isVeg);
       return matchesMode && item.isAvailable && matchesDiet;
     });
-  }, [shopMenu, shopMode, dietFilter, canteenShop, isShopOpen, stationeryItems, selectedStationeryCategory]);
+  }, [shopMenu, shopMode, dietFilter, canteenShop, isShopOpen, stationeryShop, stationeryItems, selectedStationeryCategory]);
 
   const handleModeTab = useCallback((mode: 'classic' | 'bites' | 'stationery') => {
     setShopMode(mode);
@@ -1167,6 +1157,58 @@ export default function StudentDashboard({ navigation }: Props) {
               </ScrollView>
             )}
 
+            {shopMode === 'stationery' && stationeryShop?.isActive && (
+              <View style={styles.stationeryRequestCard}>
+                <View style={styles.stationeryRequestHeader}>
+                  <Icon name="chatbox-ellipses-outline" size={18} color={colors.primary} />
+                  <Text style={styles.stationeryRequestTitle}>Request for owner</Text>
+                </View>
+                <Text style={styles.stationeryRequestHint}>Add brand, size, color, or any special stationery request.</Text>
+                <TextInput
+                  style={styles.stationeryRequestInput}
+                  value={stationeryRequestText}
+                  onChangeText={setStationeryRequestText}
+                  placeholder="Example: Need 2 blue gel pens and 1 long notebook"
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  maxLength={500}
+                  textAlignVertical="top"
+                />
+                <Text style={styles.stationeryRequestCount}>{stationeryRequestText.trim().length}/500</Text>
+                {stationeryRequestText.trim().length > 0 && (
+                  <TouchableOpacity
+                    style={styles.stationeryRequestSubmitBtn}
+                    onPress={async () => {
+                      if (!stationeryShop?.id || submittingStationeryRequest) return;
+                      setSubmittingStationeryRequest(true);
+                      try {
+                        await stationeryRequestService.create(stationeryShop.id, stationeryRequestText);
+                        setStationeryRequestText('');
+                        Alert.alert('Request sent', 'Your stationery request was sent to the owner for the next 24 hours.');
+                      } catch (error: any) {
+                        Alert.alert('Request failed', error?.response?.data?.error?.message || error?.message || 'Could not submit stationery request');
+                      } finally {
+                        setSubmittingStationeryRequest(false);
+                      }
+                    }}
+                    activeOpacity={0.85}
+                    disabled={submittingStationeryRequest}
+                  >
+                    <Text style={styles.stationeryRequestSubmitText}>
+                      {submittingStationeryRequest ? 'Submitting...' : 'Submit Request'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.stationeryRequestViewBtn}
+                  onPress={() => setShowStationeryRequests(true)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.stationeryRequestViewText}>View Submitted Requests</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Loading indicators — shimmer skeletons instead of spinner */}
             {shopMode === 'stationery' && stationeryLoading && (
               <FoodCardSkeletonList count={4} />
@@ -1243,6 +1285,7 @@ export default function StudentDashboard({ navigation }: Props) {
       />
       <TopUpModal visible={showTopUp} onClose={() => setShowTopUp(false)} />
       <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
+      <StationeryRequestsModal visible={showStationeryRequests} onClose={() => setShowStationeryRequests(false)} />
       <WeeklyChallengeModal
         visible={showWeeklyModal}
         weeklyChallenge={weeklyChallenge}
@@ -1265,6 +1308,7 @@ export default function StudentDashboard({ navigation }: Props) {
       <CartBottomSheet
         visible={showCart}
         onClose={() => setShowCart(false)}
+        orderNotes={shopMode === 'stationery' ? stationeryRequestText : undefined}
         onOrderSuccess={(result: CreateOrderResult) => {
           dispatch(fetchMyActiveOrders());
 
@@ -1281,6 +1325,9 @@ export default function StudentDashboard({ navigation }: Props) {
             setSuccessOrder(order);
             setSuccessOrderType(order.isReadyServe ? 'instant' : 'regular');
             setShowSuccessAnim(true);
+          }
+          if (shopMode === 'stationery') {
+            setStationeryRequestText('');
           }
           // Delay cart close so OrderAnimation's fade-in covers the transition
           setTimeout(() => setShowCart(false), 150);
@@ -1763,6 +1810,49 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   statPillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   statPillText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
   statPillTextActive: { color: '#fff' },
+  stationeryRequestCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 12,
+  },
+  stationeryRequestHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  stationeryRequestTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  stationeryRequestHint: { fontSize: 12, color: colors.textMuted, marginBottom: 10 },
+  stationeryRequestInput: {
+    minHeight: 88,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.text,
+    fontSize: 13,
+  },
+  stationeryRequestCount: { fontSize: 11, color: colors.textMuted, marginTop: 8, textAlign: 'right' },
+  stationeryRequestSubmitBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+  },
+  stationeryRequestSubmitText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  stationeryRequestViewBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  stationeryRequestViewText: { fontSize: 13, fontWeight: '700', color: colors.text },
   statRow: { gap: 10, marginBottom: 10 },
   statCard: {
     flex: 1, backgroundColor: colors.card, borderRadius: 12,
