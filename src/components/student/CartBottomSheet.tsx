@@ -27,6 +27,7 @@ interface CartBottomSheetProps {
   onClose: () => void;
   onOrderSuccess: (result: CreateOrderResult) => void;
   onOrderFailure: (errorMessage?: string) => void;
+  orderNotes?: string;
 }
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
@@ -36,7 +37,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
   partially_delivered:  { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Partial' },
 };
 
-export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailure }: CartBottomSheetProps) {
+export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailure, orderNotes }: CartBottomSheetProps) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const dispatch = useAppDispatch();
@@ -107,6 +108,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
     if (isShopClosed || !hasBalance || !shopId || cartItems.length === 0) return;
     const savedTotal = cartTotal;
     const savedShopName = shopName || '';
+    const normalizedNotes = orderNotes?.trim() || undefined;
     setOrdering(true);
 
     let result: CreateOrderResult;
@@ -114,6 +116,7 @@ export function CartBottomSheet({ visible, onClose, onOrderSuccess, onOrderFailu
       result = await dispatch(createOrder({
         shopId,
         items: cartItems.map(c => ({ foodItemId: c.item.id, quantity: c.quantity })),
+        notes: normalizedNotes,
       })).unwrap();
     } catch (err: any) {
       let msg: string;

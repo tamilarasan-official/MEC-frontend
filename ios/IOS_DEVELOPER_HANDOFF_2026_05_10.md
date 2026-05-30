@@ -1,8 +1,8 @@
 # iOS Developer Handoff - 2026-05-10
 
-**Prepared by:** CampusOne Dev Team  
-**Date:** 10 May 2026  
-**Covers:** All major changes shipped after the previous handoff dated 2026-04-28, through 2026-05-10  
+**Prepared by:** CampusOne Dev Team
+**Date:** 10 May 2026, updated 30 May 2026
+**Covers:** All major changes shipped after the previous handoff dated 2026-04-28, through 2026-05-30
 **iOS Action Required:** Yes - see Section 4
 
 ---
@@ -16,6 +16,168 @@
 5. [New API / Data Contract Reference](#5-new-api--data-contract-reference)
 6. [Environment / Config Notes](#6-environment--config-notes)
 7. [Commit Reference Table](#7-commit-reference-table)
+
+---
+
+## 0. Update Addendum - 2026-05-30
+
+This addendum covers the Android/mobile work completed after the original 2026-05-10 handoff. iOS developers should merge or port the mobile changes from the Android branch `Android-tamil` and align the iOS implementation with the backend contracts listed here.
+
+### 0.1 Release Version
+
+- Android app version bumped from `1.2.9` to `1.3.0`.
+- Android `versionCode` bumped from `30` to `31`.
+- Release bundle generated at `frontend/android/app/build/outputs/bundle/release/app-release.aab`.
+- Backend app version seed now advertises Android `1.3.0`.
+- Backend changelog now seeds mobile-only What's New notes for `1.3.0`.
+
+### 0.2 Student Leave / Outpass Exemption
+
+iOS must implement the same student flow now present in Android:
+
+- Add Leave / Outpass Exemption entry from Help / Support.
+- Student can submit leave with:
+  - leave type: `home_leave`, `outpass`, `medical_leave`, `other`
+  - start date and end date
+  - reason text
+  - current GPS latitude / longitude
+  - proof PDF upload
+  - initial face photo and student-confirmed face comparison for leave submission
+- Date picker rules:
+  - start date defaults to current date
+  - past dates are not selectable
+  - end date cannot be before start date
+- Approved leave protects every approved leave day from missed-meal auto-debit.
+- Daily verification after approval is audit-only and must be GPS-only:
+  - do not open camera for daily verification
+  - button label should be `Verify Today's Location`
+  - send today's GPS to backend
+  - show day-wise dots for every leave date
+  - green dot for verified/protected, amber for pending review/pending, grey for future
+  - disable the daily button after today's verification succeeds
+- If student is still inside the configured campus radius, backend records `pending_review`; approved leave remains protected.
+
+Required API usage:
+
+- `GET /api/v1/student/leave-requests`
+- `POST /api/v1/student/leave-requests` as multipart form data
+- `POST /api/v1/student/leave-requests/:id/daily-verify` as location-only daily verification
+- `GET /api/v1/meal-compliance/settings` to read campus coordinates and distance threshold
+
+Important request fields:
+
+- `latitude`, `longitude`, `accuracy`, `capturedAt`
+- `photoLatitude`, `photoLongitude` only for initial face-photo submission when available
+- `faceVerificationConfirmed=true` for initial leave submission
+- `proofFiles` multipart field for PDF proof
+- `facePhoto` multipart field for initial leave submission only
+
+Daily verification request must include:
+
+- `date`
+- `latitude`
+- `longitude`
+- optional `accuracy`
+- optional `note`
+
+Daily verification request should not include a camera image.
+
+### 0.3 Stationery Requests
+
+iOS must match the Android stationery request behaviour:
+
+- Student stationery page has a request box for owner.
+- Student can submit a request without placing a normal order.
+- Student can view submitted stationery requests.
+- Owner/captain stationery screens show request cards at the top.
+- Requests are grouped by same normalized text and show duplicate count.
+- Owner can resolve requests.
+- Resolved requests are visible in owner/captain portal.
+
+Required API usage:
+
+- Student submit/list request APIs from `stationeryRequestService`.
+- Owner active/resolved request APIs from the same backend module.
+
+UI expectations:
+
+- Request card should be visible above stationery items.
+- Student should see request status after submission.
+- Owner cards should show request text, student/count information, and resolved state.
+
+### 0.4 Wallet / Transaction History
+
+iOS must show the same wallet labels as Android:
+
+- Bulk meal refunds should be labelled clearly as MEC accountant bulk refund.
+- Transaction metadata may contain:
+  - `refundMode: "bulk_sheet"`
+  - `bulkRefundBatchId`
+  - `bulkRefundFileName`
+  - `bulkRefundRowNumber`
+  - `bulkRefundReason`
+  - `bulkRefundProofLink`
+- Source `missed_meal_refund` with `refundMode=bulk_sheet` should display as bulk meal refund, not generic refund.
+- Source `missed_meal_debit` should display as auto-debit / meal compliance debit.
+
+### 0.5 Meal Compliance / Leave History
+
+iOS should align with Android updates:
+
+- Meal compliance history should show leave-exempted/refunded states correctly.
+- Approved leave protection means pending daily audit does not re-enable debit.
+- Refunds created after late approval or bulk upload should be visible in student wallet and transaction detail screens.
+
+### 0.6 Native Android Changes That iOS Should Mirror
+
+Android added native file picker support for leave proof PDFs:
+
+- `android/app/src/main/java/com/mec/campusone/FilePickerModule.kt`
+- `android/app/src/main/java/com/mec/campusone/FilePickerPackage.kt`
+- `MainApplication.kt` registers the package.
+
+iOS should provide equivalent PDF picker behaviour using the existing iOS document picker approach. Only PDF proof should be accepted for leave proof upload.
+
+### 0.7 Backend Dependencies Already Pushed
+
+Backend changes have been pushed to `mecfoodapp-backend/main`:
+
+- Student leave request APIs
+- GPS-only daily verification
+- Approved leave protects all leave dates
+- Daily leave verification reminder notification
+- Authenticated leave proof file streaming
+- Stationery request backend
+- Bulk meal refund metadata for wallet transactions
+- Android app version `1.3.0` and changelog seed
+
+### 0.8 Web/Admin Dependencies Already Pushed
+
+Web frontend changes have been pushed to `mecfoodapp-frontend/main`:
+
+- Accountant leave approval queue
+- Leave proof/photo preview
+- Bulk refund upload and batch result details
+- Accountant transaction filters for auto debit, refund, and bulk refund
+- Auto-debit fund range card
+- Superadmin bulk refund toggle
+
+### 0.9 iOS Merge Instruction
+
+Use the Android branch as the source for mobile UI/service parity:
+
+```text
+Repository: https://github.com/tamilarasan-official/MEC-frontend.git
+Branch: Android-tamil
+```
+
+Recommended iOS approach:
+
+- Pull/compare Android `src/services/*Leave*`, `src/services/stationeryRequestService.ts`, wallet transaction display changes, and related type changes.
+- Port screen-level behaviour into the iOS implementation, not Android native modules directly.
+- Keep iOS native file picking separate, but match the API multipart payload.
+- Confirm release notes screen reads backend `/changelog/latest`.
+- Confirm version check reads backend `/app/version-check?platform=ios` when iOS release is prepared.
 
 ---
 
@@ -208,10 +370,12 @@ iOS should mirror:
 Owner app behaviour on Android now:
 - fetches `/owner/shop`
 - reads `isMealComplianceShop`
-- shows `Set Meal Veg` only when the shop is flagged for meal compliance
+- primarily uses `isMealComplianceShop` to decide whether `Set Meal Veg` should be shown
+- current Android code still keeps a temporary fallback for `shop.category === "classic"` in `src/screens/owner/OwnerMenuScreen.tsx`
 - owner can set Breakfast / Lunch / Dinner official veg item from the menu page
 
-iOS should match exactly. Do not gate this by `category === "classic"` anymore.
+iOS should treat `isMealComplianceShop` as the real contract.
+Do not add new iOS gating based on `category === "classic"` alone.
 
 ### 4.6 iOS ACTION: Scanner Fix for "Order Not Found"
 
@@ -266,7 +430,8 @@ Owner shop payload now effectively includes:
 }
 ```
 
-Use `isMealComplianceShop` to decide whether owner meal-session veg controls should be shown.
+Use `isMealComplianceShop` as the primary control flag for owner meal-session veg UI.
+Note: the current Android branch still contains a legacy `category === "classic"` fallback for compatibility, but that is not the long-term contract.
 
 ### `POST /api/v1/owner/menu/:id/official-meal-session`
 

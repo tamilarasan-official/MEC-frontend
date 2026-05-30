@@ -15,6 +15,7 @@ import NotificationsScreen from '../../screens/student/NotificationsScreen';
 import NotificationSettingsScreen from '../../screens/student/NotificationSettingsScreen';
 import PrivacySecurityScreen from '../../screens/student/PrivacySecurityScreen';
 import HelpSupportScreen from '../../screens/student/HelpSupportScreen';
+import StudentLeaveExemptionScreen from '../../screens/student/StudentLeaveExemptionScreen';
 import WalletScreen from '../../screens/student/WalletScreen';
 import TransactionDetailScreen from '../../screens/student/TransactionDetailScreen';
 import MealComplianceHistoryScreen from '../../screens/student/MealComplianceHistoryScreen';
@@ -46,6 +47,7 @@ export default function StudentHomeStack() {
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
       <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+      <Stack.Screen name="LeaveExemption" component={StudentLeaveExemptionScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="MealComplianceHistory" component={MealComplianceHistoryScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />

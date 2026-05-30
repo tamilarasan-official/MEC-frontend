@@ -239,6 +239,9 @@ export default function OrderHistoryScreen({ navigation }: Props) {
                   )}
 
                   {/* Total — show effective total (minus refunds) */}
+                  {order.serviceType === 'stationery' && !order.serviceDetails?.stationery?.specialInstructions && order.notes ? (
+                    <Text style={styles.stationeryNote} numberOfLines={3}>{order.notes}</Text>
+                  ) : null}
                   {(() => {
                     const refundTotal = order.items
                       .filter(i => i.itemStatus === 'rejected' && i.refundAmount != null)

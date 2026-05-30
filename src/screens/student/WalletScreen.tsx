@@ -5,7 +5,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { StudentHomeStackParamList } from '../../types';
+import { StudentHomeStackParamList, Transaction } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchWalletBalance, fetchTransactions } from '../../store/slices/userSlice';
 import { useTheme } from '../../theme/ThemeContext';
@@ -89,6 +89,7 @@ export default function WalletScreen({ navigation }: Props) {
   const isCredit = (type: string) => type === 'credit' || type === 'refund';
   const isMissedMealDebit = (source?: string) => source === 'missed_meal_debit';
   const isMissedMealRefund = (source?: string) => source === 'missed_meal_refund';
+  const isBulkMealRefund = (tx: Transaction) => tx.source === 'missed_meal_refund' && tx.metadata?.refundMode === 'bulk_sheet';
 
   return (
     <ScreenWrapper>
@@ -173,8 +174,11 @@ export default function WalletScreen({ navigation }: Props) {
             const credit = isCredit(tx.type);
             const missedMealDebit = isMissedMealDebit(tx.source);
             const missedMealRefund = isMissedMealRefund(tx.source);
+            const bulkMealRefund = isBulkMealRefund(tx);
             const description = missedMealDebit
               ? (tx.description.includes('Missed') ? tx.description : `Missed meal debit · ${tx.description}`)
+              : bulkMealRefund
+                ? `MEC accountant bulk refund · ${tx.description}`
               : missedMealRefund
                 ? (tx.description.includes('Refund') ? tx.description : `Missed meal refund · ${tx.description}`)
                 : tx.description;

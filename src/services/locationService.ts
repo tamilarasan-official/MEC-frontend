@@ -92,6 +92,30 @@ export function isCurrentlyTracking(): boolean {
   return isTracking;
 }
 
+export function getCurrentLocationOnce(): Promise<{
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  capturedAt: string;
+}> {
+  return new Promise((resolve, reject) => {
+    Geolocation.getCurrentPosition(
+      (position: any) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy ?? 0,
+          capturedAt: new Date().toISOString(),
+        });
+      },
+      (error: any) => {
+        reject(new Error(error?.message || 'Failed to capture current location'));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 15000 },
+    );
+  });
+}
+
 // ── Internal helpers ───────────────────────────────────────────
 
 function startWatch(): void {

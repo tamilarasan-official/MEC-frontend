@@ -60,7 +60,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
               <View style={[styles.menuIcon, { backgroundColor: colors.accentBg }]}>
                 <Icon name="call" size={18} color={colors.accent} />
               </View>
-              <View>
+              <View style={styles.menuText}>
                 <Text style={styles.menuTitle}>Contact Support</Text>
                 <Text style={styles.menuSub}>campusone@madrascollege.ac.in</Text>
               </View>
@@ -78,6 +78,26 @@ export default function HelpSupportScreen({ navigation }: Props) {
             </View>
           ))}
 
+          <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>LEAVE EXEMPTION</Text>
+
+          <TouchableOpacity
+            style={styles.menuCard}
+            onPress={() => navigation.navigate('LeaveExemption')}
+            activeOpacity={0.7}
+            accessibilityLabel="Leave Exemption"
+            accessibilityRole="button">
+            <View style={styles.menuLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: colors.primaryBg }]}>
+                <Icon name="location-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.menuText}>
+                <Text style={styles.menuTitle}>Leave / Outpass Exemption</Text>
+                <Text style={styles.menuSub}>Submit GPS and proof to avoid missed-meal debit</Text>
+              </View>
+            </View>
+            <Icon name="chevron-forward" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+
           {/* Visit Support Portal */}
           <TouchableOpacity
             style={styles.menuCard}
@@ -89,7 +109,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
               <View style={[styles.menuIcon, { backgroundColor: colors.primaryBg }]}>
                 <Icon name="globe-outline" size={18} color={colors.primary} />
               </View>
-              <View>
+              <View style={styles.menuText}>
                 <Text style={styles.menuTitle}>Visit Support Portal</Text>
                 <Text style={styles.menuSub}>campusonesupport.madrascollege.ac.in</Text>
               </View>
@@ -136,13 +156,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.card, borderRadius: 14, padding: 16,
     borderWidth: 1, borderColor: c.border, marginBottom: 10,
   },
-  menuLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
+  menuLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0, marginRight: 12 },
   menuIcon: {
     width: 40, height: 40, borderRadius: 12,
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
+    justifyContent: 'center', alignItems: 'center', marginRight: 12, flexShrink: 0,
   },
+  menuText: { flex: 1, minWidth: 0 },
   menuTitle: { fontSize: 15, fontWeight: '600', color: c.text },
-  menuSub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  menuSub: { fontSize: 12, color: c.textSecondary, marginTop: 2, lineHeight: 16 },
 
   faqCard: {
     backgroundColor: c.card, borderRadius: 14, padding: 16,

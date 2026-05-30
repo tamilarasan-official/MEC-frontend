@@ -1,19 +1,17 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl,
-  Image, ActivityIndicator, Alert, Modal, InteractionManager,
+  ActivityIndicator, Alert, Modal, InteractionManager,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import { launchImageLibrary } from 'react-native-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StudentHomeStackParamList } from '../../types';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { fetchWalletBalance } from '../../store/slices/userSlice';
-import { setUser, logout } from '../../store/slices/authSlice';
+import { logout } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import Icon from '../../components/common/Icon';
 import ScreenWrapper from '../../components/common/ScreenWrapper';
-import walletService from '../../services/walletService';
 import { useTheme } from '../../theme/ThemeContext';
 import type { ThemeColors } from '../../theme/colors';
 import { resolveAvatarUrl } from '../../utils/imageUrl';
@@ -33,8 +31,6 @@ export default function ProfileScreen({ navigation }: Props) {
   const user = useAppSelector(s => s.auth.user);
   const { balance: walletBalance } = useAppSelector(s => s.user);
   const [refreshing, setRefreshing] = useState(false);
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const [avatarTs, setAvatarTs] = useState(Date.now());
   const [avatarError, setAvatarError] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -67,56 +63,6 @@ export default function ProfileScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  const handleAvatarUpload = async () => {
-    const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8, maxWidth: 600, maxHeight: 600 });
-    if (!result.assets || !result.assets[0]) return;
-    const asset = result.assets[0];
-    if (!asset.uri) return;
-    setAvatarUploading(true);
-    try {
-      const data = await walletService.uploadAvatar(
-        asset.uri,
-        asset.fileName || 'avatar.jpg',
-        asset.type || 'image/jpeg',
-      );
-      if (user && data?.avatarUrl) {
-        dispatch(setUser({ ...user, avatarUrl: data.avatarUrl }));
-        setAvatarTs(Date.now());
-        setAvatarError(false);
-      }
-    } catch {
-      Alert.alert('Upload Failed', 'Could not upload profile picture. Please try again.');
-    } finally {
-      setAvatarUploading(false);
-    }
-  };
-
-  const handleRemoveAvatar = async () => {
-    setAvatarUploading(true);
-    try {
-      await walletService.updateProfile({ avatarUrl: null });
-      if (user) {
-        dispatch(setUser({ ...user, avatarUrl: undefined }));
-        setAvatarError(false);
-      }
-    } catch {
-      Alert.alert('Error', 'Could not remove profile picture. Please try again.');
-    } finally {
-      setAvatarUploading(false);
-    }
-  };
-
-  const handleAvatarPress = () => {
-    const options: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [
-      { text: 'Upload New Photo', onPress: handleAvatarUpload },
-    ];
-    if (user?.avatarUrl) {
-      options.push({ text: 'Remove Photo', onPress: handleRemoveAvatar, style: 'destructive' });
-    }
-    options.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert('Profile Photo', 'Choose an option', options);
-  };
-
   return (
     <ScreenWrapper>
       <View style={styles.container}>
@@ -146,7 +92,7 @@ export default function ProfileScreen({ navigation }: Props) {
               {resolveAvatarUrl(user?.avatarUrl) && !avatarError ? (
                 <CachedImage
                   uri={resolveAvatarUrl(user?.avatarUrl)}
-                  cacheControl={avatarTs > 0 ? 'web' : 'immutable'}
+                  cacheControl="web"
                   style={styles.avatarImg}
                   resizeMode="cover"
                   onError={() => setAvatarError(true)}
@@ -311,18 +257,20 @@ export default function ProfileScreen({ navigation }: Props) {
       <Modal visible={showDeleteDialog} animationType="fade" transparent statusBarTranslucent onRequestClose={() => !deleteLoading && setShowDeleteDialog(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            {walletBalance > 0 ? (
+            {walletBalance !== 0 ? (
               /* Blocked — has wallet balance */
               <>
                 <View style={styles.modalIconWrap}>
                   <Icon name="wallet-outline" size={28} color="#f59e0b" />
                 </View>
                 <Text style={styles.modalTitle}>Cannot Delete Account</Text>
-                <Text style={styles.modalBalanceAmount}>Rs. {walletBalance}</Text>
-                <Text style={styles.modalBalanceLabel}>remaining in your wallet</Text>
+                <Text style={styles.modalBalanceAmount}>Rs. {Math.abs(walletBalance)}</Text>
+                <Text style={styles.modalBalanceLabel}>
+                  {walletBalance > 0 ? 'remaining in your wallet' : 'wallet deficit to settle'}
+                </Text>
                 <View style={styles.modalWarningBox}>
                   <Text style={styles.modalWarningText}>
-                    Please spend your wallet balance by buying food in the campus canteen before deleting your account.
+                    Please settle your wallet balance to zero before deleting your account.
                   </Text>
                 </View>
                 <TouchableOpacity

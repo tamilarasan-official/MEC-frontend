@@ -218,6 +218,30 @@ export const updateOrderStatus = createAsyncThunk(
   },
 );
 
+export const completeOrder = createAsyncThunk(
+  'orders/completeOrder',
+  async ({ orderId }: { orderId: string }, { rejectWithValue }) => {
+    try {
+      const res = await api.post(`/orders/${orderId}/complete`);
+      return mapOrder(res.data.data);
+    } catch (e: any) {
+      const status = e.response?.status;
+      if (__DEV__) console.error('[completeOrder]', e.response?.data, 'status:', status);
+      let msg = 'Failed to complete order. Please try again.';
+      if (!e.response) {
+        msg = 'Network error. Please check your connection.';
+      } else if (status === 400 || status === 409) {
+        msg = 'Order cannot be completed yet.';
+      } else if (status === 404) {
+        msg = 'Order not found.';
+      } else if (status >= 500) {
+        msg = 'Server error. Please try again later.';
+      }
+      return rejectWithValue(msg);
+    }
+  },
+);
+
 export const markItemDelivered = createAsyncThunk(
   'orders/markItemDelivered',
   async ({ orderId, itemIndex, delivered = true, itemStatus }: { orderId: string; itemIndex: number; delivered?: boolean; itemStatus?: 'preparing' | 'ready' | 'delivered' }, { rejectWithValue }) => {
@@ -403,6 +427,19 @@ const ordersSlice = createSlice({
         if (s.currentOrder?.id === o.id) s.currentOrder = o;
       })
       .addCase(updateOrderStatus.rejected, (s, a) => { s.error = a.payload as string; });
+    builder
+      .addCase(completeOrder.pending, (s) => { s.error = null; })
+      .addCase(completeOrder.fulfilled, (s, a) => {
+        const o = a.payload;
+        const si = s.shopOrders.findIndex(x => x.id === o.id);
+        if (si >= 0) s.shopOrders[si] = o;
+        const ai = s.activeOrders.findIndex(x => x.id === o.id);
+        if (ai >= 0) s.activeOrders[ai] = o;
+        const ui = s.orders.findIndex(x => x.id === o.id);
+        if (ui >= 0) s.orders[ui] = o;
+        if (s.currentOrder?.id === o.id) s.currentOrder = o;
+      })
+      .addCase(completeOrder.rejected, (s, a) => { s.error = a.payload as string; });
     // Mark item delivered
     builder
       .addCase(markItemDelivered.pending, (s) => { s.error = null; })

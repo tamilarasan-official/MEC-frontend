@@ -15,6 +15,7 @@ function formatLabel(record: MealComplianceHistoryRecord): string {
   const amount = record.debitAmount ?? record.officialAmountSnapshot;
   if (record.status === 'refunded') return `Refunded Rs.${amount}`;
   if (record.status === 'exempted') return `Exempted Rs.${amount}`;
+  if (record.status === 'leave_exempted') return `Leave protected Rs.${amount}`;
   return `Debited Rs.${amount}`;
 }
 
@@ -73,6 +74,7 @@ export default function MealComplianceHistoryScreen({ navigation }: Props) {
                   item.status === 'debited' && styles.badgeDebit,
                   item.status === 'refunded' && styles.badgeRefund,
                   item.status === 'exempted' && styles.badgeExempt,
+                  item.status === 'leave_exempted' && styles.badgeExempt,
                 ]}>
                   {item.status}
                 </Text>

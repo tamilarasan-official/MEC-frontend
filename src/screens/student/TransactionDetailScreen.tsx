@@ -25,8 +25,24 @@ function sourceLabel(source?: string): string {
     case 'adhoc_payment': return 'Adhoc Payment';
     case 'shop_qr_payment': return 'QR Payment';
     case 'order_payment': return 'Order Payment';
+    case 'missed_meal_debit': return 'Meal Auto Debit';
+    case 'missed_meal_refund': return 'Meal Refund';
     default: return source || 'Wallet';
   }
+}
+
+function transactionSourceLabel(tx: TransactionDetail['transaction']): string {
+  if (tx.source === 'missed_meal_refund' && tx.metadata?.refundMode === 'bulk_sheet') {
+    return 'Bulk Meal Refund by MEC Accountant';
+  }
+  return sourceLabel(tx.source);
+}
+
+function transactionDescription(tx: TransactionDetail['transaction']): string {
+  if (tx.source === 'missed_meal_refund' && tx.metadata?.refundMode === 'bulk_sheet') {
+    return `MEC accountant bulk refund - ${tx.description}`;
+  }
+  return tx.description;
 }
 
 function statusColor(status?: string): string {
@@ -137,7 +153,7 @@ export default function TransactionDetailScreen({ route, navigation }: Props) {
               <Text style={[styles.amountText, { color: isCredit ? '#22c55e' : '#ef4444' }]}>
                 {isCredit ? '+' : '-'} Rs. {tx.amount}
               </Text>
-              <Text style={styles.amountDesc}>{tx.description}</Text>
+              <Text style={styles.amountDesc}>{transactionDescription(tx)}</Text>
               <View style={[styles.statusPill, { backgroundColor: statusColor(tx.status) + '20' }]}>
                 <View style={[styles.statusDot, { backgroundColor: statusColor(tx.status) }]} />
                 <Text style={[styles.statusText, { color: statusColor(tx.status) }]}>
@@ -151,7 +167,7 @@ export default function TransactionDetailScreen({ route, navigation }: Props) {
               <Text style={styles.sectionTitle}>Transaction Info</Text>
               <View style={styles.card}>
                 <InfoRow label="Type" value={tx.type === 'credit' ? 'Credit' : tx.type === 'debit' ? 'Debit' : 'Refund'} colors={colors} />
-                <InfoRow label="Source" value={sourceLabel(tx.source)} colors={colors} />
+                <InfoRow label="Source" value={transactionSourceLabel(tx)} colors={colors} />
                 <InfoRow label="Date" value={formatDate(tx.createdAt)} colors={colors} />
                 <InfoRow label="Balance Before" value={`Rs. ${tx.balanceBefore ?? '-'}`} colors={colors} />
                 <InfoRow label="Balance After" value={`Rs. ${tx.balanceAfter ?? '-'}`} colors={colors} />

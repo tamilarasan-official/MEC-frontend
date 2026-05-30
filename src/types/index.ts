@@ -161,6 +161,7 @@ export interface Transaction {
   balanceAfter?: number;
   orderId?: string;
   createdAt: string;
+  metadata?: Record<string, unknown>;
 }
 
 // ---- Transaction Detail (with Razorpay info) ----
@@ -333,6 +334,30 @@ export interface Announcement {
   createdAt: string;
 }
 
+export interface StationeryRequestGroup {
+  id: string;
+  normalizedMessage: string;
+  message: string;
+  count: number;
+  latestCreatedAt: string;
+  expiresAt: string;
+  resolved?: boolean;
+  studentNames: string[];
+  studentRollNumbers: string[];
+}
+
+export interface MyStationeryRequest {
+  id: string;
+  shopId: string;
+  message: string;
+  normalizedMessage: string;
+  resolved: boolean;
+  status: 'pending' | 'resolved' | 'expired';
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
 // ---- Navigation ----
 export type RootStackParamList = {
   Auth: undefined;
@@ -372,6 +397,7 @@ export type StudentHomeStackParamList = {
   NotificationSettings: undefined;
   PrivacySecurity: undefined;
   HelpSupport: undefined;
+  LeaveExemption: undefined;
   ChangePassword: undefined;
   TransactionPIN: undefined;
 };

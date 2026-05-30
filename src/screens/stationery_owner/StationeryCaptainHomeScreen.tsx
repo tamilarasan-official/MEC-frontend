@@ -8,7 +8,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAppSelector, useAppDispatch } from '../../store';
 import {
-  fetchActiveShopOrders, updateOrderStatus, acceptAllItems, rejectAllItems,
+  fetchActiveShopOrders, updateOrderStatus, completeOrder, acceptAllItems, rejectAllItems,
 } from '../../store/slices/ordersSlice';
 import { fetchDashboardStats } from '../../store/slices/userSlice';
 import Icon from '../../components/common/Icon';
@@ -18,8 +18,9 @@ import ScreenWrapper from '../../components/common/ScreenWrapper';
 import CaptainHeader from '../../components/captain/CaptainHeader';
 import CaptainProfileDropdown from '../../components/captain/CaptainProfileDropdown';
 import NotificationsModal from '../../components/student/NotificationsModal';
-import { Order } from '../../types';
+import { Order, StationeryRequestGroup } from '../../types';
 import { mediumHaptic } from '../../utils/haptics';
+import stationeryRequestService from '../../services/stationeryRequestService';
 
 const SWIPE_THRESHOLD = 80;
 
@@ -29,13 +30,18 @@ function getSwipeCfg(
   order: Order,
   onAccept: (id: string) => void,
   onReject: (id: string) => void,
+  onReady: (id: string) => void,
   onComplete: (id: string) => void,
 ): { right: SwipeAction | null; left: SwipeAction | null } {
   if (order.status === 'pending') return {
     right: { label: 'Accept', icon: 'checkmark-done', color: '#22c55e', onAction: () => onAccept(order.id) },
     left:  { label: 'Reject', icon: 'close',          color: '#ef4444', onAction: () => onReject(order.id) },
   };
-  if (['ready', 'preparing', 'partially_ready'].includes(order.status)) return {
+  if (['preparing', 'partially_ready'].includes(order.status)) return {
+    right: { label: 'Ready', icon: 'checkmark-circle', color: '#0ea5e9', onAction: () => onReady(order.id) },
+    left: null,
+  };
+  if (['ready', 'partially_delivered'].includes(order.status)) return {
     right: { label: 'Complete', icon: 'checkmark', color: '#22c55e', onAction: () => onComplete(order.id) },
     left: null,
   };
@@ -132,6 +138,12 @@ const SwipeableOrderCard = React.memo(function SwipeableOrderCard({ order, swipe
             </View>
           ))}
         </View>
+        {order.notes ? (
+          <View style={styles.orderNoteBox}>
+            <Text style={styles.orderNoteLabel}>Request</Text>
+            <Text style={styles.orderNoteText}>{order.notes}</Text>
+          </View>
+        ) : null}
         {hintParts.length > 0 && (
           <Text style={styles.swipeHint}>{hintParts.join('  |  ')}</Text>
         )}
@@ -160,6 +172,10 @@ export default function StationeryCaptainHomeScreen() {
   const [showSearch,   setShowSearch]   = useState(false);
   const [searchQuery,  setSearchQuery]  = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [stationeryRequests, setStationeryRequests] = useState<StationeryRequestGroup[]>([]);
+  const [resolvedStationeryRequests, setResolvedStationeryRequests] = useState<StationeryRequestGroup[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [resolvingRequestId, setResolvingRequestId] = useState<string | null>(null);
 
   const activeOrders = useMemo(() =>
     shopOrders.filter(o => !['completed', 'cancelled'].includes(o.status)),
@@ -181,33 +197,52 @@ export default function StationeryCaptainHomeScreen() {
   const todayRevenue   = dashboardStats?.todayRevenue   ?? 0;
   const completedToday = dashboardStats?.completedToday ?? 0;
 
+  const loadStationeryRequests = useCallback(async () => {
+    try {
+      const [activeData, resolvedData] = await Promise.all([
+        stationeryRequestService.listForShop(undefined, 'active'),
+        stationeryRequestService.listForShop(undefined, 'resolved'),
+      ]);
+      setStationeryRequests(activeData);
+      setResolvedStationeryRequests(resolvedData);
+    } catch {
+      setStationeryRequests([]);
+      setResolvedStationeryRequests([]);
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
       await Promise.all([
         dispatch(fetchActiveShopOrders()),
         dispatch(fetchDashboardStats()),
+        loadStationeryRequests(),
       ]);
     } finally {
       setLoading(false);
     }
-  }, [dispatch]);
+  }, [dispatch, loadStationeryRequests]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useFocusEffect(useCallback(() => {
     dispatch(fetchActiveShopOrders());
     dispatch(fetchDashboardStats());
-  }, [dispatch]));
+    loadStationeryRequests();
+  }, [dispatch, loadStationeryRequests]));
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
         dispatch(fetchActiveShopOrders());
         dispatch(fetchDashboardStats());
+        loadStationeryRequests();
       }
     });
     return () => sub.remove();
-  }, [dispatch]);
+  }, [dispatch, loadStationeryRequests]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -245,11 +280,65 @@ export default function StationeryCaptainHomeScreen() {
   const handleComplete = useCallback(async (orderId: string) => {
     setUpdatingId(orderId);
     try {
-      await dispatch(updateOrderStatus({ orderId, status: 'completed' })).unwrap();
+      await dispatch(completeOrder({ orderId })).unwrap();
       dispatch(fetchActiveShopOrders());
     } catch { Alert.alert('Error', 'Failed to complete order'); }
     setUpdatingId(null);
   }, [dispatch]);
+
+  const handleReady = useCallback(async (orderId: string) => {
+    setUpdatingId(orderId);
+    try {
+      await dispatch(updateOrderStatus({ orderId, status: 'ready' })).unwrap();
+      dispatch(fetchActiveShopOrders());
+    } catch { Alert.alert('Error', 'Failed to mark order ready'); }
+    setUpdatingId(null);
+  }, [dispatch]);
+
+  const handleResolveRequest = useCallback((request: StationeryRequestGroup) => {
+    Alert.alert(
+      'Resolve Request',
+      `Mark "${request.message}" as handled for all matching student requests?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Resolve',
+          onPress: async () => {
+            setResolvingRequestId(request.id);
+            try {
+              await stationeryRequestService.resolve(request.id);
+              await loadStationeryRequests();
+            } catch {
+              Alert.alert('Error', 'Failed to resolve stationery request');
+            } finally {
+              setResolvingRequestId(null);
+            }
+          },
+        },
+      ],
+    );
+  }, [loadStationeryRequests]);
+
+  const formatRequestTimeLeft = useCallback((expiresAt: string) => {
+    const diffMs = new Date(expiresAt).getTime() - Date.now();
+    if (diffMs <= 0) return 'Expires soon';
+    const totalMinutes = Math.ceil(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours <= 0) return `${minutes}m left`;
+    if (minutes === 0) return `${hours}h left`;
+    return `${hours}h ${minutes}m left`;
+  }, []);
+
+  const formatLatestRequestTime = useCallback((createdAt: string) => (
+    new Date(createdAt).toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).toLowerCase()
+  ), []);
 
   if (loading) {
     return (
@@ -290,6 +379,95 @@ export default function StationeryCaptainHomeScreen() {
           <Text style={styles.statsCardSub}>{completedToday} completed · {activeOrders.length} active</Text>
         </LinearGradient>
 
+        <View style={styles.requestSection}>
+          <View style={styles.requestSectionHeader}>
+            <View style={styles.requestSectionTitleRow}>
+              <Icon name="chatbox-ellipses-outline" size={18} color={colors.foreground} />
+              <Text style={styles.requestSectionTitle}>Student Requests</Text>
+            </View>
+            <Text style={styles.requestSectionMeta}>Active for 24 hours</Text>
+          </View>
+
+          {requestsLoading ? (
+            <View style={styles.requestLoadingState}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : stationeryRequests.length === 0 ? (
+            <View style={styles.requestEmptyState}>
+              <Text style={styles.requestEmptyTitle}>No active stationery requests</Text>
+              <Text style={styles.requestEmptyText}>Student request cards will appear here for 24 hours.</Text>
+            </View>
+          ) : (
+            stationeryRequests.map(request => (
+              <View key={request.id} style={styles.requestCard}>
+                <View style={styles.requestCountBadge}>
+                  <Text style={styles.requestCountBadgeText}>{request.count}</Text>
+                </View>
+                <Text style={styles.requestCardTitle} numberOfLines={2}>{request.message}</Text>
+                <Text style={styles.requestCardMeta}>
+                  {request.count === 1 ? '1 student' : `${request.count} students`} requested this
+                </Text>
+                <Text style={styles.requestCardStudents} numberOfLines={2}>
+                  {request.studentNames.join(', ')}
+                </Text>
+                <View style={styles.requestCardFooter}>
+                  <View style={styles.requestCardTimeBlock}>
+                    <Text style={styles.requestCardTimeText}>Latest: {formatLatestRequestTime(request.latestCreatedAt)}</Text>
+                    <Text style={styles.requestCardExpiryText}>{formatRequestTimeLeft(request.expiresAt)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.requestResolveBtn, resolvingRequestId === request.id && styles.requestResolveBtnDisabled]}
+                    disabled={resolvingRequestId === request.id}
+                    onPress={() => handleResolveRequest(request)}
+                    activeOpacity={0.8}
+                  >
+                    {resolvingRequestId === request.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.requestResolveBtnText}>Resolve</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.requestSection}>
+          <View style={styles.requestSectionHeader}>
+            <View style={styles.requestSectionTitleRow}>
+              <Icon name="checkmark-done-circle-outline" size={18} color="#10b981" />
+              <Text style={styles.requestSectionTitle}>Resolved Requests</Text>
+            </View>
+            <Text style={styles.requestSectionMeta}>Visible until 24h expiry</Text>
+          </View>
+
+          {requestsLoading ? (
+            <View style={styles.requestLoadingState}>
+              <ActivityIndicator size="small" color={colors.accent} />
+            </View>
+          ) : resolvedStationeryRequests.length === 0 ? (
+            <View style={styles.requestEmptyState}>
+              <Text style={styles.requestEmptyTitle}>No resolved requests</Text>
+              <Text style={styles.requestEmptyText}>Resolved request cards will stay here until their 24-hour expiry.</Text>
+            </View>
+          ) : (
+            resolvedStationeryRequests.map(request => (
+              <View key={request.id} style={[styles.requestCard, styles.requestResolvedCard]}>
+                <View style={styles.requestCountBadge}>
+                  <Text style={styles.requestCountBadgeText}>{request.count}</Text>
+                </View>
+                <Text style={styles.requestCardTitle} numberOfLines={2}>{request.message}</Text>
+                <Text style={styles.requestResolvedMeta}>Resolved</Text>
+                <Text style={styles.requestCardStudents} numberOfLines={2}>
+                  {request.studentNames.join(', ')}
+                </Text>
+                <Text style={styles.requestCardExpiryText}>{formatRequestTimeLeft(request.expiresAt)}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
         {/* Order cards */}
         {filteredOrders.length === 0 ? (
           <View style={styles.emptyState}>
@@ -300,7 +478,7 @@ export default function StationeryCaptainHomeScreen() {
         ) : (
           <>
             {visibleOrders.map(order => {
-              const cfg = getSwipeCfg(order, handleAccept, handleReject, handleComplete);
+                const cfg = getSwipeCfg(order, handleAccept, handleReject, handleReady, handleComplete);
               return (
                 <SwipeableOrderCard
                   key={order.id}
@@ -361,6 +539,84 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: 8 },
   emptyTitle:   { fontSize: 16, fontWeight: '600', color: colors.foreground },
   emptySubtext: { fontSize: 13, color: colors.mutedForeground, textAlign: 'center' },
+  requestSection: { gap: 12 },
+  requestSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  requestSectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  requestSectionTitle: { fontSize: 18, fontWeight: '800', color: colors.foreground },
+  requestSectionMeta: { fontSize: 12, fontWeight: '600', color: colors.mutedForeground },
+  requestLoadingState: {
+    paddingVertical: 24,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  requestEmptyState: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  requestEmptyTitle: { fontSize: 14, fontWeight: '700', color: colors.foreground },
+  requestEmptyText: { fontSize: 12, lineHeight: 18, color: colors.mutedForeground },
+  requestCard: {
+    position: 'relative',
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  requestCountBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    minWidth: 28,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+  },
+  requestCountBadgeText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  requestCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.foreground,
+    paddingRight: 44,
+  },
+  requestCardMeta: { fontSize: 12, fontWeight: '600', color: colors.accent },
+  requestResolvedMeta: { fontSize: 12, fontWeight: '800', color: '#10b981' },
+  requestCardStudents: { fontSize: 13, lineHeight: 19, color: colors.mutedForeground },
+  requestResolvedCard: { borderColor: 'rgba(16,185,129,0.35)', backgroundColor: 'rgba(16,185,129,0.08)' },
+  requestCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  requestCardTimeBlock: { flex: 1, gap: 2 },
+  requestCardTimeText: { fontSize: 11, color: colors.mutedForeground },
+  requestCardExpiryText: { fontSize: 11, fontWeight: '700', color: '#f97316' },
+  requestResolveBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#10b981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 84,
+  },
+  requestResolveBtnDisabled: { opacity: 0.75 },
+  requestResolveBtnText: { fontSize: 13, fontWeight: '800', color: '#fff' },
 
   loadMoreBtn: {
     paddingVertical: 14, borderRadius: 12,
@@ -402,5 +658,16 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   itemQty:   { fontSize: 13, fontWeight: '600', color: colors.accent, width: 28 },
   itemName:  { flex: 1, fontSize: 13, color: colors.foreground },
   itemPrice: { fontSize: 13, fontWeight: '600', color: colors.foreground },
+  orderNoteBox: {
+    marginTop: 10,
+    marginHorizontal: 14,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  orderNoteLabel: { fontSize: 11, fontWeight: '700', color: colors.accent, marginBottom: 4, textTransform: 'uppercase' },
+  orderNoteText: { fontSize: 12, lineHeight: 18, color: colors.foreground },
   swipeHint: { fontSize: 11, color: colors.mutedForeground, textAlign: 'center', marginTop: 4 },
 });
